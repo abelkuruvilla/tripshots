@@ -1,0 +1,31 @@
+name: split-beat
+description: Trending multi-clip edit. Split screens and grids that fill in and keep cutting on the beat, velocity speed ramps, bass-hit pulses, a label on every shot, and a seamless loop.
+duration: {target: 15, min: 9, max: 22}
+cuts:
+  beats_per_cut: {calm: 2, medium: 2, intense: 1}
+  hook_beats: 2
+  min_shot_sec: 0.45
+  max_shot_sec: 2.2
+shots: {min_score: 5, ordering: energy, max_per_source: 3, slowmo: false}
+layout: {landscape: auto, photo_motion: kenburns, photo_zoom: 1.18}
+panels: {use: 0.9, kinds: [split2, grid4, split3, columns3], mode: mixed, max: 3}
+velocity: {use: 0.35}
+loop: true
+transitions:
+  palette:
+    calm: [blur, whip]
+    medium: [whip, zoom_in, glitch]
+    intense: [flash, zoom_in, whip, spin]
+  density: 0.4
+  speed: 0.9
+  at: sections
+motion: {beat_punch: 0.06, punch_on: [medium, intense], shake_on_drop: true, shake_px: 24, video_push: 0.06,
+         pulse: 0.1, pulse_on: [intense], freeze: true, rgb_split: 0.3}
+color: {saturation: 1.12, contrast: 1.07, brightness: 0.0, gamma: 1.0, warmth: 0.02, vignette: false, sharpen: 0.35}
+text:
+  preset: bold
+  hook: {mode: ai, duration: 2.4, start: 0.15}
+  location: {mode: first, duration: 2.4}
+  labels: {mode: ai, max: 8}
+  cta: {mode: "off"}
+caption: {tone: 'punchy, playful, first person', hashtags: 12}

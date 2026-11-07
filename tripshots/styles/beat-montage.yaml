@@ -1,0 +1,41 @@
+name: beat-montage
+description: Fast, punchy cuts locked to the beat. Hard cuts, slightly vivid grade. The classic viral travel montage.
+duration: {target: 14, min: 8, max: 20}
+cuts:
+  beats_per_cut: {calm: 2, medium: 2, intense: 1}
+  hook_beats: 2
+  min_shot_sec: 0.45
+  max_shot_sec: 2.2
+shots: {min_score: 6, ordering: energy, max_per_source: 3, slowmo: false}
+layout: {landscape: auto, photo_motion: kenburns, photo_zoom: 1.2}
+transitions:
+  palette:
+    calm: [blur, whip]
+    medium: [whip, zoom_in, glitch]
+    intense: [flash, zoom_in, whip, spin, glitch]
+  density: 0.55
+  speed: 0.9
+  at: sections
+color: {saturation: 1.12, contrast: 1.07, brightness: 0.0, gamma: 1.0, warmth: 0.02, vignette: false, sharpen: 0.35}
+text:
+  preset: bold
+  hook: {mode: "off"}
+  location: {mode: first, duration: 2.6}
+  cta: {mode: "off"}
+caption: {tone: 'short, energetic, first person', hashtags: 12}
+motion:
+  beat_punch: 0.07
+  punch_on: [medium, intense]
+  shake_on_drop: true
+  freeze: true
+  rgb_split: 0.3
+  shake_px: 26
+  video_push: 0.07
+  pulse: 0.08
+  pulse_on: [intense]
+panels:
+  use: 0.35
+  kinds: [split2, grid4, split3]
+  mode: mixed
+  max: 1
+velocity: {use: 0.3}

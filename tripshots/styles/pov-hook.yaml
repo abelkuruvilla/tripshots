@@ -1,0 +1,35 @@
+name: pov-hook
+description: Text-hook reel. Big POV-style headline in the first seconds over the best shot, then a medium-paced,
+  beat-synced montage.
+duration: {target: 12, min: 7, max: 18}
+cuts:
+  beats_per_cut: {calm: 4, medium: 2, intense: 2}
+  hook_beats: 4
+  min_shot_sec: 0.7
+  max_shot_sec: 2.8
+shots: {min_score: 6, ordering: energy, max_per_source: 3, slowmo: true}
+layout: {landscape: auto, photo_motion: kenburns, photo_zoom: 1.18}
+transitions:
+  palette:
+    calm: [dissolve, blur]
+    medium: [whip, zoom_in, blur]
+    intense: [flash, zoom_in, whip, spin]
+  density: 0.45
+  speed: 1.0
+  at: sections
+color: {saturation: 1.08, contrast: 1.05, brightness: 0.01, gamma: 1.0, warmth: 0.03, vignette: false, sharpen: 0.3}
+text:
+  preset: bold
+  hook: {mode: ai, duration: 2.8, start: 0.15}
+  location: {mode: first, duration: 2.6}
+  cta: {mode: ai}
+caption: {tone: 'warm, concise, a little playful', hashtags: 12}
+motion:
+  beat_punch: 0.05
+  punch_on: [intense]
+  shake_on_drop: true
+  freeze: true
+  rgb_split: 0.15
+  shake_px: 20
+  video_push: 0.06
+velocity: {use: 0.2}

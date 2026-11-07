@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tripshots"
+version = "0.1.0"
+description = "Turn your own travel photos and clips into beat-synced Instagram Reels, by hand or through an AI agent (MCP)."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "tripshots/fonts/*.txt"]
+authors = [{ name = "Abel Kuruvilla" }]
+requires-python = ">=3.10"
+keywords = ["video", "reels", "instagram", "travel", "ffmpeg", "beat-sync", "mcp", "ai-agent", "video-editing"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Video :: Non-Linear Editor",
+]
+dependencies = [
+  "numpy",
+  "opencv-python-headless",
+  "scenedetect>=0.6.4",
+  "librosa>=0.10",
+  "soundfile",
+  "pillow>=10",
+  "pyyaml",
+  "anthropic>=0.40",
+  "yt-dlp>=2025.1.1",
+  "shapely>=2.0", "textual>=1.0",
+  "mcp>=1.9",
+]
+
+[project.optional-dependencies]
+heic = ["pillow-heif"]
+cutout = ["rembg[cpu]"]
+watch = ["google-genai"]
+export = ["opentimelineio"]
+dev = ["pytest>=8"]
+
+# [project.urls]  # fill in once the repository is public
+# Homepage = "https://github.com/<owner>/tripshots"
+# Documentation = "https://github.com/<owner>/tripshots/tree/main/docs"
+# Issues = "https://github.com/<owner>/tripshots/issues"
+
+[project.scripts]
+tripshots = "tripshots.cli:main"
+
+[tool.setuptools]
+packages = ["tripshots"]
+
+[tool.setuptools.package-data]
+tripshots = ["styles/*.yaml", "fonts/*.ttf", "fonts/*.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: renders a real reel (ffmpeg, ~1 min)"]

@@ -1,0 +1,34 @@
+name: cinematic
+description: Slow, moody, filmic. Long shots, slow-motion, soft crossfades, warm teal-orange-ish grade, vignette.
+duration: {target: 20, min: 12, max: 30}
+cuts:
+  beats_per_cut: {calm: 8, medium: 4, intense: 4}
+  hook_beats: 4
+  min_shot_sec: 1.6
+  max_shot_sec: 5.0
+shots: {min_score: 7, ordering: energy, max_per_source: 2, slowmo: true}
+layout: {landscape: pan, photo_motion: kenburns, photo_zoom: 1.14}
+transitions:
+  palette:
+    calm: [dissolve, dip]
+    medium: [blur, dissolve]
+    intense: [zoom_in, flash, blur]
+  density: 0.85
+  speed: 1.4
+  at: sections
+color: {saturation: 0.95, contrast: 1.1, brightness: -0.02, gamma: 0.97, warmth: 0.06, vignette: true, sharpen: 0.2}
+grade: {look: teal-orange, strength: 0.75, ai: true}
+text:
+  preset: editorial
+  hook: {mode: ai, duration: 3.2, start: 0.4}
+  location: {mode: each, duration: 2.8}
+  cta: {mode: "off"}
+caption: {tone: 'reflective, poetic but simple', hashtags: 10}
+motion:
+  beat_punch: 0.0
+  punch_on: []
+  shake_on_drop: false
+  video_push: 0.05
+velocity: {use: 0.25}
+loop: true
+sound: {sfx: "on", ambience: "on", level_db: -3}

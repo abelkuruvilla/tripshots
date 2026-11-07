@@ -1,0 +1,32 @@
+name: slow-scenic
+description: Calm, breathing nature reel. Few long shots, gentle pans and slow-mo, natural colours, cuts every bar.
+duration: {target: 18, min: 10, max: 30}
+cuts:
+  beats_per_cut: {calm: 8, medium: 4, intense: 4}
+  hook_beats: 4
+  min_shot_sec: 1.8
+  max_shot_sec: 4.5
+shots: {min_score: 7, ordering: chronological, max_per_source: 2, slowmo: true}
+layout: {landscape: pan, photo_motion: kenburns, photo_zoom: 1.12}
+transitions:
+  palette:
+    calm: [dissolve]
+    medium: [dissolve, blur]
+    intense: [blur, zoom_in]
+  density: 0.7
+  speed: 1.5
+  at: sections
+color: {saturation: 1.03, contrast: 1.03, brightness: 0.0, gamma: 1.0, warmth: 0.02, vignette: false, sharpen: 0.25}
+grade: {look: auto, strength: 0.6, ai: true}
+text:
+  preset: minimal
+  hook: {mode: "off"}
+  location: {mode: first, duration: 3.0}
+  cta: {mode: "off"}
+caption: {tone: 'calm, grateful, simple', hashtags: 10}
+motion:
+  beat_punch: 0.0
+  punch_on: []
+  shake_on_drop: false
+  video_push: 0.04
+sound: {sfx: "on", ambience: "on", level_db: -4}

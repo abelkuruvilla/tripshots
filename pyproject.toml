@@ -55,10 +55,13 @@ dev = ["pytest>=8"]
 tripshots = "tripshots.cli:main"
 
 [tool.setuptools]
-packages = ["tripshots"]
+# styles/ and fonts/ hold data, not code, but setuptools treats every folder inside a package as a
+# package, so they're listed here (otherwise it warns, and may drop them in a future version)
+packages = ["tripshots", "tripshots.styles", "tripshots.fonts"]
 
 [tool.setuptools.package-data]
-tripshots = ["styles/*.yaml", "fonts/*.ttf", "fonts/*.txt"]
+"tripshots.styles" = ["*.yaml"]
+"tripshots.fonts" = ["*.ttf", "*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

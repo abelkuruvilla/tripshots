@@ -211,6 +211,11 @@ class RunScreen(ModalScreen[dict | None]):
             box.mount(Button("Show in Finder" if IS_MAC else "Open folder", id="r_reveal"))
         if r.get("plan") and not r.get("variants"):
             box.mount(Button("Send to Edits", id="r_edits"))
+        if r.get("media") and str(r.get("media")).endswith("media.jsonl"):
+            box.mount(Button("Open the analysis", id="r_analysis", variant="success"))
+            self.query_one("#run_log", RichLog).write(
+                f"\n[b]Analysed[/b] {r.get('files')} files, {r.get('shots')} shots "
+                f"({r.get('described_by_ai')} described by AI).")
         if r.get("package"):
             box.mount(Button("Open the package", id="r_pkg", variant="success"))
             from .edits import PROFILE
@@ -261,7 +266,7 @@ class RunScreen(ModalScreen[dict | None]):
         if isinstance(r.get("trips"), list):
             for t in r["trips"]:
                 log.write(f"{t['from']} → {t['to']}  {t['files']} files  {', '.join(t.get('places') or []) or ''}")
-        if r.get("output"):
+        if r.get("output") and not r.get("media"):  # raw (non-JSON) command output
             log.write(r["output"])
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -286,6 +291,8 @@ class RunScreen(ModalScreen[dict | None]):
             open_path(r["folder"])
         elif bid == "r_render":
             self.dismiss({**r, "_render": True})
+        elif bid == "r_analysis":
+            open_path(r["output"])
         elif bid == "r_edits":
             self.app.push_screen(RunScreen("Preparing it for Edits", ["edits", "package", r["plan"]]))
         elif bid == "r_pkg":
@@ -1352,6 +1359,13 @@ class LibraryTab(VerticalScroll):
             yield Button("Refresh", id="lib_refresh")
             yield Button("Forget AI verdicts", id="lib_forget", variant="warning")
             yield Button("Wipe everything", id="lib_wipe", variant="error")
+        yield Static("[b]Analyse your footage[/b]  [dim]describe every photo and clip now (what's in it, quality, people, "
+                     "places), without making a reel. Reels made later reuse it, and other apps can read it "
+                     "(~/.tripshots/analysis/…/media.jsonl). Uses the footage folders from the Ask tab.[/dim]",
+                     classes="section")
+        with Horizontal(classes="actions"):
+            yield Button("Analyse my footage", id="lib_analyze", variant="primary")
+            yield Button("Technical only (no AI)", id="lib_analyze_noai")
 
     def on_mount(self) -> None:
         self.refresh_info()
@@ -1373,6 +1387,13 @@ class LibraryTab(VerticalScroll):
         bid = event.button.id
         if bid == "lib_refresh":
             self.refresh_info()
+        elif bid in ("lib_analyze", "lib_analyze_noai"):
+            from .catalog import footage_roots
+            if not footage_roots():
+                self.notify("Set your footage folders first (Ask tab)", severity="warning")
+                return
+            args = ["analyze"] + (["--no-ai"] if bid == "lib_analyze_noai" else [])
+            self.app.push_screen(RunScreen("Analysing your footage", args), lambda r: self.refresh_info())
         elif bid == "lib_forget":
             def go(ok):
                 if ok:

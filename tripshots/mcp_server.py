@@ -102,6 +102,8 @@ def _finished(st: dict) -> list:
             cap = res.get("caption")
             if cap and Path(cap).exists():
                 res["caption_text"] = Path(cap).read_text()
+        elif st["kind"] == "analyze" and res.get("media"):
+            res["next"] = "search it with search_media, or read media.jsonl (one tripshots.media/1 record per file)"
         elif st["kind"] == "edits":
             m = Path(res.get("manifest", ""))
             if m.exists():
@@ -371,6 +373,35 @@ async def export_edit(plan: str) -> str:
     """Hand the edit to DaVinci Resolve / Premiere / Final Cut: writes .edl, .otio and .storyboard.md."""
     from .export import export
     return _txt(await asyncio.to_thread(export, _plan(plan)))
+
+
+@mcp.tool()
+async def analyze_footage(sources: list[str] | None = None, ai: bool = True, faces: bool = True, places: bool = True,
+                          cached: bool = False) -> list:
+    """Analyse photos and videos on their own, without making a reel: for every file its capture time, place, camera,
+    trip and people, and for every shot (a photo, or a scene of a video) technical quality (sharpness, exposure,
+    colours, near-duplicates, camera motion) and an AI description (caption, description, tags, subjects with boxes,
+    scene, time of day, weather, people, visible text, landmark, aesthetic 1-10, issues). Writes media.jsonl
+    (schema tripshots.media/1) that reels, collage apps and other tools reuse. Incremental: only new files cost time.
+    sources: folders, files or sel:<id> (default: the footage folders). cached: export only what's already analysed."""
+    args = ["analyze"] + (["--no-ai"] if not ai else []) + (["--no-faces"] if not faces else []) + \
+        (["--no-places"] if not places else []) + (["--cached"] if cached else []) + ["--", *(sources or [])]
+    st = await _run_job(args, "analyze", " ".join(sources or ["footage"]))
+    return _finished(st)
+
+
+@mcp.tool()
+async def search_media(text: str | None = None, tags: list[str] | None = None, people: list[str] | None = None,
+                       kind: str | None = None, min_aesthetic: float | None = None, sharp_only: bool = False,
+                       scene: str | None = None, day: str | None = None, analysis: str | None = None,
+                       full: bool = False, limit: int = 30) -> str:
+    """Search an analysis (default: the latest) for photos/shots: text matches captions, descriptions, tags, places
+    and landmarks; tags/people must all be present; min_aesthetic 1-10; scene e.g. "food", "mountains"; day
+    YYYY-MM-DD. Returns compact records (full=true for the whole tripshots.media/1 record)."""
+    from . import analysis as an
+    recs = await asyncio.to_thread(an.query, analysis, text, tags, people, kind, min_aesthetic, sharp_only, scene,
+                                   day, max(1, min(limit, 200)))
+    return _txt({"count": len(recs), "records": recs if full else [an.compact(r) for r in recs]})
 
 
 @mcp.tool()

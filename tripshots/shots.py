@@ -22,7 +22,7 @@ SAMPLE_FPS = 4
 SAMPLE_W = 480
 MAX_CHUNK = 8.0
 MIN_SHOT = 0.8
-ANALYSIS_VERSION = 4
+ANALYSIS_VERSION = 5  # 5: thumbnail = the shot's best frame
 
 
 def _colorfulness(rgb: np.ndarray) -> float:
@@ -144,10 +144,15 @@ def _build_shot(m, c0, c1, idx, ts, mets, motion, jpgs, thumbs_dir) -> dict:
         pan = float(np.median(np.hypot(sx, sy)))
     else:
         shake, pan = 0.0, float(np.median(np.hypot(dx, dy))) if len(idx) else 0.0
-    mid = idx[len(idx) // 2]
-    thumb = thumbs_dir / f"{m['sig']}_{int(c0 * 1000):08d}.jpg"
+    # the frame that stands for the shot (contact sheets for the AI, storyboards): its sharpest, steadiest
+    # moment, not just the middle, which may fall in a whip pan or a bump
+    jit = np.hypot(dx - dx.mean(), dy - dy.mean()) if len(idx) else np.zeros(0)
+    q = [math.log1p(sharp[j]) - 40 * float(jit[j]) for j in range(len(idx))]
+    inner = range(1, len(idx) - 1) if len(idx) > 2 else range(len(idx))  # avoid the cut frames themselves
+    best = idx[max(inner, key=lambda j: q[j])] if len(idx) else idx[0]
+    thumb = thumbs_dir / f"{m['sig']}_{int(c0 * 1000):08d}b.jpg"  # "b": best frame (version 5)
     if not thumb.exists():
-        thumb.write_bytes(jpgs[mid])
+        thumb.write_bytes(jpgs[best])
     return {
         "kind": "video", "src": m["path"], "sig": m["sig"], "name": m["name"],
         "t0": round(c0, 3), "t1": round(c1, 3), "dur": round(c1 - c0, 3),

@@ -124,7 +124,7 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
         for s in cands:
             if used_src[s["src"]] >= per_src:
                 continue
-            tags = s.get("ai", {}).get("tags", [])
+            tags = s.get("ai", {}).get("tags", [])[:4]  # the main subjects (newer verdicts list up to 12)
             v = _quality(s) - 0.6 * used_src[s["src"]] - 0.25 * sum(used_tags[t] for t in tags)
             # avoid near-duplicate chunks of the same clip
             if any(c["src"] == s["src"] and abs(c["t0"] - s["t0"]) < 6 for c in chosen):
@@ -140,7 +140,7 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
         chosen.append(best)
         cands.remove(best)
         used_src[best["src"]] += 1
-        for t in best.get("ai", {}).get("tags", []):
+        for t in best.get("ai", {}).get("tags", [])[:4]:
             used_tags[t] += 1
     # top up by repeating best shots if footage is thin
     i = 0

@@ -1,0 +1,759 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/abelkuruvilla/tripshots/schemas/media.schema.json",
+  "title": "TripShots media analysis record (tripshots.media/1)",
+  "description": "One record per photo or video, as written to media.jsonl by `tripshots analyze`. Additive changes keep the schema id; breaking changes bump it to tripshots.media/2.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "path",
+    "name",
+    "kind",
+    "file",
+    "media",
+    "captured",
+    "camera",
+    "location",
+    "trip",
+    "people",
+    "shots",
+    "analyzed"
+  ],
+  "properties": {
+    "schema": {
+      "const": "tripshots.media/1"
+    },
+    "id": {
+      "type": "string",
+      "description": "Stable id from the file's content: the same file keeps it when moved, renamed or copied"
+    },
+    "path": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "photo",
+        "video"
+      ]
+    },
+    "file": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "modified": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extension": {
+          "type": "string"
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "required": [
+        "width",
+        "height",
+        "orientation"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer"
+        },
+        "height": {
+          "type": "integer"
+        },
+        "orientation": {
+          "enum": [
+            "portrait",
+            "landscape",
+            "square"
+          ]
+        },
+        "aspect": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "duration": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "fps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "hdr": {
+          "type": "boolean"
+        },
+        "has_audio": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "codec": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "equirect": {
+          "type": "boolean"
+        }
+      }
+    },
+    "captured": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "day": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "metadata | filename | mtime"
+        }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "properties": {
+        "make": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "lens": {
+          "type": "string"
+        },
+        "focal_length_mm": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "focal_length_35mm": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "aperture": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "exposure_s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "iso": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "flash": {
+          "type": "boolean"
+        },
+        "software": {
+          "type": "string"
+        }
+      }
+    },
+    "location": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "properties": {
+        "lat": {
+          "type": "number"
+        },
+        "lon": {
+          "type": "number"
+        },
+        "place": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "trip": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    },
+    "people": {
+      "type": "object",
+      "required": [
+        "faces",
+        "names"
+      ],
+      "properties": {
+        "faces": {
+          "type": "integer"
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "shots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/shot"
+      }
+    },
+    "analyzed": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "generator": {
+          "type": "string"
+        },
+        "versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "shot": {
+      "type": "object",
+      "description": "A photo is one shot; a video is split at its scene cuts (and into chunks of at most 8 s)",
+      "required": [
+        "id",
+        "t0",
+        "technical",
+        "ai",
+        "faces",
+        "uses"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "<file id>@<t0>, stable"
+        },
+        "t0": {
+          "type": "number"
+        },
+        "t1": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "duration": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "best_moment": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Video: the best instant (s from the file start)"
+        },
+        "thumbnail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "technical": {
+          "type": "object",
+          "properties": {
+            "sharpness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "sharpness_label": {
+              "enum": [
+                "blurry",
+                "soft",
+                "sharp"
+              ]
+            },
+            "laplacian_var": {
+              "type": "number"
+            },
+            "brightness": {
+              "type": "number"
+            },
+            "exposure_label": {
+              "enum": [
+                "dark",
+                "normal",
+                "bright"
+              ]
+            },
+            "highlights_clipped": {
+              "type": "number"
+            },
+            "shadows_clipped": {
+              "type": "number"
+            },
+            "contrast": {
+              "type": "number"
+            },
+            "colorfulness": {
+              "type": "number"
+            },
+            "warmth": {
+              "type": "number"
+            },
+            "tint": {
+              "type": "number"
+            },
+            "temperature_label": {
+              "enum": [
+                "warm",
+                "neutral",
+                "cool"
+              ]
+            },
+            "palette": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "hex",
+                  "share"
+                ],
+                "properties": {
+                  "hex": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-f]{6}$"
+                  },
+                  "share": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "dhash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            },
+            "camera_motion": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "enum": [
+                    "steady",
+                    "handheld",
+                    "moving",
+                    "shaky"
+                  ]
+                },
+                "pan": {
+                  "type": "number"
+                },
+                "shake": {
+                  "type": "number"
+                },
+                "activity": {
+                  "type": "number"
+                }
+              }
+            },
+            "edge_sharpness": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "Focus measure behind sharpness (crisp photos 0.65-1.4)"
+            }
+          }
+        },
+        "ai": {
+          "type": "object",
+          "required": [
+            "source",
+            "version",
+            "tags",
+            "usable"
+          ],
+          "properties": {
+            "source": {
+              "type": "string",
+              "description": "claude-cli | api | minimax | heuristic"
+            },
+            "version": {
+              "type": "integer",
+              "description": "0 = no AI description (technical only), 2 = current prompt"
+            },
+            "caption": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "subjects": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "box": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "description": "[x0, y0, x1, y1] as fractions 0..1 of the picture"
+                  }
+                }
+              }
+            },
+            "scene": {
+              "enum": [
+                "landscape",
+                "mountains",
+                "water",
+                "beach",
+                "forest",
+                "desert",
+                "snow",
+                "sky",
+                "cityscape",
+                "street",
+                "architecture",
+                "interior",
+                "food",
+                "people",
+                "portrait",
+                "group",
+                "wildlife",
+                "plants",
+                "transport",
+                "activity",
+                "event",
+                "night",
+                "aerial",
+                "detail",
+                "document",
+                "screenshot",
+                "other",
+                null
+              ]
+            },
+            "setting": {
+              "enum": [
+                "outdoor",
+                "indoor",
+                "unknown",
+                null
+              ]
+            },
+            "time_of_day": {
+              "enum": [
+                "sunrise",
+                "morning",
+                "midday",
+                "afternoon",
+                "golden-hour",
+                "sunset",
+                "blue-hour",
+                "night",
+                "indoor",
+                "unknown",
+                null
+              ]
+            },
+            "weather": {
+              "enum": [
+                "clear",
+                "partly-cloudy",
+                "overcast",
+                "fog",
+                "rain",
+                "snow",
+                "storm",
+                "unknown",
+                null
+              ]
+            },
+            "people": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer"
+                },
+                "activity": {
+                  "type": "string"
+                }
+              }
+            },
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "landmark": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "aesthetic": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 10
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "blurry",
+                  "motion-blur",
+                  "shaky",
+                  "out-of-focus",
+                  "dark",
+                  "overexposed",
+                  "low-contrast",
+                  "noisy",
+                  "tilted",
+                  "cluttered",
+                  "obstructed",
+                  "finger",
+                  "lens-flare",
+                  "low-res",
+                  "accidental"
+                ]
+              }
+            },
+            "usable": {
+              "type": "boolean"
+            },
+            "watch": {
+              "type": "object",
+              "description": "Gemini's view of a video (optional)"
+            }
+          }
+        },
+        "faces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "box"
+            ],
+            "properties": {
+              "box": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "minItems": 4,
+                "maxItems": 4,
+                "description": "[x0, y0, x1, y1] as fractions 0..1 of the picture"
+              },
+              "size_px": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "similarity": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "detector_score": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "t": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "similar_group": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Near-duplicates share a group id"
+        },
+        "uses": {
+          "type": "object",
+          "description": "App-specific judgements",
+          "properties": {
+            "reel": {
+              "type": "object",
+              "properties": {
+                "score": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "role": {
+                  "enum": [
+                    "hook",
+                    "closer",
+                    "any",
+                    null
+                  ]
+                },
+                "mood": {
+                  "enum": [
+                    "calm",
+                    "dynamic",
+                    null
+                  ]
+                },
+                "motion": {
+                  "enum": [
+                    "static",
+                    "pan",
+                    "tilt",
+                    "push",
+                    "drone",
+                    "walk",
+                    "timelapse",
+                    "handheld",
+                    "pan",
+                    null
+                  ]
+                },
+                "subject_x": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "subject_box": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "minItems": 4,
+                  "maxItems": 4,
+                  "description": "[x0, y0, x1, y1] as fractions 0..1 of the picture"
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

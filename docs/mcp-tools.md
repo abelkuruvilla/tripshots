@@ -238,6 +238,43 @@ Hand the edit to DaVinci Resolve / Premiere / Final Cut: writes .edl, .otio and 
 |---|---|---|
 | `plan` | string | **required** |
 
+## analyze_footage
+
+Analyse photos and videos on their own, without making a reel: for every file its capture time, place, camera,
+trip and people, and for every shot (a photo, or a scene of a video) technical quality (sharpness, exposure,
+colours, near-duplicates, camera motion) and an AI description (caption, description, tags, subjects with boxes,
+scene, time of day, weather, people, visible text, landmark, aesthetic 1-10, issues). Writes media.jsonl
+(schema tripshots.media/1) that reels, collage apps and other tools reuse. Incremental: only new files cost time.
+sources: folders, files or sel:<id> (default: the footage folders). cached: export only what's already analysed.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `sources` | array/null | null |
+| `ai` | boolean | true |
+| `faces` | boolean | true |
+| `places` | boolean | true |
+| `cached` | boolean | false |
+
+## search_media
+
+Search an analysis (default: the latest) for photos/shots: text matches captions, descriptions, tags, places
+and landmarks; tags/people must all be present; min_aesthetic 1-10; scene e.g. "food", "mountains"; day
+YYYY-MM-DD. Returns compact records (full=true for the whole tripshots.media/1 record).
+
+| Parameter | Type | Default |
+|---|---|---|
+| `text` | string/null | null |
+| `tags` | array/null | null |
+| `people` | array/null | null |
+| `kind` | string/null | null |
+| `min_aesthetic` | number/null | null |
+| `sharp_only` | boolean | false |
+| `scene` | string/null | null |
+| `day` | string/null | null |
+| `analysis` | string/null | null |
+| `full` | boolean | false |
+| `limit` | integer | 30 |
+
 ## edits_package
 
 Prepare a planned reel for Instagram's Edits app (Mac): renders the picture with everything only TripShots

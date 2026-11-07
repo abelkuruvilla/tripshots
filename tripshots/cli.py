@@ -289,6 +289,24 @@ def cmd_edits(a):
     print(json.dumps(res, indent=2))
 
 
+def cmd_analyze(a):
+    from . import analysis
+    paths = inputs_of(a) if a.inputs else []
+    if not paths:
+        from .catalog import footage_roots
+        paths = footage_roots()
+        if not paths:
+            raise util.ReelError("nothing to analyse: pass folders/files/sel:<id>, or set footage folders "
+                                 "(`tripshots footage <folders>`)")
+    res = analysis.analyze(paths, a.backend, ai=not a.no_ai, faces=not a.no_faces, places=not a.no_places,
+                           watch_mode=a.watch, rescore=a.rescore, cached=a.cached,
+                           out_dir=Path(a.out) if a.out else None, label=getattr(a, "_label", None),
+                           source_opts=source_opts(a))
+    if a.print:
+        res["records"] = list(analysis.load(res["output"]))
+    print(json.dumps(res, indent=2, default=str))
+
+
 def cmd_ask(a):
     from .ask import ask
     print(json.dumps(ask(" ".join(a.request), a.backend, a.music, render=a.render, workers=a.workers,
@@ -590,6 +608,27 @@ def build_parser() -> argparse.ArgumentParser:
     ed.add_argument("-j", "--workers", type=int, default=2)
     ed.set_defaults(fn=cmd_edits)
 
+    an = sub.add_parser("analyze", help="analyse photos and videos on their own (no reel): what's in them, quality, "
+                        "people, places -> media.jsonl for TripShots and other apps")
+    an.add_argument("inputs", nargs="*", help="folders, files or sel:<id> (default: your footage folders)")
+    an.add_argument("-o", "--out", help="output folder (default ~/.tripshots/analysis/<name>/)")
+    an.add_argument("-b", "--backend", choices=["auto", "claude-cli", "api", "minimax", "none"],
+                    help="AI that describes the shots (default: settings)")
+    an.add_argument("--no-ai", action="store_true", help="technical analysis only (no AI descriptions)")
+    an.add_argument("--no-faces", action="store_true", help="don't look for faces")
+    an.add_argument("--no-places", action="store_true", help="don't look up place names (OpenStreetMap)")
+    an.add_argument("--cached", action="store_true",
+                    help="no new work: export only what's already analysed (no AI calls, no new files decoded)")
+    an.add_argument("--print", action="store_true", help="also print every record")
+    an.add_argument("--rescore", action="store_true", help="ask the AI again about every shot")
+    an.add_argument("--watch", choices=["auto", "gemini", "off"])
+    an.add_argument("--exclude", action="append", metavar="GLOB", default=[])
+    an.add_argument("--since", metavar="YYYY-MM-DD")
+    an.add_argument("--until", metavar="YYYY-MM-DD")
+    an.add_argument("--no-recursive", action="store_true")
+    an.add_argument("--include-live-photos", action="store_true")
+    an.set_defaults(fn=cmd_analyze)
+
     ak = sub.add_parser("ask", help='plain language: tripshots ask "a reel about my days in Yellowstone"')
     ak.add_argument("request", nargs="+")
     ak.add_argument("-m", "--music", help="audio file or reel link (default: the AI picks from TRIPSHOTS_MUSIC)")
@@ -614,7 +653,7 @@ def _run(p, a) -> None:
         os.environ["TRIPSHOTS_ENCODER"] = a.encoder  # also reaches the subprocesses
     if hasattr(a, "inputs"):  # blank lines in an @list.txt must not become "current folder"
         a.inputs = [x.strip() for x in a.inputs if x.strip() and not x.strip().startswith("#")]
-        if not a.inputs:
+        if not a.inputs and a.fn is not cmd_analyze:  # analyze defaults to the footage folders
             p.error("no input folders given")
     util.VERBOSE = a.verbose
     try:

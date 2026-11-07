@@ -1,0 +1,19 @@
+name: Feature request
+description: An idea for TripShots
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The reel, workflow or agent request you have in mind.
+    validations: {required: true}
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: textarea
+    id: refs
+    attributes:
+      label: Examples
+      description: Reels, tools or screenshots that show what you mean.

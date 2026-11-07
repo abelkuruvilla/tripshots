@@ -5,6 +5,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Gemini watching failed on every clip with `models/gemini-flash-latest is not found for API version v1` on newer google-genai versions. TripShots now uses the v1beta API (where the `-latest` aliases live), checks which models the key can use, switches to the next model at once on "not found", and stops Gemini for the run, with one log line, when no model or key works. The progress line now counts successes.
+
 ### Changed
 - Automatic AI mode now chains every AI you've set up: Claude Code, then MiniMax, then the Anthropic API. A logged-out Claude Code is skipped, and if one AI stops working mid-run the next takes over. Before, MiniMax was only used when Claude Code wasn't installed at all.
 

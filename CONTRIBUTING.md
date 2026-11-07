@@ -15,7 +15,7 @@ Thanks for helping. Bug reports, ideas, styles, docs and code are all welcome.
 ```bash
 git clone <your fork> tripshots && cd tripshots
 python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev,export]"
+pip install -e ".[dev,export,watch]"
 sudo apt install ffmpeg        # or brew install ffmpeg
 tripshots doctor
 ```

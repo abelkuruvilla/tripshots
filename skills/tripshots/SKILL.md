@@ -19,6 +19,12 @@ Two ways to drive it, same steps:
 - `tripshots trips` (MCP `list_trips`): trips with dates, places, counts, per-day places. Use it for "last summer",
   "the Iceland trip", or when a place name is ambiguous.
 
+## Analysis without a reel
+When the user wants their footage described, sorted, searched or prepared for another app: `tripshots analyze
+[folders]` (MCP `analyze_footage`) writes `media.jsonl` (one `tripshots.media/1` record per file: captions, tags, subjects,
+scene, people, place, trip, focus, colours, near-duplicates). Search it with MCP `search_media` or
+`tripshots.analysis.query`. Format: docs/analysis.md.
+
 ## 2. Turn the request into a search
 `tripshots find [--place NAME] [--people NAME...] [--since YYYY-MM-DD] [--until ...] [--kind photo|video] [--text WORDS] --sheet`
 (MCP `find_footage`). It saves a selection and prints its id, `sel:xxxx`.

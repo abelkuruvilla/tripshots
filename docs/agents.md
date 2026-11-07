@@ -51,7 +51,7 @@ The full list with parameters is in [MCP tools](mcp-tools.md). In short:
 | Step | Tools |
 |---|---|
 | Setup | `status`, `set_footage_folders`, `set_folders` |
-| Find footage | `list_trips`, `find_footage`, `view_selection` |
+| Find footage | `list_trips`, `find_footage`, `view_selection`, `analyze_footage`, `search_media` ([analysis](analysis.md)) |
 | People | `people_list`, `people_add`, `people_discover`, `people_name` |
 | Plan | `list_music`, `list_styles_and_looks`, `make_reel` (dry run by default) |
 | Review and fix | `show_plan`, `shot_candidates`, `edit_plan` |

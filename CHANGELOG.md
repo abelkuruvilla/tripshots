@@ -6,6 +6,13 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Standalone analysis:** `tripshots analyze` (app: Library → Analyse my footage; MCP `analyze_footage`, `search_media`) writes one `tripshots.media/1` record per file (JSON Schema included): file, media, capture time, camera, place, trip, people, and per shot technical quality (edge-based focus, exposure, clipping, contrast, colour, palette, perceptual hash, camera motion), near-duplicate groups, faces and an AI description. Python API `tripshots.analysis.load` / `query`.
+
+### Changed
+- One AI pass now serves both catalogue and reels: the prompt (version 2) adds caption, description, up to 12 tags, subjects with boxes, scene, setting, time of day, weather, people, visible text, landmark, aesthetic and issues. Reels keep using older stored verdicts; `analyze` re-asks for them.
+- A video shot's thumbnail is now its sharpest, steadiest frame rather than the middle one (shot analysis version 5: footage is re-decoded once).
+
+### Added
 - **Finish in Instagram's Edits app:** `tripshots edits package` renders the picture with everything TripShots does baked in and writes clips per shot, titles (data + styled PNGs), the sound-effects track, the song and a manifest; `edits tools` / `probe` / `push` build the timeline through Edits' automation server with a mapping you confirm. MCP tools `edits_package`, `edits_status`, `edits_push`; **Send to Edits** in the app.
 
 ## [0.1.0] - 2026-11-03

@@ -44,7 +44,7 @@ heic = ["pillow-heif"]
 cutout = ["rembg[cpu]"]
 watch = ["google-genai"]
 export = ["opentimelineio"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "jsonschema>=4"]
 
 # [project.urls]  # fill in once the repository is public
 # Homepage = "https://github.com/<owner>/tripshots"
@@ -57,11 +57,12 @@ tripshots = "tripshots.cli:main"
 [tool.setuptools]
 # styles/ and fonts/ hold data, not code, but setuptools treats every folder inside a package as a
 # package, so they're listed here (otherwise it warns, and may drop them in a future version)
-packages = ["tripshots", "tripshots.styles", "tripshots.fonts"]
+packages = ["tripshots", "tripshots.styles", "tripshots.fonts", "tripshots.schemas"]
 
 [tool.setuptools.package-data]
 "tripshots.styles" = ["*.yaml"]
 "tripshots.fonts" = ["*.ttf", "*.txt"]
+"tripshots.schemas" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS shots  (key TEXT NOT NULL, version INTEGER NOT NULL, 
                                    updated REAL, PRIMARY KEY (key, version));
 CREATE TABLE IF NOT EXISTS scores (shot_key TEXT PRIMARY KEY, backend TEXT, data TEXT NOT NULL, updated REAL);
 CREATE INDEX IF NOT EXISTS scores_backend ON scores(backend);
+CREATE TABLE IF NOT EXISTS analysis (key TEXT NOT NULL, version INTEGER NOT NULL, data TEXT NOT NULL,
+                                     updated REAL, PRIMARY KEY (key, version));
 """
 
 _lock = threading.Lock()
@@ -117,6 +119,18 @@ def get_shots(key: str, version: int) -> list | None:
 def put_shots(key: str, version: int, shots: list) -> None:
     _w("INSERT OR REPLACE INTO shots(key, version, data, updated) VALUES (?,?,?,?)",
        (key, version, json.dumps(shots, default=str), time.time()))
+
+
+# ------------------------------------------------------------------ analysis
+def get_analysis(key: str, version: int) -> dict | None:
+    """Per-file analyzer results (camera, technical metrics per shot; analysis.py)."""
+    rows = _q("SELECT data FROM analysis WHERE key=? AND version=?", (key, version))
+    return json.loads(rows[0][0]) if rows else None
+
+
+def put_analysis(key: str, version: int, data: dict) -> None:
+    _w("INSERT OR REPLACE INTO analysis(key, version, data, updated) VALUES (?,?,?,?)",
+       (key, version, json.dumps(data, default=str), time.time()))
 
 
 # -------------------------------------------------------------------- scores

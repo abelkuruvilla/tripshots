@@ -60,6 +60,7 @@ NAME.mp4 + cover, caption, .edl, .storyboard.md, sound sheet, upload copy
 | `watch.py` | Optional Gemini video watching; local whip-pan detection |
 | `export.py` | EDL, OpenTimelineIO, storyboard.md |
 | `catalog.py` | Finding footage by place / dates / people; trips; selections |
+| `analysis.py` | The standalone analyzer: technical metrics, camera, near-duplicates, records in `tripshots.media/1` (schemas/media.schema.json), `load` / `query` |
 | `people.py` | Local face detection and recognition (YuNet + SFace) |
 | `geo.py` | OpenStreetMap place names and place outlines (cached) |
 | `mcp_server.py`, `jobs.py`, `planedit.py` | MCP server, background jobs, safe plan edits |

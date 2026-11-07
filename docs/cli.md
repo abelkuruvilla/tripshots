@@ -29,6 +29,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`footage`](#footage) | show or set the folders `find` and agents search by default |
 | [`people`](#people) | recognise people in your footage (on this computer): add me / discover / name |
 | [`edits`](#edits) | finish a reel in Instagram's Edits app (Mac): package / tools / probe / push |
+| [`analyze`](#analyze) | analyse photos and videos on their own (no reel): what's in them, quality, people, places -> media.jsonl for TripShots and other apps |
 | [`ask`](#ask) | plain language: tripshots ask "a reel about my days in Yellowstone" |
 | [`mcp`](#mcp) | run as an MCP server for AI agents (Claude Desktop/Code, OpenClaw, ...) |
 | [`doctor`](#doctor) | check dependencies |
@@ -545,6 +546,38 @@ options:
                         http://127.0.0.1:19501/mcp)
   --token TOKEN         its token (default $TRIPSHOTS_EDITS_TOKEN)
   -j, --workers WORKERS
+```
+
+## analyze
+
+```text
+usage: tripshots analyze [-h] [-o OUT] [-b {auto,claude-cli,api,minimax,none}] [--no-ai]
+                         [--no-faces] [--no-places] [--cached] [--print] [--rescore]
+                         [--watch {auto,gemini,off}] [--exclude GLOB] [--since YYYY-MM-DD]
+                         [--until YYYY-MM-DD] [--no-recursive] [--include-live-photos]
+                         [inputs ...]
+
+positional arguments:
+  inputs                folders, files or sel:<id> (default: your footage folders)
+
+options:
+  -h, --help            show this help message and exit
+  -o, --out OUT         output folder (default ~/.tripshots/analysis/<name>/)
+  -b, --backend {auto,claude-cli,api,minimax,none}
+                        AI that describes the shots (default: settings)
+  --no-ai               technical analysis only (no AI descriptions)
+  --no-faces            don't look for faces
+  --no-places           don't look up place names (OpenStreetMap)
+  --cached              no new work: export only what's already analysed (no AI calls, no new
+                        files decoded)
+  --print               also print every record
+  --rescore             ask the AI again about every shot
+  --watch {auto,gemini,off}
+  --exclude GLOB
+  --since YYYY-MM-DD
+  --until YYYY-MM-DD
+  --no-recursive
+  --include-live-photos
 ```
 
 ## ask

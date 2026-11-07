@@ -45,6 +45,7 @@ Everything lives under `~/.tripshots/` (`TRIPSHOTS_HOME`). All of it can be dele
 | `people/` | Who you've taught it (`people.json`: names and face embeddings) and the last discover result |
 | `models/` | Face models |
 | `selections/` | Saved `find` results and their contact sheets |
+| `analysis/` | `tripshots analyze` results: `media.jsonl`, `summary.json`, `schema.json` per run |
 | `jobs/` | Background jobs started by agents (command, log, result) |
 | `edits/` | Edits' tool list (`tools.json`) and your mapping to it (`profile.json`) |
 | `music/`, `sfx/` | Downloaded reel sounds; sound-effect pools (`library/` is yours to fill) |

@@ -25,6 +25,7 @@ your footage ─► find shots ─► AI judges each shot ─► beats of the so
 - **Looks finished:** per-shot colour grading, transitions on the beat, animated text, titles behind the skyline, split screens, speed ramps, freeze-frames, animated route maps, real sound effects and ambience.
 - **Yours to change:** every reel is a readable `plan.json` with a storyboard. Swap a shot, change the hook, re-render; or open it in DaVinci Resolve / Premiere (EDL, OpenTimelineIO).
 - **Finish in Instagram's Edits:** hand the reel to the Edits Mac app with the hard parts baked in and the text, sound effects and song left editable, so you post with Instagram's licensed music ([how](docs/edits.md)).
+- **Analyses footage on its own:** `tripshots analyze` describes every photo and clip (caption, tags, subjects, scene, light, people, text, landmark, aesthetic, focus, colours, near-duplicates, camera, place, trip) into documented JSON that reels, other apps (collages, albums) and other AI tasks reuse ([format](docs/analysis.md)).
 - **Remembers your footage:** each file is analysed and judged once, by content, so later reels from the same footage are quick.
 
 ## Quick start
@@ -72,6 +73,7 @@ contact sheets and storyboards come back as images so the agent can see what it 
 | [Getting started](docs/getting-started.md) | Install (macOS, Linux), first reel, first search, first agent |
 | [Making reels](docs/making-reels.md) | Commands, outputs, styles, variants, learning a style, editing, exporting |
 | [Finding footage](docs/finding-footage.md) | Search by place, dates and people; trips; face recognition |
+| [Analysing footage](docs/analysis.md) | Describe everything on its own, in a format other apps read |
 | [AI agents](docs/agents.md) · [MCP tools](docs/mcp-tools.md) | MCP server, agent skill, `ask` |
 | [Look and motion](docs/look-and-motion.md) · [Colour](docs/colour.md) · [Sound](docs/sound.md) · [Clone](docs/clone.md) | What TripShots can do on screen and in the mix |
 | [Finish in Edits](docs/edits.md) | Hand a reel to Instagram's Edits app to finish and post |

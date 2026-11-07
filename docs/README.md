@@ -7,6 +7,7 @@
 **Making reels**
 - [Making reels](making-reels.md): the commands, what you get, variants, learning a style, editing by hand, exporting to Resolve/Premiere
 - [Finding footage](finding-footage.md): search by place, dates and people; trips; face recognition
+- [Analysing footage](analysis.md): describe every photo and clip on its own; the `tripshots.media/1` format other apps read
 - [Look and motion](look-and-motion.md): transitions, beat-synced motion, text, framing, split screens, maps, effects
 - [Colour grading](colour.md): per-shot grading, looks, copying the colour of reels you like
 - [Music and sound design](sound.md): reel sounds, beat tracking, sound effects and ambience

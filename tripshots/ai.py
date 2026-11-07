@@ -138,25 +138,54 @@ def extract_json(text: str):
 
 
 # --------------------------------------------------------------------- scoring
-SCORE_PROMPT = """You are a senior travel-reel editor choosing footage for an Instagram Reel made from silent, scenic travel clips and photos.
+AI_VERSION = 2  # bump when the prompt or the fields change: stored verdicts of older versions get re-asked by `analyze`
 
-The contact sheet image(s) show candidate shots. Every tile is ONE shot, labelled with its ID in a yellow box (bottom label says photo or video length). Technical measurements:
+SCENES = ["landscape", "mountains", "water", "beach", "forest", "desert", "snow", "sky", "cityscape", "street",
+          "architecture", "interior", "food", "people", "portrait", "group", "wildlife", "plants", "transport",
+          "activity", "event", "night", "aerial", "detail", "document", "screenshot", "other"]
+TIMES = ["sunrise", "morning", "midday", "afternoon", "golden-hour", "sunset", "blue-hour", "night", "indoor", "unknown"]
+WEATHER = ["clear", "partly-cloudy", "overcast", "fog", "rain", "snow", "storm", "unknown"]
+ISSUES = ["blurry", "motion-blur", "shaky", "out-of-focus", "dark", "overexposed", "low-contrast", "noisy",
+          "tilted", "cluttered", "obstructed", "finger", "lens-flare", "low-res", "accidental"]
+MOTIONS = ["static", "pan", "tilt", "push", "drone", "walk", "timelapse", "handheld"]
+
+SCORE_PROMPT = """You are cataloguing someone's personal travel photos and video clips. Your descriptions are reused for
+many things: searching the library, picking photos for collages and albums, and editing Instagram Reels.
+
+The contact sheet image(s) show the files. Every tile is ONE photo or ONE video shot, labelled with its ID in a yellow
+box (the bottom label says photo or video length). Technical measurements:
 {table}
 
-For EVERY shot ID listed, judge it as a potential reel shot:
-- score 1-10: 9-10 = scroll-stopping (epic light, scale, reflections, golden hour, strong composition); 7-8 = strong; 5-6 = filler; 1-4 = weak (blurry, dull light, blown sky, tilted horizon, cluttered, accidental).
-- usable: false for accidental/blurry/pocket shots, screenshots, or anything you would never post.
-- tags: 1-4 short subject words (e.g. "mountain","lake","sunset","street","food","waterfall","road","people").
-- motion: one of static, pan, tilt, push, drone, walk, timelapse, handheld (best guess from the frame and stats).
-- subject_box: [x0, y0, x1, y1] tight box around the main subject (the thing a viewer looks at: peak, waterfall, person, car, building), as fractions 0..1 of THAT PHOTO (ignore the grey tile border). For a wide vista with no single subject, box the most interesting part.
-- subject_x: horizontal centre of that subject, 0.0 (left) .. 1.0 (right).
-- role: "hook" if it would grab attention in the first second, "closer" if it is a calm, wide, satisfying ending, else "any".
-- mood: "calm" or "dynamic".
-- duplicate_of: the ID of an earlier, better-or-equal shot in this sheet showing nearly the same view, else null.
-- note: at most 10 words on why.
+For EVERY ID, describe what is actually visible. Be factual and specific; never guess facts the picture doesn't show.
+- caption: one plain sentence, max 15 words ("Turquoise lake below snowy peaks at sunrise").
+- description: 1-3 sentences: subject, setting, light, notable details. Useful for search and for other AIs.
+- tags: 3-12 lowercase search words: subjects, setting, activity, colours that matter ("lake","mountain","reflection").
+- subjects: up to 4 main things, most important first: [{{"label": "...", "box": [x0,y0,x1,y1]}}], boxes as
+  fractions 0..1 of THAT PHOTO (ignore the grey tile border). For a wide vista, box its most interesting part.
+- scene: one of {scenes}.
+- setting: "outdoor", "indoor" or "unknown".  time_of_day: one of {times}.  weather: one of {weather}.
+- people: {{"count": number of clearly visible people (0 if none), "activity": what they do, or ""}}.
+- text: visible text worth reading (signs, menus), max 60 characters, else "".
+- landmark: the name of a famous, clearly recognisable place or landmark, else null. Never guess.
+- aesthetic: 1-10 as a photograph anyone would want to keep: 9-10 striking light, composition and moment; 7-8 strong;
+  5-6 ordinary snapshot; 1-4 weak.
+- issues: problems you can see, from {issues}; [] if none.
+- usable: false for accidental, pocket, blurry or screenshot-like shots nobody would share.
+- duplicate_of: the ID of an earlier, better-or-equal tile in this sheet showing nearly the same view, else null.
+For Instagram Reels specifically:
+- score 1-10 as a reel shot (scroll-stopping scale, light, movement; static clutter scores low).
+- role: "hook" (grabs attention in the first second), "closer" (calm, wide, satisfying ending) or "any".
+- mood: "calm" or "dynamic".  motion: one of {motions} (camera movement, best guess).
+- subject_x: horizontal centre of the first subject, 0.0 (left) .. 1.0 (right).
+- note: max 10 words on why it is good or weak.
 
-Reply with ONLY a JSON array, one object per shot, like:
-[{{"id":"S001","score":8,"usable":true,"tags":["lake","mountain"],"motion":"pan","subject_box":[0.28,0.2,0.55,0.62],"subject_x":0.4,"role":"hook","mood":"calm","duplicate_of":null,"note":"mirror lake at sunrise"}}]"""
+Reply with ONLY a JSON array, one object per ID, for example:
+[{{"id":"S001","caption":"Mirror-still lake below snowy peaks at sunrise","description":"A glassy alpine lake reflects
+snow-capped mountains under pink sunrise light; pines frame the left shore.","tags":["lake","mountains","reflection",
+"sunrise","pine trees"],"subjects":[{{"label":"mountain reflection","box":[0.18,0.2,0.82,0.7]}}],"scene":"mountains",
+"setting":"outdoor","time_of_day":"sunrise","weather":"clear","people":{{"count":0,"activity":""}},"text":"",
+"landmark":null,"aesthetic":9,"issues":[],"usable":true,"duplicate_of":null,"score":9,"role":"hook","mood":"calm",
+"motion":"static","subject_x":0.5,"note":"mirror lake at first light"}}]"""
 
 
 def _table(shots: list[dict]) -> str:
@@ -183,14 +212,50 @@ def _norm_box(b):
     return None
 
 
+def _one(v, allowed, default):
+    v = str(v or "").strip().lower()
+    return v if v in allowed else default
+
+
+def _num(v, lo, hi, default):
+    try:
+        return float(max(lo, min(hi, float(v))))
+    except (TypeError, ValueError):
+        return default
+
+
 def _norm_score(d: dict) -> dict:
+    subjects = []
+    for sj in (d.get("subjects") or [])[:4]:
+        if isinstance(sj, dict) and sj.get("label"):
+            subjects.append({"label": str(sj["label"])[:40].lower(), "box": _norm_box(sj.get("box"))})
+    box = _norm_box(d.get("subject_box")) or (subjects[0]["box"] if subjects else None)
+    sx = d.get("subject_x")
+    if sx is None and box:
+        sx = (box[0] + box[2]) / 2
+    ppl = d.get("people") if isinstance(d.get("people"), dict) else {}
     out = {
-        "score": float(max(1.0, min(10.0, float(d.get("score", 5))))),
+        "v": AI_VERSION,
+        # app-neutral description (catalogue, search, collages, other AI tasks)
+        "caption": str(d.get("caption") or "")[:120],
+        "description": str(d.get("description") or "")[:500],
+        "tags": list(dict.fromkeys(str(t).lower().strip() for t in (d.get("tags") or []) if str(t).strip()))[:12],
+        "subjects": subjects,
+        "scene": _one(d.get("scene"), SCENES, "other"),
+        "setting": _one(d.get("setting"), ("outdoor", "indoor", "unknown"), "unknown"),
+        "time_of_day": _one(d.get("time_of_day"), TIMES, "unknown"),
+        "weather": _one(d.get("weather"), WEATHER, "unknown"),
+        "people": {"count": int(_num(ppl.get("count"), 0, 999, 0)), "activity": str(ppl.get("activity") or "")[:60]},
+        "text": str(d.get("text") or "")[:80],
+        "landmark": (str(d["landmark"])[:60] if d.get("landmark") not in (None, "", "null", "none") else None),
+        "aesthetic": _num(d.get("aesthetic"), 1, 10, _num(d.get("score"), 1, 10, 5.0)),
+        "issues": [i for i in (str(x).lower() for x in (d.get("issues") or [])) if i in ISSUES][:6],
         "usable": bool(d.get("usable", True)),
-        "tags": [str(t).lower() for t in (d.get("tags") or [])][:4],
-        "motion": str(d.get("motion", "static")),
-        "subject_x": float(max(0.0, min(1.0, float(d.get("subject_x", 0.5) or 0.5)))),
-        "subject_box": _norm_box(d.get("subject_box")),
+        # reel editing (planner.py reads these)
+        "score": _num(d.get("score"), 1, 10, 5.0),
+        "motion": _one(d.get("motion"), MOTIONS, "static"),
+        "subject_x": _num(sx, 0, 1, 0.5),
+        "subject_box": box,
         "role": d.get("role") if d.get("role") in ("hook", "closer", "any") else "any",
         "mood": d.get("mood") if d.get("mood") in ("calm", "dynamic") else "calm",
         "note": str(d.get("note", ""))[:80],
@@ -200,7 +265,7 @@ def _norm_score(d: dict) -> dict:
 
 
 def score_shots(shots: list[dict], backend: Backend, work: Path, rescore: bool = False,
-                workers: int = 3) -> dict[str, dict]:
+                workers: int = 3, min_version: int = 0) -> dict[str, dict]:
     """AI verdict per shot. Verdicts are stored permanently in the library, keyed by file
     content + position in the clip, so a shot is only ever sent to the AI once (whatever
     folder, filter or run it shows up in). Only never-seen shots are put on contact sheets."""
@@ -222,20 +287,24 @@ def score_shots(shots: list[dict], backend: Backend, work: Path, rescore: bool =
         if n:
             log(f"forgot {n} stored AI verdicts for these shots")
     stored = lib.get_scores(list(key_of.values()))
+    # make accepts any stored verdict; analyze (min_version=AI_VERSION) re-asks for older, thinner ones
+    stored = {k: v for k, v in stored.items() if int(v.get("v", 1)) >= min_version}
     results = {i: to_run_ids(stored[k]) for i, k in key_of.items() if k in stored}
     todo_shots = [s for s in shots if s["id"] not in results]
     if not todo_shots:
         log(f"all {len(shots)} shots already judged by AI (stored in the library); nothing sent")
         return results
     log(f"AI: {len(results)} shots already judged, {len(todo_shots)} new -> sending to {backend.name}")
-    sheets = contact_sheets(todo_shots, work / "sheets")
+    sheets = contact_sheets(todo_shots, work / "sheets", per_sheet=8, cols=4, tile=(440, 440))
 
     def job(item):
         sheet, ids = item
-        prompt = SCORE_PROMPT.format(table=_table([by_id[i] for i in ids]))
+        prompt = SCORE_PROMPT.format(table=_table([by_id[i] for i in ids]), scenes=", ".join(SCENES),
+                                     times=", ".join(TIMES), weather=", ".join(WEATHER), issues=", ".join(ISSUES),
+                                     motions=", ".join(MOTIONS))
         for attempt in range(2):
             try:
-                data = extract_json(backend.ask(prompt, [sheet]))
+                data = extract_json(backend.ask(prompt, [sheet], max_tokens=8000))
                 if isinstance(data, dict):
                     data = data.get("shots") or list(data.values())
                 got = {str(d.get("id")).upper(): _norm_score(d) for d in data if isinstance(d, dict) and d.get("id")}

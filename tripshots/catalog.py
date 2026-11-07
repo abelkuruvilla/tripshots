@@ -332,12 +332,19 @@ def expand_inputs(inputs: list[str]) -> tuple[list[Path], str | None]:
 
 
 # ------------------------------------------------------------------ trips
-def trips(folders=None, gap_days: float = 2.0, name: bool = True) -> list[dict]:
+def trips(folders=None, gap_days: float = 2.0, name: bool = True, recs: list[dict] | None = None) -> list[dict]:
     """Group the footage into trips (a new trip after a 2-day gap, or a >500 km jump after a night)."""
-    recs = [r for r in records(folders) if r.get("time") and r.get("created_from") != "mtime"]
+    recs = [r for r in (recs if recs is not None else records(folders))
+            if r.get("time") and r.get("created_from") != "mtime"]
     recs.sort(key=lambda r: r["time"])
     if name:
         name_places(recs)
+    groups = group_trips(recs, gap_days)
+    return [_trip_summary(g) for g in groups]
+
+
+def group_trips(recs: list[dict], gap_days: float = 2.0) -> list[list[dict]]:
+    """recs sorted by time -> lists of records, one per trip."""
     groups: list[list[dict]] = []
     last_gps = None
     for r in recs:
@@ -352,24 +359,28 @@ def trips(folders=None, gap_days: float = 2.0, name: bool = True) -> list[dict]:
         groups[-1].append(r)
         if r.get("gps"):
             last_gps = r["gps"]
-    out = []
-    for g in groups:
-        places = Counter(r["place"] for r in g if r.get("place"))
-        days = Counter(r["time"].date().isoformat() for r in g)
-        per_day = {}
-        for d in sorted(days):
-            pd = Counter(r["place"] for r in g if r["time"].date().isoformat() == d and r.get("place"))
-            per_day[d] = {"files": days[d], "places": [p for p, _ in pd.most_common(3)]}
-        top = [p for p, _ in places.most_common(4)]
-        gps = [r["gps"] for r in g if r.get("gps")]
-        out.append({"from": g[0]["time"].date().isoformat(), "to": g[-1]["time"].date().isoformat(),
-                    "days": len(days), "files": len(g), "photos": sum(r["kind"] == "photo" for r in g),
-                    "videos": sum(r["kind"] == "video" for r in g), "places": top,
-                    "centre": [round(sum(p[0] for p in gps) / len(gps), 4), round(sum(p[1] for p in gps) / len(gps), 4)]
-                    if gps else None,
-                    "folders": [f for f, _ in Counter(str(Path(r["path"]).parent) for r in g).most_common(3)],
-                    "per_day": per_day})
-    return out
+    return groups
+
+
+def trip_id(g: list[dict]) -> str:
+    return f"trip-{g[0]['time'].date().isoformat()}"
+
+
+def _trip_summary(g: list[dict]) -> dict:
+    places = Counter(r["place"] for r in g if r.get("place"))
+    days = Counter(r["time"].date().isoformat() for r in g)
+    per_day = {}
+    for d in sorted(days):
+        pd = Counter(r["place"] for r in g if r["time"].date().isoformat() == d and r.get("place"))
+        per_day[d] = {"files": days[d], "places": [p for p, _ in pd.most_common(3)]}
+    gps = [r["gps"] for r in g if r.get("gps")]
+    return {"id": trip_id(g), "from": g[0]["time"].date().isoformat(), "to": g[-1]["time"].date().isoformat(),
+            "days": len(days), "files": len(g), "photos": sum(r["kind"] == "photo" for r in g),
+            "videos": sum(r["kind"] == "video" for r in g), "places": [p for p, _ in places.most_common(4)],
+            "centre": [round(sum(p[0] for p in gps) / len(gps), 4), round(sum(p[1] for p in gps) / len(gps), 4)]
+            if gps else None,
+            "folders": [f for f, _ in Counter(str(Path(r["path"]).parent) for r in g).most_common(3)],
+            "per_day": per_day}
 
 
 # ------------------------------------------------------------------ contact sheet

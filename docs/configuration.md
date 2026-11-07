@@ -10,6 +10,7 @@ Settings tab writes it too). A `.env` in the current folder is read first. Real 
 | `TRIPSHOTS_BACKEND` | `auto` | AI backend: `auto`, `claude-cli`, `api`, `minimax`, `none` ([AI backends](ai-backends.md)) |
 | `TRIPSHOTS_CLAUDE_MODEL` | Claude Code's default | Model for the `claude-cli` backend (`sonnet`, `opus`, …) |
 | `TRIPSHOTS_MODEL` | `MiniMax-M3` / a Claude model | Model for the `minimax` and `api` backends |
+| `CLAUDE_CODE_OAUTH_TOKEN` | | A long-lived Claude Code token from `claude setup-token`, for setups where Claude Code's own login isn't reachable |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` | | For the `api` backend |
 | `MINIMAX_API_KEY`, `MINIMAX_BASE_URL` | | For the `minimax` backend |
 | `GEMINI_API_KEY` | | Optional Gemini video watching |

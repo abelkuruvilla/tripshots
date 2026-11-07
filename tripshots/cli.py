@@ -322,7 +322,15 @@ def cmd_doctor(a):
         ok &= bool(found)
     for f in ("zscale", "tonemap", "xfade", "lut3d"):
         print(f"filter {f:<8} {'ok' if util.has_filter(f) else 'missing (optional)'}")
-    print(f"{'claude':<10} {util.which('claude') or 'not found (needed for claude-cli backend)'}")
+    cl = util.which("claude")
+    if cl:
+        from .ai import ClaudeCLI
+        st = ClaudeCLI.login_status()
+        login = ("logged in" + (f" ({st.get('authMethod')})" if st.get("authMethod") else "") if st and st.get("loggedIn")
+                 else "NOT logged in: run `claude auth login`" if st else "login status unknown (old Claude Code?)")
+        print(f"{'claude':<10} {cl}  {login}")
+    else:
+        print(f"{'claude':<10} not found (needed for claude-cli backend)")
     try:
         import yt_dlp
         print(f"{'yt-dlp':<10} ok {yt_dlp.version.__version__} (update: re-run ./install.sh if reel links stop working)")

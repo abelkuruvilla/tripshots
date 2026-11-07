@@ -25,13 +25,38 @@ class Backend:
         raise NotImplementedError
 
 
+LOGIN_HELP = ("Claude Code isn't logged in for TripShots. In a terminal run `claude auth login` (or `claude`, then "
+              "/login), then check with `tripshots doctor`. If it says you're logged in but TripShots still can't use "
+              "it, run `claude setup-token` and put the token in ~/.tripshots/.env as CLAUDE_CODE_OAUTH_TOKEN=... "
+              "Or pick another AI with -b (minimax, api) or -b none")
+_AUTH_WORDS = ("not logged in", "please run /login", "invalid api key", "oauth token has expired", "token expired",
+               "authentication_error", "authentication failed", "credit balance is too low", "401")
+
+
+class AIAuthError(ReelError):
+    """The AI backend can't be used at all (not logged in, bad key, no credit): stop asking it."""
+
+
 class ClaudeCLI(Backend):
     name = "claude-cli"
 
     def __init__(self, model: str | None = None):
         self.model = model or os.environ.get("TRIPSHOTS_CLAUDE_MODEL") or None
+        self.broken: str | None = None  # set on the first login/key error: later calls fail at once
+
+    @staticmethod
+    def login_status() -> dict | None:
+        """`claude auth status` (local, no request). None when this Claude Code version can't tell."""
+        try:
+            p = run(["claude", "auth", "status", "--json"], timeout=30, check=False)
+            d = json.loads(p.stdout)
+            return d if isinstance(d, dict) and "loggedIn" in d else None
+        except Exception:
+            return None
 
     def ask(self, prompt, images=None, max_tokens=4000):
+        if self.broken:
+            raise AIAuthError(self.broken)
         images = images or []
         if images:
             listing = "\n".join(f"- {p.resolve()}" for p in images)
@@ -44,14 +69,19 @@ class ClaudeCLI(Backend):
         if self.model:
             cmd += ["--model", self.model]
         proc = run(cmd, cwd=dirs[0] if dirs else None, timeout=600, check=False)
-        if proc.returncode != 0:
-            raise ReelError(f"claude CLI failed: {(proc.stderr or proc.stdout)[-400:]}")
         try:
             data = json.loads(proc.stdout)
         except json.JSONDecodeError:
+            data = None
+        if proc.returncode != 0 or (isinstance(data, dict) and data.get("is_error")):
+            msg = str(data.get("result")) if isinstance(data, dict) and data.get("result") else \
+                (proc.stderr or proc.stdout or "").strip()[-300:]
+            if any(w in msg.lower() for w in _AUTH_WORDS):
+                self.broken = f"{LOGIN_HELP}. (Claude Code said: {msg.strip()[:120]})"
+                raise AIAuthError(self.broken)
+            raise ReelError(f"claude CLI error: {msg[:300]}")
+        if data is None:
             return proc.stdout
-        if data.get("is_error"):
-            raise ReelError(f"claude CLI error: {str(data.get('result'))[:300]}")
         return data.get("result", "")
 
 
@@ -92,6 +122,9 @@ def get_backend(name: str | None = None) -> Backend | None:
     if name == "claude-cli" or (name == "auto" and which("claude")):
         if not which("claude"):
             raise ReelError("`claude` CLI not found. Install Claude Code and run `claude` once to log in.")
+        st = ClaudeCLI.login_status()
+        if st is not None and not st.get("loggedIn") and not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            raise AIAuthError(LOGIN_HELP)
         return ClaudeCLI()
     if name == "api" or (name == "auto" and os.environ.get("ANTHROPIC_API_KEY")):
         return AnthropicAPI()
@@ -309,6 +342,8 @@ def score_shots(shots: list[dict], backend: Backend, work: Path, rescore: bool =
                     data = data.get("shots") or list(data.values())
                 got = {str(d.get("id")).upper(): _norm_score(d) for d in data if isinstance(d, dict) and d.get("id")}
                 return {i: got[i] for i in ids if i in got}
+            except AIAuthError:
+                raise  # no point retrying, or sending the other sheets
             except Exception as e:
                 log(f"  scoring {sheet.name} failed (attempt {attempt + 1}): {e}")
         return {}

@@ -11,6 +11,8 @@ Pick one:
 
 Check everything with `tripshots doctor`.
 
+TripShots checks that Claude Code is logged in before it starts (`claude auth status`, no request sent) and stops with instructions if it isn't, instead of failing on every contact sheet. If the login expires mid-run, it stops asking at the first refusal. `tripshots doctor` shows the login status.
+
 Set the default with `TRIPSHOTS_BACKEND` in `~/.tripshots/.env` (or the app's Settings tab), or per run with `-b/--backend`. What is sent to each backend is listed in [Privacy](privacy.md).
 
 ## Optional: Gemini watches your clips

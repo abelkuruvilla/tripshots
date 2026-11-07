@@ -11,6 +11,8 @@ Pick one:
 
 Check everything with `tripshots doctor`.
 
+**Automatic mode** (`TRIPSHOTS_BACKEND=auto`, the default) uses every AI you have set up, in this order: Claude Code (if installed and logged in), then MiniMax (if `MINIMAX_API_KEY` is set), then the Anthropic API (if `ANTHROPIC_API_KEY` is set). If one stops working during a run (logged out, key refused, out of credit), the next one takes over for the rest of the run, and each verdict is stored under the AI that gave it. Naming a backend (`-b claude-cli`, `-b minimax`, `-b api`) uses only that one. `tripshots doctor` shows the order.
+
 TripShots checks that Claude Code is logged in before it starts (`claude auth status`, no request sent) and stops with instructions if it isn't, instead of failing on every contact sheet. If the login expires mid-run, it stops asking at the first refusal. `tripshots doctor` shows the login status.
 
 Set the default with `TRIPSHOTS_BACKEND` in `~/.tripshots/.env` (or the app's Settings tab), or per run with `-b/--backend`. What is sent to each backend is listed in [Privacy](privacy.md).

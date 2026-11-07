@@ -5,6 +5,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Automatic AI mode now chains every AI you've set up: Claude Code, then MiniMax, then the Anthropic API. A logged-out Claude Code is skipped, and if one AI stops working mid-run the next takes over. Before, MiniMax was only used when Claude Code wasn't installed at all.
+
 ### Fixed
 - When Claude Code isn't logged in, `make` and `analyze` stop at the start with how to log in, instead of retrying every contact sheet and printing raw JSON. A login that fails mid-run stops further AI calls at once. `doctor` shows Claude Code's login status. Error messages from Claude Code show just its message.
 

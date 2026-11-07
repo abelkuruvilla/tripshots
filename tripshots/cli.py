@@ -368,7 +368,8 @@ def cmd_doctor(a):
     print(f"{'HEIC':<10} {'ok (pillow-heif)' if HEIF_OK else ('macOS sips fallback' if util.is_mac() else 'pip install pillow-heif')}")
     try:
         b = get_backend(None)
-        print(f"{'backend':<10} {b.name if b else 'none (heuristics only)'}")
+        order = " -> ".join(x.name for x in getattr(b, "backends", [b])) if b else "none (heuristics only)"
+        print(f"{'backend':<10} {order}" + ("  (the next takes over if one stops working)" if " -> " in order else ""))
     except Exception as e:
         print(f"{'backend':<10} error: {e}")
     print(f"{'home':<10} {HOME}")

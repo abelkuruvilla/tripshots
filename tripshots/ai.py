@@ -86,52 +86,121 @@ class ClaudeCLI(Backend):
 
 
 class AnthropicAPI(Backend):
-    name = "api"
+    """The Anthropic Messages API, or any compatible endpoint (MiniMax)."""
 
-    def __init__(self, base_url=None, api_key=None, model=None):
+    def __init__(self, base_url=None, api_key=None, model=None, name: str = "api"):
         import anthropic
-        self.model = model or os.environ.get("TRIPSHOTS_MODEL") or "claude-sonnet-5-5"
+        self.name = name
+        env_model = os.environ.get("TRIPSHOTS_MODEL") or ""
+        self.model = model or (env_model if env_model and not env_model.lower().startswith("minimax") else
+                               "claude-sonnet-5-5")
         kw = {}
         if base_url or os.environ.get("ANTHROPIC_BASE_URL"):
             kw["base_url"] = base_url or os.environ["ANTHROPIC_BASE_URL"]
         self.client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"), **kw)
+        self.broken: str | None = None
 
     def ask(self, prompt, images=None, max_tokens=4000):
+        import anthropic
+        if self.broken:
+            raise AIAuthError(self.broken)
         content = []
         for p in images or []:
             content.append({"type": "image", "source": {
                 "type": "base64", "media_type": "image/jpeg",
                 "data": base64.b64encode(Path(p).read_bytes()).decode()}})
         content.append({"type": "text", "text": prompt})
-        msg = self.client.messages.create(model=self.model, max_tokens=max_tokens,
-                                          messages=[{"role": "user", "content": content}])
+        try:
+            msg = self.client.messages.create(model=self.model, max_tokens=max_tokens,
+                                              messages=[{"role": "user", "content": content}])
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
+            self.broken = f"{self.name}: the key was refused ({str(e)[:120]})"
+            raise AIAuthError(self.broken)
+        except anthropic.APIStatusError as e:
+            if any(w in str(e).lower() for w in _AUTH_WORDS):
+                self.broken = f"{self.name}: {str(e)[:160]}"
+                raise AIAuthError(self.broken)
+            raise
         return "".join(getattr(b, "text", "") for b in msg.content)
 
 
+class Chain(Backend):
+    """Automatic mode: the first AI that works, moving on to the next when one refuses (not logged in, bad key,
+    no credit). Verdicts are stored under the name of the AI that actually gave them."""
+
+    def __init__(self, backends: list[Backend]):
+        self.backends = backends
+        self.i = 0
+
+    @property
+    def name(self) -> str:
+        return self.backends[self.i].name
+
+    def ask(self, prompt, images=None, max_tokens=4000):
+        while True:
+            b = self.backends[self.i]
+            try:
+                return b.ask(prompt, images, max_tokens)
+            except AIAuthError as e:
+                if self.i + 1 >= len(self.backends):
+                    raise
+                self.i += 1
+                log(f"{b.name} can't be used ({str(e)[:100]}); switching to {self.backends[self.i].name}")
+
+
+def _minimax() -> AnthropicAPI:
+    key = os.environ.get("MINIMAX_API_KEY")
+    if not key:
+        raise ReelError("MINIMAX_API_KEY is not set")
+    model = os.environ.get("TRIPSHOTS_MINIMAX_MODEL") or (
+        os.environ.get("TRIPSHOTS_MODEL") if (os.environ.get("TRIPSHOTS_MODEL") or "").lower().startswith("minimax")
+        else None) or "MiniMax-M3"
+    return AnthropicAPI(base_url=os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic"),
+                        api_key=key, model=model, name="minimax")
+
+
+def _claude_ready() -> bool:
+    st = ClaudeCLI.login_status()
+    return st is None or bool(st.get("loggedIn")) or bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
+
+
 def get_backend(name: str | None = None) -> Backend | None:
+    """The AI to use. auto: Claude Code (your subscription) if it's installed and logged in, then MiniMax, then the
+    Anthropic API, each only if set up; if one stops working mid-run (logged out, key refused), the next takes over."""
     name = (name or os.environ.get("TRIPSHOTS_BACKEND") or "auto").lower()
     if name == "none":
         return None
-    if name == "minimax" or (name == "auto" and os.environ.get("MINIMAX_API_KEY")
-                             and not which("claude") and not os.environ.get("ANTHROPIC_API_KEY")):
-        key = os.environ.get("MINIMAX_API_KEY")
-        if not key:
-            raise ReelError("MINIMAX_API_KEY is not set")
-        return AnthropicAPI(base_url=os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic"),
-                            api_key=key, model=os.environ.get("TRIPSHOTS_MODEL", "MiniMax-M3"))
-    if name == "claude-cli" or (name == "auto" and which("claude")):
+    if name == "minimax":
+        return _minimax()
+    if name == "claude-cli":
         if not which("claude"):
             raise ReelError("`claude` CLI not found. Install Claude Code and run `claude` once to log in.")
-        st = ClaudeCLI.login_status()
-        if st is not None and not st.get("loggedIn") and not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        if not _claude_ready():
             raise AIAuthError(LOGIN_HELP)
         return ClaudeCLI()
-    if name == "api" or (name == "auto" and os.environ.get("ANTHROPIC_API_KEY")):
+    if name == "api":
         return AnthropicAPI()
-    if name == "auto":
+    if name != "auto":
+        raise ReelError(f"unknown backend '{name}' (use auto, claude-cli, api, minimax or none)")
+    chain: list[Backend] = []
+    skipped = None
+    if which("claude"):
+        if _claude_ready():
+            chain.append(ClaudeCLI())
+        else:
+            skipped = "Claude Code is installed but not logged in (`claude auth login`)"
+    if os.environ.get("MINIMAX_API_KEY"):
+        chain.append(_minimax())
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        chain.append(AnthropicAPI())
+    if not chain:
+        if skipped:
+            raise AIAuthError(LOGIN_HELP)
         log("no AI backend found (claude CLI / API key); using heuristics only")
         return None
-    raise ReelError(f"unknown backend '{name}' (use claude-cli, api, minimax or none)")
+    if skipped:
+        log(f"{skipped}; using {chain[0].name}")
+    return chain[0] if len(chain) == 1 else Chain(chain)
 
 
 def extract_json(text: str):

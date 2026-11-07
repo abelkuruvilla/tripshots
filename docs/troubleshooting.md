@@ -5,6 +5,7 @@ sound effects, the route-map runtime, HEIC support, the encoder, footage folders
 
 | Problem | Fix |
 |---|---|
+| "Claude Code isn't logged in" / `Not logged in · Please run /login` | Run `claude auth login` (or `claude`, then `/login`), then `tripshots doctor`: the `claude` line should say "logged in". Logging in to the Claude desktop app doesn't log in Claude Code. If doctor says logged in but runs still fail (Claude Code keeps its login in the macOS keychain, which a few setups can't reach), run `claude setup-token` and put the token in `~/.tripshots/.env` as `CLAUDE_CODE_OAUTH_TOKEN=…` |
 | `claude CLI failed` / no AI backend | Install Claude Code and run `claude` once to log in, or set another backend ([AI backends](ai-backends.md)). `-b none` works without AI |
 | HDR iPhone clips look grey | Your ffmpeg lacks `zscale`: install ffmpeg from Homebrew (`brew install ffmpeg`) |
 | HEIC photos skipped | `pip install pillow-heif` (macOS can also convert with `sips`) |

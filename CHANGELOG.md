@@ -5,6 +5,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- When Claude Code isn't logged in, `make` and `analyze` stop at the start with how to log in, instead of retrying every contact sheet and printing raw JSON. A login that fails mid-run stops further AI calls at once. `doctor` shows Claude Code's login status. Error messages from Claude Code show just its message.
+
 ### Added
 - **Standalone analysis:** `tripshots analyze` (app: Library → Analyse my footage; MCP `analyze_footage`, `search_media`) writes one `tripshots.media/1` record per file (JSON Schema included): file, media, capture time, camera, place, trip, people, and per shot technical quality (edge-based focus, exposure, clipping, contrast, colour, palette, perceptual hash, camera motion), near-duplicate groups, faces and an AI description. Python API `tripshots.analysis.load` / `query`.
 

@@ -283,6 +283,21 @@ def posting_note(plan: dict) -> str:
 
 
 def render_plan(plan_path: Path, out: Path | None, workers: int = 2) -> Path:
+    plan, work = load_plan(plan_path)
+    out = (out or plan_path.with_name(plan_path.name.replace(".plan.json", ".mp4"))).resolve()
+    render(plan, out, work, workers=workers)
+    export_cover(plan, out, out.with_suffix(".cover.jpg"))
+    try:
+        from .effects import check_beats
+        check_beats(out, plan)
+    except Exception as e:
+        log(f"beat check skipped ({e})")
+    log(f"done: {out}")
+    return out
+
+
+def load_plan(plan_path: Path) -> tuple[dict, Path]:
+    """Read a plan for rendering: re-tile edited durations and refresh swapped shots. -> (plan, work dir)."""
     plan = read_json(plan_path)
     if not plan:
         raise ReelError(f"could not read plan {plan_path}")
@@ -311,16 +326,7 @@ def render_plan(plan_path: Path, out: Path | None, workers: int = 2) -> Path:
                 s["still"] = sh["still"]
                 s.pop("speed", None)
                 s["layout"], s["kb"] = "kenburns", s.get("kb", "in")
-    out = (out or plan_path.with_name(plan_path.name.replace(".plan.json", ".mp4"))).resolve()
-    render(plan, out, work, workers=workers)
-    export_cover(plan, out, out.with_suffix(".cover.jpg"))
-    try:
-        from .effects import check_beats
-        check_beats(out, plan)
-    except Exception as e:
-        log(f"beat check skipped ({e})")
-    log(f"done: {out}")
-    return out
+    return plan, work
 
 
 # ---------------------------------------------------------------- variants

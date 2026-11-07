@@ -358,8 +358,9 @@ class TextTrack:
     """All on-screen text of a plan. Each element is laid out lazily on the first frame it
     appears, so its position can avoid the subject and busy parts of that actual frame."""
 
-    def __init__(self, plan: dict, beats: list[float]):
+    def __init__(self, plan: dict, beats: list[float], native: bool = False):
         from .typo import PRESETS
+        self.native = native  # build everything, draw only what an editor can't rebuild (see render)
         tcfg = plan.get("text") or {}
         preset = PRESETS.get(str(tcfg.get("preset", "bold")), PRESETS["bold"])
         self.cfg = {}
@@ -405,8 +406,15 @@ class TextTrack:
                     cfg = self.cfg[o["type"] if o["type"] in ("cta", "label") else "hook"]
                     el = build_hook(o["text"], st, du, cfg, frame, self.beats, subj)
                 self.built[k] = el
+            if self.native and not self.baked(k):
+                continue
             frame = el.draw(frame, t)
         return frame
+
+    def baked(self, k: int) -> bool:
+        """Is overlay k part of the picture (not native text)? Titles behind the skyline are."""
+        el = self.built.get(k)
+        return bool(el is not None and any(getattr(sp, "behind", False) for sp in el.sprites))
 
 
 def _prepare_transitions(plan: dict) -> None:
@@ -426,25 +434,31 @@ def _prepare_transitions(plan: dict) -> None:
         e.setdefault("trans_params", {})
 
 
-def render(plan: dict, out_path: Path, work: Path, workers: int = 2) -> Path:
+def render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_text: bool = False,
+           info: dict | None = None) -> Path:
     """Render a plan. With a hardware encoder, a failed encode falls back to libx264 once (segments
-    that already rendered are kept: only what failed is redone)."""
+    that already rendered are kept: only what failed is redone).
+
+    native_text: lay out the hook / cta / labels / plain location titles but don't draw them (for
+    editors that add them as their own, editable text; edits.py). Titles behind the skyline and maps
+    are still drawn, because no editor can rebuild them. `info["texts"]` receives the TextTrack."""
     from . import encode
     import time
     t0 = time.time()
     log(f"encoder: {encode.describe()}")
     try:
-        out = _render(plan, out_path, work, workers)
+        out = _render(plan, out_path, work, workers, native_text, info)
     except ReelError as e:
         if not encode.using_hardware():
             raise
         encode.disable(str(e))
-        out = _render(plan, out_path, work, workers)
+        out = _render(plan, out_path, work, workers, native_text, info)
     log(f"render took {time.time() - t0:.0f}s")
     return out
 
 
-def _render(plan: dict, out_path: Path, work: Path, workers: int = 2) -> Path:
+def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_text: bool = False,
+            info: dict | None = None) -> Path:
     from . import encode
     from .motion import affine, apply_transition, bulge, pulse_amount, shot_motion
     segs = plan["segments"]
@@ -532,7 +546,9 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2) -> Path:
         readers = [_SegReader(f, n) for f, n in files]
         beats = [float(b) for b in plan.get("beats") or []]
         mcfg = plan.get("motion") or {}
-        texts = TextTrack(plan, beats)
+        texts = TextTrack(plan, beats, native=native_text)
+        if info is not None:
+            info["texts"] = texts
 
         def shot_frame(i: int, n: int) -> np.ndarray:
             local = n - (start_f[i] - lead_f[i])

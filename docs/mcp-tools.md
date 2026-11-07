@@ -237,3 +237,37 @@ Hand the edit to DaVinci Resolve / Premiere / Final Cut: writes .edl, .otio and 
 | Parameter | Type | Default |
 |---|---|---|
 | `plan` | string | **required** |
+
+## edits_package
+
+Prepare a planned reel for Instagram's Edits app (Mac): renders the picture with everything only TripShots
+can do baked in (grade, motion, transitions, split screens, maps, titles behind the skyline), and writes the
+rest separately so it stays editable in Edits: one clip per shot, the texts (with timings, plus PNGs of
+TripShots' styling), the sound effects track, the song and a manifest.json. Takes a few minutes: returns a job.
+
+Then either call edits_push, or, if the Edits MCP tools are connected to you as well, assemble it there from
+manifest.json: new 9:16 project; clips at their starts (or picture.mp4 at 0); each text as Edits text at its
+start/duration; sound-effects.wav at 0; the song from Edits' library at music.song_start. Use paths under
+'staged' when present (Edits can only open files in its own container). Don't export or post unless asked.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `plan` | string | **required** |
+| `clips` | boolean | true |
+
+## edits_status
+
+Is Edits reachable, which automation tools does it offer, and is TripShots' mapping to them confirmed?
+
+## edits_push
+
+Build the timeline in Edits from an edits_package folder, through the user's confirmed tool mapping.
+picture: one video clip instead of one per shot. music: library (leave the song to add from Edits' library,
+the default), file (add music.m4a) or none. text_as: text (editable Edits text) or image (TripShots' PNGs).
+
+| Parameter | Type | Default |
+|---|---|---|
+| `package` | string | **required** |
+| `picture` | boolean | false |
+| `music` | string | "library" |
+| `text_as` | string | "text" |

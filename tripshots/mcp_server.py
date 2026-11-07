@@ -102,6 +102,10 @@ def _finished(st: dict) -> list:
             cap = res.get("caption")
             if cap and Path(cap).exists():
                 res["caption_text"] = Path(cap).read_text()
+        elif st["kind"] == "edits":
+            m = Path(res.get("manifest", ""))
+            if m.exists():
+                res["manifest_content"] = json.loads(m.read_text())
         elif st["kind"] == "find" and res.get("sheet"):
             imgs.append(_img(res["sheet"]))
         elif st["kind"] == "discover" and res.get("sheet"):
@@ -367,6 +371,50 @@ async def export_edit(plan: str) -> str:
     """Hand the edit to DaVinci Resolve / Premiere / Final Cut: writes .edl, .otio and .storyboard.md."""
     from .export import export
     return _txt(await asyncio.to_thread(export, _plan(plan)))
+
+
+@mcp.tool()
+async def edits_package(plan: str, clips: bool = True) -> list:
+    """Prepare a planned reel for Instagram's Edits app (Mac): renders the picture with everything only TripShots
+    can do baked in (grade, motion, transitions, split screens, maps, titles behind the skyline), and writes the
+    rest separately so it stays editable in Edits: one clip per shot, the texts (with timings, plus PNGs of
+    TripShots' styling), the sound effects track, the song and a manifest.json. Takes a few minutes: returns a job.
+
+    Then either call edits_push, or, if the Edits MCP tools are connected to you as well, assemble it there from
+    manifest.json: new 9:16 project; clips at their starts (or picture.mp4 at 0); each text as Edits text at its
+    start/duration; sound-effects.wav at 0; the song from Edits' library at music.song_start. Use paths under
+    'staged' when present (Edits can only open files in its own container). Don't export or post unless asked."""
+    args = ["edits", "package", str(_plan(plan))] + ([] if clips else ["--no-clips"])
+    st = await _run_job(args, "edits", Path(plan).name, wait=20)
+    return _finished(st)
+
+
+@mcp.tool()
+async def edits_status() -> str:
+    """Is Edits reachable, which automation tools does it offer, and is TripShots' mapping to them confirmed?"""
+    from . import edits
+    from .util import read_json
+    out = {"url": edits._url(), "token_set": bool(os.environ.get("TRIPSHOTS_EDITS_TOKEN"))}
+    try:
+        out.update(await asyncio.to_thread(edits.tools))
+    except ReelError as e:
+        out["error"] = str(e)
+    prof = read_json(edits.PROFILE)
+    out["mapping"] = ({"confirmed": prof.get("confirmed"), "steps": {k: v["tool"] for k, v in prof["steps"].items()}}
+                      if prof else "none yet: run `tripshots edits probe`")
+    return _txt(out)
+
+
+@mcp.tool()
+async def edits_push(package: str, picture: bool = False, music: str = "library", text_as: str = "text") -> str:
+    """Build the timeline in Edits from an edits_package folder, through the user's confirmed tool mapping.
+    picture: one video clip instead of one per shot. music: library (leave the song to add from Edits' library,
+    the default), file (add music.m4a) or none. text_as: text (editable Edits text) or image (TripShots' PNGs)."""
+    from . import edits
+    p = Path(package).expanduser()
+    if not (p / "manifest.json").is_file():
+        raise ReelError(f"not an Edits package: {package}")
+    return _txt(await asyncio.to_thread(edits.push, p, "picture" if picture else "clips", music, text_as))
 
 
 @mcp.prompt()

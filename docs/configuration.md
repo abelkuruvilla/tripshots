@@ -21,6 +21,9 @@ Settings tab writes it too). A `.env` in the current folder is read first. Real 
 | `TRIPSHOTS_ENCODER` | `auto` | `auto`, `hardware`, `software`, `videotoolbox`, `nvenc`, `qsv` |
 | `TRIPSHOTS_HWACCEL` | `1` | `0` turns off hardware *decoding* on Macs |
 | `TRIPSHOTS_COOKIES_BROWSER`, `TRIPSHOTS_COOKIES_FILE` | | Browser (or cookies.txt) for Instagram downloads |
+| `TRIPSHOTS_EDITS_URL` | `http://127.0.0.1:19501/mcp` | Edits' automation server ([Finish in Edits](edits.md)) |
+| `TRIPSHOTS_EDITS_TOKEN` | | Its token, from Edits' Automation settings |
+| `TRIPSHOTS_EDITS_STAGE` | Edits' sandbox folder | Where packages are copied so Edits can open them |
 | `TRIPSHOTS_MCP_TOKEN` | | Bearer token for `tripshots mcp --http` (required beyond localhost) |
 | `TRIPSHOTS_OFFLINE` | | `1`: no network lookups (Openverse, place names) |
 | `TRIPSHOTS_HOME` | `~/.tripshots` | Where everything below is stored |
@@ -43,6 +46,7 @@ Everything lives under `~/.tripshots/` (`TRIPSHOTS_HOME`). All of it can be dele
 | `models/` | Face models |
 | `selections/` | Saved `find` results and their contact sheets |
 | `jobs/` | Background jobs started by agents (command, log, result) |
+| `edits/` | Edits' tool list (`tools.json`) and your mapping to it (`profile.json`) |
 | `music/`, `sfx/` | Downloaded reel sounds; sound-effect pools (`library/` is yours to fill) |
 | `hyperframes/`, `clone/`, `learn/` | Route-map runtime; analysed reference reels |
 | `geocode_cache.json`, `geocode_search.json` | Cached place names and place outlines |

@@ -11,6 +11,7 @@
 - [Colour grading](colour.md): per-shot grading, looks, copying the colour of reels you like
 - [Music and sound design](sound.md): reel sounds, beat tracking, sound effects and ambience
 - [Clone a reel](clone.md): remake one reel shot for shot with your footage
+- [Finish in Edits](edits.md): hand a reel to Instagram's Edits app, with text, sound and music left editable
 
 **AI**
 - [AI backends](ai-backends.md): Claude subscription, MiniMax, API, none; optional Gemini video watching

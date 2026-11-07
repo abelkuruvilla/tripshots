@@ -55,7 +55,7 @@ The full list with parameters is in [MCP tools](mcp-tools.md). In short:
 | People | `people_list`, `people_add`, `people_discover`, `people_name` |
 | Plan | `list_music`, `list_styles_and_looks`, `make_reel` (dry run by default) |
 | Review and fix | `show_plan`, `shot_candidates`, `edit_plan` |
-| Finish | `render_reel`, `export_edit` |
+| Finish | `render_reel`, `export_edit`, `edits_package`, `edits_status`, `edits_push` ([Edits](edits.md)) |
 | Jobs | `job_status`, `cancel_job` |
 
 - **Images in results.** `find_footage`, `make_reel`, `shot_candidates`, `edit_plan` and `people_discover` return

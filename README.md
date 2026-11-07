@@ -24,6 +24,7 @@ your footage ─► find shots ─► AI judges each shot ─► beats of the so
 - **Edits like a person would:** an AI (your Claude subscription, MiniMax, or the API) judges every shot; cuts land on the beat; strong shots go on strong beats; landscape footage is reframed to 9:16 around the subject.
 - **Looks finished:** per-shot colour grading, transitions on the beat, animated text, titles behind the skyline, split screens, speed ramps, freeze-frames, animated route maps, real sound effects and ambience.
 - **Yours to change:** every reel is a readable `plan.json` with a storyboard. Swap a shot, change the hook, re-render; or open it in DaVinci Resolve / Premiere (EDL, OpenTimelineIO).
+- **Finish in Instagram's Edits:** hand the reel to the Edits Mac app with the hard parts baked in and the text, sound effects and song left editable, so you post with Instagram's licensed music ([how](docs/edits.md)).
 - **Remembers your footage:** each file is analysed and judged once, by content, so later reels from the same footage are quick.
 
 ## Quick start
@@ -73,6 +74,7 @@ contact sheets and storyboards come back as images so the agent can see what it 
 | [Finding footage](docs/finding-footage.md) | Search by place, dates and people; trips; face recognition |
 | [AI agents](docs/agents.md) · [MCP tools](docs/mcp-tools.md) | MCP server, agent skill, `ask` |
 | [Look and motion](docs/look-and-motion.md) · [Colour](docs/colour.md) · [Sound](docs/sound.md) · [Clone](docs/clone.md) | What TripShots can do on screen and in the mix |
+| [Finish in Edits](docs/edits.md) | Hand a reel to Instagram's Edits app to finish and post |
 | [Commands](docs/cli.md) · [plan.json](docs/plan-format.md) · [Styles](docs/styles.md) · [Configuration](docs/configuration.md) | Reference |
 | [Privacy](docs/privacy.md) · [Architecture](docs/architecture.md) · [Troubleshooting](docs/troubleshooting.md) | |
 

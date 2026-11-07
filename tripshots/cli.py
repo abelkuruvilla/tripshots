@@ -270,6 +270,25 @@ def cmd_people(a):
     print(json.dumps(res, indent=2))
 
 
+def cmd_edits(a):
+    from . import edits
+    if a.action == "package":
+        if not a.target:
+            raise util.ReelError("usage: tripshots edits package <NAME.plan.json>")
+        res = edits.package(Path(a.target), Path(a.out) if a.out else None, clips=not a.no_clips, stage=a.stage,
+                            workers=a.workers)
+    elif a.action == "tools":
+        res = edits.tools(a.url, a.token)
+    elif a.action == "probe":
+        res = edits.probe(a.url, a.token)
+    else:
+        if not a.target:
+            raise util.ReelError("usage: tripshots edits push <NAME.edits>")
+        res = edits.push(Path(a.target), mode="picture" if a.picture else "clips", music=a.music,
+                         text_as=a.text_as, url=a.url, token=a.token)
+    print(json.dumps(res, indent=2))
+
+
 def cmd_ask(a):
     from .ask import ask
     print(json.dumps(ask(" ".join(a.request), a.backend, a.music, render=a.render, workers=a.workers,
@@ -551,6 +570,25 @@ def build_parser() -> argparse.ArgumentParser:
     pp.add_argument("action", choices=["list", "add", "discover", "name", "forget", "who"])
     pp.add_argument("args", nargs="*", help="add: <name> <photos...>; name: <cluster> <name>; discover/who: [folders]")
     pp.set_defaults(fn=cmd_people)
+
+    ed = sub.add_parser("edits", help="finish a reel in Instagram's Edits app (Mac): package / tools / probe / push")
+    ed.add_argument("action", choices=["package", "tools", "probe", "push"],
+                    help="package: picture + clips + text + audio for Edits; tools: list Edits' automation tools; "
+                         "probe: draft the tool mapping; push: build the timeline in Edits")
+    ed.add_argument("target", nargs="?", help="package: NAME.plan.json; push: the NAME.edits folder")
+    ed.add_argument("-o", "--out", help="package: folder to write (default NAME.edits next to the plan)")
+    ed.add_argument("--no-clips", action="store_true", help="package: only the full picture, not one clip per shot")
+    ed.add_argument("--stage", action=argparse.BooleanOptionalAction, default=None,
+                    help="package: also copy it where the sandboxed Edits app can open it (default: on a Mac with Edits)")
+    ed.add_argument("--picture", action="store_true", help="push: one video clip instead of one per shot")
+    ed.add_argument("--music", choices=["library", "file", "none"], default="library",
+                    help="push: leave the song to add from Edits' library (default), or add music.m4a")
+    ed.add_argument("--text-as", choices=["text", "image"], default="text",
+                    help="push: add titles as editable Edits text (default) or as TripShots' styled images")
+    ed.add_argument("--url", help=f"Edits automation server (default $TRIPSHOTS_EDITS_URL or http://127.0.0.1:19501/mcp)")
+    ed.add_argument("--token", help="its token (default $TRIPSHOTS_EDITS_TOKEN)")
+    ed.add_argument("-j", "--workers", type=int, default=2)
+    ed.set_defaults(fn=cmd_edits)
 
     ak = sub.add_parser("ask", help='plain language: tripshots ask "a reel about my days in Yellowstone"')
     ak.add_argument("request", nargs="+")

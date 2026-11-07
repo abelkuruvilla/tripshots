@@ -109,6 +109,8 @@ tripshots export reels/NAME.plan.json --otio     # just OpenTimelineIO (pip inst
 
 Import the EDL (Resolve: File → Import → Timeline) or the OTIO, point it at your footage folder, and the cuts, in-points and slow motion line up with the music track. Text, the grade, maps, split screens and the freeze are TripShots' own drawing: they come across as comments and markers, not rebuilt effects.
 
+To finish a reel in Instagram's Edits app instead (text, sound effects and the song stay editable there), see [Finish in Edits](edits.md).
+
 ## Action cams, drones and 360 cameras
 
 * **Insta360 / GoPro MAX:** raw `.insv` / `.insp` files and full equirectangular exports (2:1, 2880 px wide or more) are skipped with a note: reframe them first in Insta360 Studio (Auto Frame) or GoPro Player and drop the flat export in the folder.

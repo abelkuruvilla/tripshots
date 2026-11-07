@@ -209,6 +209,18 @@ class RunScreen(ModalScreen[dict | None]):
             box.mount(Button("Render this plan", id="r_render", variant="primary"))
         if r.get("video") or r.get("plan"):
             box.mount(Button("Show in Finder" if IS_MAC else "Open folder", id="r_reveal"))
+        if r.get("plan") and not r.get("variants"):
+            box.mount(Button("Send to Edits", id="r_edits"))
+        if r.get("package"):
+            box.mount(Button("Open the package", id="r_pkg", variant="success"))
+            from .edits import PROFILE
+            from .util import read_json
+            if (read_json(PROFILE) or {}).get("confirmed"):
+                box.mount(Button("Build it in Edits", id="r_push", variant="primary"))
+            else:
+                self.query_one("#run_log", RichLog).write(
+                    "\n[b]Next:[/b] in Edits, add picture.mp4 (or the clips), the texts, sound-effects.wav and the song "
+                    "(README.txt in the package lists the times). To have TripShots do it, see docs/edits.md.")
         if r.get("folder"):
             box.mount(Button(f"Open folder ({len(r.get('frames', []))} images)", id="r_folder", variant="success"))
             if r.get("skipped"):
@@ -274,6 +286,12 @@ class RunScreen(ModalScreen[dict | None]):
             open_path(r["folder"])
         elif bid == "r_render":
             self.dismiss({**r, "_render": True})
+        elif bid == "r_edits":
+            self.app.push_screen(RunScreen("Preparing it for Edits", ["edits", "package", r["plan"]]))
+        elif bid == "r_pkg":
+            open_path(r.get("staged") or r["package"])
+        elif bid == "r_push":
+            self.app.push_screen(RunScreen("Building the timeline in Edits", ["edits", "push", r["package"]]))
         elif bid == "r_compare":
             open_path(r["compare"])
         elif bid == "r_sheet":

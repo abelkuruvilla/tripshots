@@ -28,6 +28,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`trips`](#trips) | your footage grouped into trips (dates, places, counts) |
 | [`footage`](#footage) | show or set the folders `find` and agents search by default |
 | [`people`](#people) | recognise people in your footage (on this computer): add me / discover / name |
+| [`edits`](#edits) | finish a reel in Instagram's Edits app (Mac): package / tools / probe / push |
 | [`ask`](#ask) | plain language: tripshots ask "a reel about my days in Yellowstone" |
 | [`mcp`](#mcp) | run as an MCP server for AI agents (Claude Desktop/Code, OpenClaw, ...) |
 | [`doctor`](#doctor) | check dependencies |
@@ -510,6 +511,40 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+```
+
+## edits
+
+```text
+usage: tripshots edits [-h] [-o OUT] [--no-clips] [--stage | --no-stage] [--picture]
+                       [--music {library,file,none}] [--text-as {text,image}] [--url URL]
+                       [--token TOKEN] [-j WORKERS]
+                       {package,tools,probe,push} [target]
+
+positional arguments:
+  {package,tools,probe,push}
+                        package: picture + clips + text + audio for Edits; tools: list Edits'
+                        automation tools; probe: draft the tool mapping; push: build the timeline
+                        in Edits
+  target                package: NAME.plan.json; push: the NAME.edits folder
+
+options:
+  -h, --help            show this help message and exit
+  -o, --out OUT         package: folder to write (default NAME.edits next to the plan)
+  --no-clips            package: only the full picture, not one clip per shot
+  --stage, --no-stage   package: also copy it where the sandboxed Edits app can open it (default:
+                        on a Mac with Edits)
+  --picture             push: one video clip instead of one per shot
+  --music {library,file,none}
+                        push: leave the song to add from Edits' library (default), or add
+                        music.m4a
+  --text-as {text,image}
+                        push: add titles as editable Edits text (default) or as TripShots' styled
+                        images
+  --url URL             Edits automation server (default $TRIPSHOTS_EDITS_URL or
+                        http://127.0.0.1:19501/mcp)
+  --token TOKEN         its token (default $TRIPSHOTS_EDITS_TOKEN)
+  -j, --workers WORKERS
 ```
 
 ## ask

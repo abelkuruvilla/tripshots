@@ -1,0 +1,32 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you ran, what you expected, what you got.
+    validations: {required: true}
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and log
+      description: The command and its output (run with `-v` for more). Remove personal paths and names.
+      render: text
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`tripshots doctor` output"
+      render: text
+    validations: {required: true}
+  - type: input
+    id: os
+    attributes:
+      label: OS and Python version
+      placeholder: macOS 15.1 (Apple Silicon), Python 3.12
+  - type: textarea
+    id: media
+    attributes:
+      label: Footage
+      description: Camera / phone, file types, resolution and frame rate if it matters. Please don't attach private footage.

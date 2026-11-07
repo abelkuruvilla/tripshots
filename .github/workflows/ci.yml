@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: install
+        run: pip install -e ".[dev,export]"
+      - name: quick tests
+        run: pytest -q -m "not slow"
+      - name: end-to-end reel
+        run: pytest -q -m slow
+      - name: generated docs are up to date
+        if: matrix.python == '3.13'  # argparse help text differs between Python versions
+        run: python tools/gen_docs.py --check

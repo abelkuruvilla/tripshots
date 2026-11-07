@@ -61,3 +61,39 @@ def test_scoring_stops_after_an_auth_error(monkeypatch, tmp_path):
     with pytest.raises(ai.AIAuthError):
         ai.score_shots(shots, ai.ClaudeCLI(), tmp_path, workers=1)
     assert len(calls) == 1  # 3 sheets, no retries: one call only
+
+
+class _B(ai.Backend):
+    def __init__(self, name, fail=False):
+        self.name, self.fail, self.calls = name, fail, 0
+
+    def ask(self, prompt, images=None, max_tokens=4000):
+        self.calls += 1
+        if self.fail:
+            raise ai.AIAuthError(f"{self.name} refused")
+        return f"{self.name} says hi"
+
+
+def test_chain_moves_on_when_one_refuses():
+    a, b = _B("claude-cli", fail=True), _B("minimax")
+    c = ai.Chain([a, b])
+    assert c.ask("x") == "minimax says hi" and c.name == "minimax"
+    assert c.ask("y") == "minimax says hi" and a.calls == 1   # the refusing one isn't asked again
+    with pytest.raises(ai.AIAuthError):
+        ai.Chain([_B("a", True), _B("b", True)]).ask("z")
+
+
+def test_auto_skips_a_logged_out_claude_for_minimax(monkeypatch):
+    monkeypatch.setattr(ai, "which", lambda name: "/usr/bin/claude")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("MINIMAX_API_KEY", "k")
+    monkeypatch.setattr(ai.ClaudeCLI, "login_status", staticmethod(lambda: {"loggedIn": False}))
+    b = ai.get_backend("auto")
+    assert b.name == "minimax" and b.model == "MiniMax-M3"
+    monkeypatch.setattr(ai.ClaudeCLI, "login_status", staticmethod(lambda: {"loggedIn": True}))
+    b = ai.get_backend("auto")
+    assert isinstance(b, ai.Chain) and [x.name for x in b.backends] == ["claude-cli", "minimax"]
+    with pytest.raises(ai.AIAuthError):  # asked for Claude Code by name: no silent switch
+        monkeypatch.setattr(ai.ClaudeCLI, "login_status", staticmethod(lambda: {"loggedIn": False}))
+        ai.get_backend("claude-cli")

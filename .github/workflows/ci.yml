@@ -20,7 +20,7 @@ jobs:
       - name: ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: install
-        run: pip install -e ".[dev,export]"
+        run: pip install -e ".[dev,export,watch]"
       - name: quick tests
         run: pytest -q -m "not slow"
       - name: end-to-end reel

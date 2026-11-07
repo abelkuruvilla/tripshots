@@ -15,6 +15,7 @@ sound effects, the route-map runtime, HEIC support, the encoder, footage folders
 | `place search failed` / no location titles | No network, or OpenStreetMap is unreachable. Use `--location "Place, Region"`; `find` still matches folder names |
 | `find --place` finds nothing | Be specific ("Yellowstone National Park"); check `notes` for what it resolved to; many cameras record no GPS (try `--text`) |
 | `find --people me` finds too little | Add 3–5 more varied photos of yourself; small or turned-away faces aren't recognised |
+| `watch failed … models/gemini-flash-latest is not found` | Fixed in newer TripShots: it asks Google which models your key can use, switches to an available Flash model on a "not found", and stops Gemini for the run (falling back to local analysis) when none works. To pick one yourself: `TRIPSHOTS_GEMINI_MODEL=gemini-2.5-flash` |
 | Face models won't download | Put `face_detection_yunet_2023mar.onnx` and `face_recognition_sface_2021dec.onnx` from OpenCV's model zoo in `~/.tripshots/models/` |
 | Route map: "runtime not installed" | `./install.sh --maps` or `tripshots maps --setup` (needs Node.js 22+) |
 | Sounds are "synthesized stand-ins" | `tripshots sounds --fetch` once (needs network), or add your own to `~/.tripshots/sfx/library/<role>/` |

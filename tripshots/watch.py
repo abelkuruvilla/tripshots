@@ -184,13 +184,79 @@ def make_proxy(src: str, dst: Path, height: int = 480) -> Path:
     return dst
 
 
+class GeminiUnavailable(RuntimeError):
+    """No Gemini model can be used (key refused, models not available): stop watching for this run."""
+
+
+def _gone(e: Exception) -> bool:
+    """Model not found / not supported for this method / not available to this key."""
+    code = getattr(e, "code", None)
+    msg = str(e).lower()
+    return code == 404 or "not_found" in msg or "is not found" in msg or "not supported for generatecontent" in msg
+
+
+def _refused(e: Exception) -> bool:
+    code = getattr(e, "code", None)
+    msg = str(e).lower()
+    return code in (401, 403) or "api key not valid" in msg or "permission_denied" in msg
+
+
+def _flash_rank(name: str) -> tuple:
+    """Prefer plain Flash models, newest version first ("gemini-2.5-flash" over "gemini-2.0-flash")."""
+    n = name.split("/")[-1]
+    m = re.search(r"gemini-(\d+(?:\.\d+)?)", n)
+    ver = float(m.group(1)) if m else 0.0
+    plain = not any(x in n for x in ("lite", "image", "tts", "live", "audio", "exp", "thinking", "embedding"))
+    return (plain, "preview" not in n, ver)
+
+
 class Gemini:
     def __init__(self, model: str = DEFAULT_MODEL, fallback: str | None = FALLBACK_MODEL):
         from google import genai
-        self.client = genai.Client(api_key=api_key())
-        self.model, self.fallback = model, (fallback if fallback != model else None)
+        from google.genai import types
+        # v1beta has the "-latest" aliases and JSON-schema output; newer SDKs may default to v1
+        self.client = genai.Client(api_key=api_key(), http_options=types.HttpOptions(api_version="v1beta"))
+        self.models = self._resolve([m for m in dict.fromkeys([model, fallback]) if m])
         self._busy_until = 0.0
         self._lock = threading.Lock()
+
+    def _available(self) -> list[str] | None:
+        try:
+            names = []
+            for m in self.client.models.list():
+                acts = getattr(m, "supported_actions", None) or getattr(m, "supported_generation_methods", None) or []
+                if not acts or "generateContent" in acts:
+                    names.append(str(m.name).split("/")[-1])
+            return names
+        except Exception as e:
+            if _refused(e):
+                raise GeminiUnavailable(f"the Gemini key was refused ({str(e)[:100]})")
+            return None  # can't list: just try the configured ones
+
+    def _resolve(self, wanted: list[str]) -> list[str]:
+        have = self._available()
+        if have is None:
+            return wanted
+        ok = [m for m in wanted if m in have]
+        if not ok:
+            flash = sorted((n for n in have if "flash" in n), key=_flash_rank, reverse=True)
+            if not flash:
+                raise GeminiUnavailable(f"none of {', '.join(wanted)} (nor any Flash model) is available to this key")
+            ok = [flash[0]]
+            log(f"watch: {', '.join(wanted)} not available to this key; using {flash[0]} "
+                "(set TRIPSHOTS_GEMINI_MODEL to choose)")
+        elif ok != wanted:
+            log(f"watch: {', '.join(m for m in wanted if m not in ok)} not available; using {ok[0]}")
+        return ok
+
+    def _drop(self, model: str, why: str) -> None:
+        with self._lock:
+            if model in self.models:
+                self.models.remove(model)
+                log(f"watch: {model} can't be used ({why[:90]})" +
+                    (f"; switching to {self.models[0]}" if self.models else ""))
+        if not self.models:
+            raise GeminiUnavailable(f"no Gemini model works for this key ({why[:120]})")
 
     def _active(self, f, timeout=600):
         end = time.time() + timeout
@@ -205,26 +271,45 @@ class Gemini:
 
     def watch(self, proxy: Path, duration: float) -> tuple[dict, str]:
         from google.genai import types
-        up = self._active(self.client.files.upload(file=str(proxy)))
+        if not self.models:
+            raise GeminiUnavailable("no Gemini model works for this key")
+        try:
+            up = self._active(self.client.files.upload(file=str(proxy)))
+        except Exception as e:
+            if _refused(e):
+                raise GeminiUnavailable(f"the Gemini key was refused ({str(e)[:100]})")
+            raise
         try:
             cfg = types.GenerateContentConfig(response_mime_type="application/json", response_json_schema=SCHEMA)
             last = None
-            for attempt in range(3):
-                use_fb = self.fallback and time.time() < self._busy_until
-                model = self.fallback if use_fb else self.model
+            attempt = 0
+            while attempt < 3:
+                models = list(self.models)
+                if not models:
+                    raise GeminiUnavailable("no Gemini model works for this key")
+                busy = len(models) > 1 and time.time() < self._busy_until
+                model = models[1] if busy else models[0]
                 try:
                     r = self.client.models.generate_content(model=model, contents=[up, PROMPT.format(duration=duration)],
                                                             config=cfg)
                     from .ai import extract_json
                     return extract_json(r.text or ""), model
-                except Exception as e:  # rate limits, overload, bad JSON
+                except GeminiUnavailable:
+                    raise
+                except Exception as e:  # rate limits, overload, bad JSON, missing model
                     last = e
-                    if getattr(e, "code", None) == 503 and self.fallback and not use_fb:
+                    if _refused(e):
+                        raise GeminiUnavailable(f"the Gemini key was refused ({str(e)[:100]})")
+                    if _gone(e):
+                        self._drop(model, str(e))  # raises when none are left
+                        continue  # straight to the next model, no wait, no attempt used
+                    attempt += 1
+                    if getattr(e, "code", None) == 503 and len(models) > 1 and not busy:
                         with self._lock:
-                            self._busy_until = time.time() + 300  # overloaded: use the older Flash for a while
+                            self._busy_until = time.time() + 300  # overloaded: use the next model for a while
                         continue
                     time.sleep(min(60, 5 * 2 ** attempt))
-            raise RuntimeError(f"Gemini failed: {last}")
+            raise RuntimeError(f"Gemini failed: {str(last)[:200]}")
         finally:
             try:
                 self.client.files.delete(name=up.name)  # nothing stays uploaded
@@ -256,10 +341,20 @@ def watch_media(media: list[dict], work: Path, workers: int = 4, model: str | No
     if not ok:
         log(f"watch: Gemini off ({why}); using local motion analysis only")
         return out
-    g = Gemini(model or DEFAULT_MODEL)
-    log(f"watch: Gemini watches {len(todo)} new clip(s) as 480p proxies ({len(out)} cached)")
+    try:
+        g = Gemini(model or DEFAULT_MODEL)
+    except GeminiUnavailable as e:
+        log(f"watch: Gemini off ({e}); using local motion analysis only")
+        return out
+    except Exception as e:
+        log(f"watch: Gemini off ({str(e)[:150]}); using local motion analysis only")
+        return out
+    log(f"watch: Gemini ({g.models[0]}) watches {len(todo)} new clip(s) as 480p proxies ({len(out)} cached)")
+    stop = threading.Event()
 
     def one(m):
+        if stop.is_set():
+            return m["sig"], None
         try:
             proxy = make_proxy(m["path"], work / "proxies" / f"{m['sig']}.mp4")
             raw, used = g.watch(proxy, float(m.get("duration") or 0))
@@ -268,15 +363,22 @@ def watch_media(media: list[dict], work: Path, workers: int = 4, model: str | No
             write_json(_cache(m["sig"]), res)
             proxy.unlink(missing_ok=True)
             return m["sig"], res
-        except Exception as e:
-            log(f"  watch failed for {m['name']}: {e}")
+        except GeminiUnavailable as e:
+            if not stop.is_set():
+                stop.set()
+                log(f"watch: stopping Gemini for this run: {e}. The clips are analysed locally instead")
             return m["sig"], None
+        except Exception as e:
+            log(f"  watch failed for {m['name']}: {str(e)[:200]}")
+            return m["sig"], None
+    done = 0
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for n, (sig, res) in enumerate(ex.map(one, todo), 1):
             if res:
                 out[sig] = res
-            if n % 5 == 0 or n == len(todo):
-                log(f"  watched {n}/{len(todo)}")
+                done += 1
+            if not stop.is_set() and (n % 5 == 0 or n == len(todo)):
+                log(f"  watched {n}/{len(todo)} ({done} ok)")
     return out
 
 

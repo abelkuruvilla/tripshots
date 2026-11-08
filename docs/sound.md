@@ -5,11 +5,11 @@
 **Use the sound from any reel.** Pass a reel link instead of a file:
 
 ```bash
-tripshots make ~/Trips/Banff -m "https://www.instagram.com/reel/XXXX/" --cookies-from-browser chrome
-tripshots music "https://www.instagram.com/reel/XXXX/" --cookies-from-browser chrome   # just download + show BPM
+tripshots make ~/Trips/Banff -m "https://www.instagram.com/reel/XXXX/" --cookies-from-browser auto
+tripshots music "https://www.instagram.com/reel/XXXX/" --cookies-from-browser auto   # just download + show BPM
 ```
 
-It downloads the reel's soundtrack with [yt-dlp](https://github.com/yt-dlp/yt-dlp) and cuts your footage to it from 0:00, the same place Instagram starts that sound. It also writes an upload copy without the music: `NAME.nomusic.mp4` (it keeps the sound effects), or `NAME.noaudio.mp4` when sound design is off. For a local music file, add `--upload-copy` to get one. Upload that copy, tap the sound name on the original reel → *Use audio* (or search it in the audio picker), and the cuts land on the beat. Your post then uses Instagram's licensed copy of the track rather than a re-upload. Most reels need you logged in, so pass the browser you use for Instagram with `--cookies-from-browser chrome|safari|firefox`. To make that the default, set `TRIPSHOTS_COOKIES_BROWSER=chrome` in `~/.tripshots/.env`. Downloads are cached in `~/.tripshots/music/`.
+It downloads the reel's soundtrack with [yt-dlp](https://github.com/yt-dlp/yt-dlp) and cuts your footage to it from 0:00, the same place Instagram starts that sound. It also writes an upload copy without the music: `NAME.nomusic.mp4` (it keeps the sound effects), or `NAME.noaudio.mp4` when sound design is off. For a local music file, add `--upload-copy` to get one. Upload that copy, tap the sound name on the original reel → *Use audio* (or search it in the audio picker), and the cuts land on the beat. Your post then uses Instagram's licensed copy of the track rather than a re-upload. Most reels need you logged in, so pass the browser you use for Instagram with `--cookies-from-browser auto|safari|firefox`. To make that the default, set `TRIPSHOTS_COOKIES_BROWSER=chrome` in `~/.tripshots/.env`. Downloads are cached in `~/.tripshots/music/`.
 
 
 * Cuts follow the actual beats of the track (librosa beat tracking, refined to about 5 ms). TripShots picks the most energetic window of the song so the hook lands at once.

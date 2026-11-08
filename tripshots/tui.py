@@ -41,7 +41,7 @@ def look_names() -> list[str]:
         return list(list_looks())
     except Exception:
         return []
-BROWSERS = ["chrome", "safari", "firefox", "brave", "edge", "arc"]
+BROWSERS = ["auto", "chrome", "safari", "brave", "arc", "firefox", "edge", "vivaldi", "opera"]
 AUDIO_EXT = (".mp3", ".m4a", ".wav", ".aac", ".flac", ".ogg", ".mp4", ".mov")
 
 
@@ -1578,8 +1578,10 @@ class SettingsTab(VerticalScroll):
         yield Static("[b]Instagram login[/b]  [dim]browser you're logged in with, for reel links[/dim]",
                      classes="section")
         cb = env.get("TRIPSHOTS_COOKIES_BROWSER", "")
-        yield Select([("None", "")] + [(b, b) for b in BROWSERS], value=cb if cb in BROWSERS else "",
-                     id="se_cookies", allow_blank=False)
+        yield Select([("None", "")] + [("auto (the first one logged in)" if b == "auto" else b, b) for b in BROWSERS],
+                     value=cb if cb in BROWSERS else "", id="se_cookies", allow_blank=False)
+        yield Input(env.get("TRIPSHOTS_COOKIES_FILE", ""), placeholder="or a cookies.txt file (used instead)",
+                    id="se_cookies_file")
         yield Static("[b]Video encoder[/b]  [dim]auto uses your Mac's (or GPU's) hardware encoder when it works: "
                      "several times faster encoding, slightly bigger files[/dim]", classes="section")
         enc = env.get("TRIPSHOTS_ENCODER", "") or "auto"
@@ -1592,6 +1594,7 @@ class SettingsTab(VerticalScroll):
         with Horizontal(classes="actions"):
             yield Button("Save", id="se_save", variant="primary")
             yield Button("Check setup", id="se_doctor")
+            yield Button("Check Instagram login", id="se_cookies_check")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "se_save":
@@ -1605,6 +1608,7 @@ class SettingsTab(VerticalScroll):
                 "ANTHROPIC_API_KEY": q("se_anthropic").value.strip(),
                 "GEMINI_API_KEY": q("se_gemini").value.strip(),
                 "TRIPSHOTS_COOKIES_BROWSER": blank(q("se_cookies").value) or "",
+                "TRIPSHOTS_COOKIES_FILE": q("se_cookies_file").value.strip(),
                 "TRIPSHOTS_ENCODER": "" if q("se_encoder").value == "auto" else q("se_encoder").value,
             })
             self.app.state["out_dir"] = q("se_out").value.strip() or str(DEFAULT_OUT)
@@ -1612,6 +1616,9 @@ class SettingsTab(VerticalScroll):
             self.notify("Settings saved")
         elif event.button.id == "se_doctor":
             self.app.push_screen(RunScreen("Checking your setup", ["doctor"]))
+        elif event.button.id == "se_cookies_check":
+            b = blank(self.query_one("#se_cookies").value) or "auto"
+            self.app.push_screen(RunScreen("Checking your Instagram login", ["cookies", "--login", b]))
 
 
 # -------------------------------------------------------------------- app

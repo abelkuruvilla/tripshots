@@ -11,7 +11,9 @@ sound effects, the route-map runtime, HEIC support, the encoder, footage folders
 | HEIC photos skipped | `pip install pillow-heif` (macOS can also convert with `sips`) |
 | "only N usable shots" | Thin or rejected footage: add footage, `--allow-similar`, `--min-score 4`, or a shorter `-d` |
 | The AI rejected every shot | It uses the best of them anyway and says so; check the storyboard |
-| Reel links fail to download | Instagram needs your login: `--cookies-from-browser chrome` (or `TRIPSHOTS_COOKIES_BROWSER`); update yt-dlp (re-run `./install.sh`) |
+| Reel links fail to download | Instagram needs your login. `--cookies-from-browser auto` (or Settings → Instagram login → auto) uses the first browser that's logged in to instagram.com. `tripshots cookies --login` shows, per browser, whether it can be used and why not. Update yt-dlp too (re-run `./install.sh`) |
+| `could not find brave cookies database` / `isn't logged in to Instagram` | A reel can play in a browser without a login, but downloading needs one: log in at instagram.com in that browser. If the browser has no cookie store at the path shown, it may be a Beta/Nightly build or a different profile (`brave:Profile 1`) |
+| Safari: `macOS doesn't let … read Safari's cookies` | System Settings → Privacy & Security → Full Disk Access → turn on your terminal app (Terminal, iTerm, …), then quit and reopen it. Chrome, Brave, Arc and Edge don't need this, but macOS asks once for the Keychain key ("… Safe Storage"): choose Always Allow |
 | `place search failed` / no location titles | No network, or OpenStreetMap is unreachable. Use `--location "Place, Region"`; `find` still matches folder names |
 | `find --place` finds nothing | Be specific ("Yellowstone National Park"); check `notes` for what it resolved to; many cameras record no GPS (try `--text`) |
 | `find --people me` finds too little | Add 3–5 more varied photos of yourself; small or turned-away faces aren't recognised |

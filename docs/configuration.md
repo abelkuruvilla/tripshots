@@ -23,7 +23,7 @@ Settings tab writes it too). A `.env` in the current folder is read first. Real 
 | `TRIPSHOTS_OUT` | `./reels` (the app and the MCP server: `~/Movies/Reels` on macOS, `~/reels` elsewhere) | Where new reels are written when no `-o` is given |
 | `TRIPSHOTS_ENCODER` | `auto` | `auto`, `hardware`, `software`, `videotoolbox`, `nvenc`, `qsv` |
 | `TRIPSHOTS_HWACCEL` | `1` | `0` turns off hardware *decoding* on Macs |
-| `TRIPSHOTS_COOKIES_BROWSER`, `TRIPSHOTS_COOKIES_FILE` | | Browser (or cookies.txt) for Instagram downloads |
+| `TRIPSHOTS_COOKIES_BROWSER`, `TRIPSHOTS_COOKIES_FILE` | | Browser for Instagram downloads (`auto`, `chrome`, `safari`, `brave`, `arc`, `firefox`, `edge`, `vivaldi`, `opera`; `chrome:Profile 1`), or a cookies.txt. Only the instagram.com cookies are passed to yt-dlp, in a private temporary file |
 | `TRIPSHOTS_EDITS_URL` | `http://127.0.0.1:19501/mcp` | Edits' automation server ([Finish in Edits](edits.md)) |
 | `TRIPSHOTS_EDITS_TOKEN` | | Its token, from Edits' Automation settings |
 | `TRIPSHOTS_EDITS_STAGE` | Edits' sandbox folder | Where packages are copied so Edits can open them |

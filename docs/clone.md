@@ -3,7 +3,7 @@
 `learn` copies a reel's general style. `clone` copies **one specific reel**: its exact cuts, pacing, sound, colour and on-screen text, filled with your own footage.
 
 ```bash
-tripshots clone https://www.instagram.com/reel/XXXX/ ~/Trips/Iceland --cookies-from-browser chrome
+tripshots clone https://www.instagram.com/reel/XXXX/ ~/Trips/Iceland --cookies-from-browser auto
 tripshots clone https://www.instagram.com/reel/XXXX/ ~/Trips/Iceland --variants 3 --dry-run   # check first
 ```
 

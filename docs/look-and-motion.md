@@ -97,7 +97,8 @@ The storyboard shows each shot's speed or ramp; a whoosh lands where a ramp slam
 ## Framing the subject
 
 * When the AI judges a shot, it also returns a **subject box** (the peak, waterfall, person, car…). Shots judged before this feature fall back to on-device saliency detection. Run `--rescore` once to get AI boxes for them.
-* **Landscape to 9:16:** if the subject fits in the vertical window, the crop centres on it. If it's wider (a mountain range, a skyline), the shot pans across it edge to edge. If it's far too wide, the whole frame is shown over a blurred copy.
+* **Landscape to 9:16:** the crop holds on to the shot's focus: the person when there is one, else the most important subject that fits the vertical window (the AI lists subjects by importance). Only a wide view with no single focus pans, and slowly: at most about 6 % of the picture's width per second, around its middle, so it reads as a camera move rather than a slide. If it's far too wide, the whole frame is shown over a blurred copy.
+* **Photos** push in on their focus; sideways drifts stay small and pass through it. The hook, the payoff and the ending always push in. Only true panoramas (wider than 2.2:1) with no single subject travel across.
 * **Moving subjects** (a car, a boat, someone walking) on a steady camera are tracked, and the crop follows them smoothly.
 * **Photos:** the Ken Burns zoom pushes toward the subject and is capped so the subject never gets cropped out.
 

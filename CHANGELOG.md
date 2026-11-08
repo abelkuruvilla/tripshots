@@ -22,6 +22,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 - Clone shots move like the reference shots (Ken Burns direction and push in or out, pan direction), calm slots use real slow motion from 50 fps+ clips, and a black shot at the end of a reference becomes a fade to black instead of a 7-frame photo.
 
 ### Fixed
+- Wide photos and clips slid sideways edge to edge in about a second and a half, so the person or the main subject drifted out of frame. Crops now hold the shot's focus (the person, else the most important subject that fits), pans and drifts are capped at about 6 % of the width per second around the subject, wide photos push in instead of sliding (only panoramas with no single subject travel), and the hook, payoff and ending always push in.
 - The camera shake on drops hit every cut that landed on a drop, even in calm, cinematic reels and clones, where it looked like a glitch. It's now a deliberate choice per shot (`shake: true` in the plan): only on drops in intense sections of energetic reels, never on slow motion or under a freeze-frame, and a clone shakes only where the reference itself does (measured from the reference).
 - The crop on moving-camera shots (drones, handheld) drifted toward whatever was bright and lost the subject; it now follows the subject the AI framed by matching it frame to frame. Shots with a person no longer pan across a wide view that starts or ends without them.
 

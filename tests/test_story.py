@@ -160,3 +160,24 @@ def test_transitions_are_restrained():
     assert 4 in kept                                   # into the payoff
     assert 0 not in kept and 1 not in kept             # no effect on the hook, no glitch in a medium section
     assert len(kept) <= 3
+
+
+def test_pans_are_slow_and_keep_the_subject():
+    import re
+    from tripshots.render import _video_layout
+    e = {"src_w": 3840, "src_h": 2160, "layout": "pan", "pan_from": 0.05, "pan_to": 0.95}
+    f = _video_layout(e, 1.6)[1]
+    x0, dx = map(float, re.search(r"x='([\d.]+)\+\(([-\d.]+)\)", f).groups())
+    sw = 3840 * 1920 / 2160
+    assert abs(dx) <= 0.06 * sw * 1.6 + 1                   # about 10 % of the width in 1.6 s, not edge to edge
+
+
+def test_photo_with_a_person_pushes_in_on_them():
+    from tripshots.config import load_style
+    from tripshots.planner import _shot_fields
+    shot = {"id": "P1", "kind": "photo", "src": "/x.jpg", "still": "/x.jpg", "w": 4384, "h": 2920,
+            "ai": {"subject_box": [0.2, 0.17, 0.6, 1.0],
+                   "subjects": [{"label": "man in yellow jacket", "box": [0.48, 0.3, 0.58, 1.0]},
+                                {"label": "half dome", "box": [0.2, 0.17, 0.6, 0.7]}]}}
+    e, _ = _shot_fields(shot, 1.6, "calm", load_style("beat-montage"), 0)
+    assert e["focus"] and abs(e["subject_x"] - 0.53) < 1e-6

@@ -14,7 +14,7 @@ from .config import OUT_FPS, OUT_H, OUT_W
 from .fx import color_chain, hdr_chain, seg_color
 from .util import ReelError, ffmpeg_base, hwaccel_args, log, short_hash
 
-RENDER_VERSION = "r5"  # bump when shot rendering changes so cached shots are rebuilt
+RENDER_VERSION = "r6"  # bump when shot rendering changes so cached shots are rebuilt
 
 # intermediates: near-lossless and quick; the final pass does the real compression
 def _enc() -> list[str]:
@@ -43,6 +43,10 @@ def _video_layout(e: dict, length: float, size: tuple[int, int] = (OUT_W, OUT_H)
         # (or the reverse, to match the camera's own movement when it pans right-to-left)
         a = float(e.get("pan_from", 0.15)) * sw - OW / 2
         b = float(e.get("pan_to", 0.85)) * sw - OW / 2
+        from .framing import PAN_SPEED
+        half = min(abs(b - a) / 2, PAN_SPEED * sw * length / 2)  # slow and deliberate, around the middle
+        mid = (a + b) / 2
+        a, b = mid - half, mid + half
         if e.get("pan_reverse"):
             a, b = b, a
         x0, x1 = max(0.0, min(excess, a)), max(0.0, min(excess, b))
@@ -128,8 +132,10 @@ def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path
     cx_sub = max(cw / 2, min(W - cw / 2, sx * W))
     cy_sub = sy * H
     mode = e.get("kb", "in")
-    if excess > W * 0.15 and mode in ("in", "out", "in_rot", "up", "down"):
-        mode = "left" if sx > 0.5 else "right"  # wide photo: pan across it instead
+    if W / H > 2.2 and not e.get("focus") and mode in ("in", "out", "in_rot", "up", "down"):
+        mode = "left" if sx > 0.5 else "right"  # a panorama with no one subject: travel across it instead
+    from .framing import PAN_SPEED
+    max_travel = PAN_SPEED * W * length
     if sb:  # never zoom so far that the subject is cut off
         bw_px = max(1.0, (sb["x1"] - sb["x0"]) * W * 1.12)
         bh_px = max(1.0, (sb["y1"] - sb["y0"]) * H * 1.12)
@@ -159,10 +165,14 @@ def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path
         else:
             z = 1.04 + 0.03 * p
             win = cw / z
-            if sb and (sb["x1"] - sb["x0"]) * W > win:  # travel across the subject edge to edge
-                a_c, b_c = sb["x0"] * W + win / 2, sb["x1"] * W - win / 2
-            else:  # subject fits: drift past it, passing through its centre mid-shot
-                a_c, b_c = cx_sub - 0.18 * win, cx_sub + 0.18 * win
+            if sb and (sb["x1"] - sb["x0"]) * W > win and not e.get("focus"):
+                # a wide subject: travel along it, slowly, around its middle
+                half = min(((sb["x1"] - sb["x0"]) * W - win) / 2, max_travel / 2)
+                mid = (sb["x0"] + sb["x1"]) / 2 * W
+                a_c, b_c = mid - half, mid + half
+            else:  # subject fits: drift gently past it, passing through its centre mid-shot
+                half = min(0.12 * win, max_travel / 2)
+                a_c, b_c = cx_sub - half, cx_sub + half
             if mode == "left":
                 a_c, b_c = b_c, a_c
             cx = a_c + (b_c - a_c) * p

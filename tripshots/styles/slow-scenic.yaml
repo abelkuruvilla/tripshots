@@ -30,3 +30,4 @@ motion:
   shake_on_drop: false
   video_push: 0.04
 sound: {sfx: "on", ambience: "on", level_db: -4}
+speed: {ramps: [bullet], fast: 0.0, drop: off, smooth: flow}

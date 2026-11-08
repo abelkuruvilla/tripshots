@@ -111,8 +111,27 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         style.setdefault("panels", {})["use"] = {"lots": 0.9, "some": 0.4, "off": 0.0}[ex["split"]]
         if ex["split"] != "off":
             style["panels"]["max"] = max(int(style["panels"].get("max", 2)), 3 if ex["split"] == "lots" else 1)
+    sp = style.setdefault("speed", {})
     if ex.get("ramps"):
-        style.setdefault("velocity", {})["use"] = 0.35 if ex["ramps"] == "on" else 0.0
+        r = str(ex["ramps"]).strip().lower()
+        vel = style.setdefault("velocity", {})
+        if r == "off":
+            vel["use"] = 0.0
+        else:
+            if r != "on":
+                from .retime import KINDS
+                kinds = [k.strip() for k in r.split(",") if k.strip()]
+                bad = [k for k in kinds if k not in KINDS]
+                if bad:
+                    raise ReelError(f"unknown speed ramp {', '.join(bad)}: use on, off or {', '.join(KINDS)}")
+                sp["ramps"] = kinds
+            vel["use"] = max(0.35, float(vel.get("use", 0) or 0))
+    if ex.get("speed_up"):
+        sp["fast"] = max(0.3, float(sp.get("fast", 0) or 0)) if ex["speed_up"] == "on" else 0.0
+    if ex.get("drop_speed"):
+        sp["drop"] = ex["drop_speed"]
+    if ex.get("smooth"):
+        sp["smooth"] = ex["smooth"]
     if ex.get("labels"):
         style["text"].setdefault("labels", {})["mode"] = ex["labels"]
     if ex.get("variant"):

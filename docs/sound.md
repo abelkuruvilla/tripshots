@@ -25,7 +25,7 @@ Every reel gets a sound layer under the music, placed on the exact frames of the
 
 | on screen | sound | lands |
 |---|---|---|
-| whip / zoom / spin transition, speed ramp | a whoosh | its loudest moment on the cut (the motion's peak) |
+| whip / zoom / spin transition, speed ramp | a whoosh | its loudest moment on the cut (the motion's peak), or where the ramp slams into slow motion; a `rush` ramp's on the cut it speeds into |
 | the freeze-frame on the drop | a riser, then one impact | the riser ends 120 ms before the hit; the hit on the frame |
 | flash cut / glitch cut / colour split | camera shutter / short glitch | on the cut |
 | hook words popping in on the beat | soft pops, climbing in pitch | each word's first frame |

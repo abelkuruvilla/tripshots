@@ -9,11 +9,12 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from . import retime
 from .config import OUT_FPS, OUT_H, OUT_W
 from .fx import color_chain, hdr_chain, seg_color
 from .util import ReelError, ffmpeg_base, hwaccel_args, log, short_hash
 
-RENDER_VERSION = "r3"  # bump when shot rendering changes so cached shots are rebuilt
+RENDER_VERSION = "r4"  # bump when shot rendering changes so cached shots are rebuilt
 
 # intermediates: near-lossless and quick; the final pass does the real compression
 def _enc() -> list[str]:
@@ -60,7 +61,9 @@ def _video_layout(e: dict, length: float, size: tuple[int, int] = (OUT_W, OUT_H)
 
 
 def render_video_seg(e: dict, length: float, color: dict, out: Path,
-                     size: tuple[int, int] = (OUT_W, OUT_H)) -> None:
+                     size: tuple[int, int] = (OUT_W, OUT_H), rate: float = OUT_FPS) -> None:
+    """One video shot at its (constant) speed. Speed-ups average the frames they skip (motion blur);
+    `rate` other than 30 renders at that frame rate (the retimer's real-time pass)."""
     speed = float(e.get("speed", 1.0))
     src_need = length * speed + 0.5
     if e.get("track") and e.get("layout") == "crop":
@@ -74,15 +77,22 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
     pre += hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")})
     if abs(speed - 1.0) > 1e-3:
         pre.append(f"setpts=PTS/{speed:.4f}")
-    vf = ",".join(pre + [f"fps={OUT_FPS}"] + _video_layout(e, length, size) + color_chain(seg_color(color, e))
+    blur = int(round(float(e.get("fps") or 30) * speed / rate * 0.7)) if speed >= 1.3 else 0
+    if blur >= 2:  # fast: blend the frames in between, like a slow shutter, then keep 30 a second
+        mid = _video_layout(e, length, size) + [f"tmix=frames={min(blur, 8)}", f"fps={rate}"]
+    else:
+        mid = [f"fps={rate}"] + _video_layout(e, length, size)
+    vf = ",".join(pre + mid + color_chain(seg_color(color, e))
                   + ["tpad=stop_mode=clone:stop_duration=3", "setsar=1", "format=yuv420p"])
     base = ffmpeg_base()
+    nf = max(1, int(round(length * rate)))
+    enc = _enc() if rate == OUT_FPS else _enc()[:-2] + ["-r", f"{rate:g}"]
     cmd = base + hwaccel_args() + ["-ss", f"{e['in']:.3f}", "-t", f"{src_need:.3f}", "-i", e["src"],
-                                   "-an", "-filter_complex", vf, "-frames:v", str(_frames(length))] + _enc() + [str(out)]
+                                   "-an", "-filter_complex", vf, "-frames:v", str(nf)] + enc + [str(out)]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0 and hwaccel_args():
         proc = subprocess.run(base + ["-ss", f"{e['in']:.3f}", "-t", f"{src_need:.3f}", "-i", e["src"], "-an",
-                                      "-filter_complex", vf, "-frames:v", str(_frames(length))] + _enc() + [str(out)],
+                                      "-filter_complex", vf, "-frames:v", str(nf)] + enc + [str(out)],
                               capture_output=True, text=True)
     if proc.returncode != 0:
         raise ReelError(f"segment render failed for {Path(e['src']).name}: {proc.stderr[-600:]}")
@@ -243,30 +253,20 @@ def render_popout_seg(e: dict, length: float, color: dict, out: Path) -> bool:
     return True
 
 
-def velocity_profile(u: float) -> float:
-    """Speed multiplier over a shot (u 0..1): rush in, slam into slow motion on the hit, ease out."""
-    def ease(a, b, q):
-        q = max(0.0, min(1.0, q))
-        return a + (b - a) * (0.5 - 0.5 * math.cos(math.pi * q))
-    if u < 0.28:
-        return 2.6
-    if u < 0.46:
-        return ease(2.6, 0.35, (u - 0.28) / 0.18)
-    if u < 0.78:
-        return 0.35
-    return ease(0.35, 1.8, (u - 0.78) / 0.22)
-
-
-def render_velocity_seg(e: dict, length: float, color: dict, out: Path) -> None:
-    """Speed ramp: render the source at 1x, then retime frame by frame (frames blended when fast
-    for motion blur, interpolated when slow)."""
+def render_retimed_seg(e: dict, length: float, color: dict, out: Path, lead: float = 0.0) -> None:
+    """Speed ramps and smooth slow motion (retime.py): render the source at real time (at its own frame
+    rate, up to 60, so 60 fps clips give real slow motion), then pick the frame for every output frame:
+    fast parts average the frames they pass (motion blur), slow parts are made of in-between frames
+    (optical flow, or a cross-fade with smooth: blend)."""
+    from . import retime
     n = _frames(length)
-    pos = [0.0]
-    for k in range(1, n):
-        pos.append(pos[-1] + velocity_profile(k / max(1, n - 1)))
+    rate = float(min(60.0, max(OUT_FPS, round(float(e.get("fps") or OUT_FPS)))))
+    k = retime.seg_keys(e, length, lead)
+    pos = retime.positions(k, n, rate, OUT_FPS)
     src_frames = int(math.ceil(pos[-1])) + 3
+    smooth = e.get("smooth", "flow")
     tmp = out.with_name(out.stem + ".src.mp4")
-    render_video_seg({**e, "speed": 1.0}, src_frames / OUT_FPS, color, tmp)
+    render_video_seg({**e, "speed": 1.0, "ramp": None}, src_frames / rate, color, tmp, rate=rate)
     rd = subprocess.Popen(ffmpeg_base() + ["-i", str(tmp), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     cmd = ffmpeg_base() + ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OUT_W}x{OUT_H}", "-r", str(OUT_FPS),
@@ -274,6 +274,7 @@ def render_velocity_seg(e: dict, length: float, color: dict, out: Path) -> None:
     wr = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     size = OUT_W * OUT_H * 3
     buf: dict[int, np.ndarray] = {}
+    flows: dict = {}
     read = -1
     last = None
 
@@ -286,24 +287,34 @@ def render_velocity_seg(e: dict, length: float, color: dict, out: Path) -> None:
             read += 1
             last = np.frombuffer(b, np.uint8).reshape(OUT_H, OUT_W, 3)
             buf[read] = last
-        for old in [j for j in buf if j < i - 6]:
+        for old in [j for j in buf if j < i - 10]:
             del buf[old]
+        for old in [j for j in flows if j < i - 1]:
+            del flows[old]
         return buf.get(i, last if last is not None else np.zeros((OUT_H, OUT_W, 3), np.uint8))
 
     try:
         prev = 0.0
-        for k in range(n):
-            p = pos[k]
-            spd = p - prev if k else 1.0
-            if spd > 1.5:  # fast: average the frames we skip over -> motion blur
+        for kk in range(n):
+            p = pos[kk]
+            spd = p - prev if kk else 1.0
+            if spd > 1.5:  # fast: average the frames we pass over -> motion blur
                 i0, i1 = int(prev), int(p)
-                frames = [get(j).astype(np.float32) for j in range(max(i0, i1 - 3), i1 + 1)]
+                frames = [get(j).astype(np.float32) for j in range(max(i0 + 1, i1 - 5), i1 + 1)]
                 fr = (sum(frames) / len(frames)).astype(np.uint8)
-            else:  # slow: blend between neighbouring frames
+            else:  # real time or slow: the frame itself, or one made in between
                 i = int(p)
                 a = p - i
-                fa, fb = get(i), get(i + 1)
-                fr = fa if a < 0.05 else cv2.addWeighted(fa, 1 - a, fb, a, 0)
+                fa = get(i)
+                if a < 0.04 or smooth == "off":
+                    fr = fa
+                elif a > 0.96:
+                    fr = get(i + 1)
+                elif smooth == "blend":
+                    fr = cv2.addWeighted(fa, 1 - a, get(i + 1), a, 0)
+                else:
+                    fb = get(i + 1)
+                    fr = fa if fb is fa else retime.interp_flow(fa, fb, a, flows, i)
             wr.stdin.write(np.ascontiguousarray(fr).tobytes())
             prev = p
         wr.stdin.close()
@@ -482,7 +493,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         length = n / fps
         e2 = dict(e)
         if e["kind"] == "video":
-            e2["in"] = max(0.0, e["in"] - lead_f[i] / fps * e.get("speed", 1.0))
+            lead_speed = retime.speed_at(retime.seg_keys(e), 0.0) if e.get("ramp") else e.get("speed", 1.0)
+            e2["in"] = max(0.0, e["in"] - lead_f[i] / fps * lead_speed)
         key = short_hash(repr(sorted((k, str(v)) for k, v in e2.items()
                                     if k not in ("idx", "out_start", "note", "trans_out", "trans_dur", "trans_params",
                                                  "level", "drop", "static", "score")))
@@ -502,8 +514,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
             tmp = f.with_name(f.stem + ".part.mp4")
             if e2.get("panel"):
                 render_panel_seg(e2, length, lead, color, zoom, tmp, seg_dir)
-            elif e2["kind"] == "video" and e2.get("ramp") == "velocity":
-                render_velocity_seg(e2, length, color, tmp)
+            elif e2["kind"] == "video" and retime.needs_retime(e2, e2.get("fps")):
+                render_retimed_seg(e2, length, color, tmp, lead)
             elif e2["kind"] == "video":
                 render_video_seg(e2, length, color, tmp)
             elif e2.get("layout") == "popout" and render_popout_seg(e2, length, color, tmp):

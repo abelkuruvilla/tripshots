@@ -29,3 +29,4 @@ text:
   labels: {mode: ai, max: 8}
   cta: {mode: "off"}
 caption: {tone: 'punchy, playful, first person', hashtags: 12}
+speed: {ramps: [velocity, slam], fast: 0.15, drop: off, smooth: flow}

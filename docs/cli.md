@@ -40,14 +40,15 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 usage: tripshots make [-h] [-m MUSIC]
                       [--text-preset {bold,editorial,minimal,handwritten,typewriter}]
                       [--behind {auto,on,off}] [--split-screens {lots,some,off}]
-                      [--speed-ramps {on,off}] [--labels {ai,off}] [--loop | --no-loop]
-                      [--min-score N] [--look LOOK] [--grade-strength 0-1] [--variants N]
-                      [--route-map {intro,tracker,both,off}] [--allow-similar] [--music-start SEC]
-                      [--upload-copy | --no-upload-copy] [--cookies-from-browser BROWSER]
-                      [--cookies FILE] [--sfx {on,off}] [--ambience {on,off}]
-                      [--clip-sound {auto,on,off}] [--sfx-level DB] [--sfx-licenses LIST]
-                      [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND] [--hook HOOK]
-                      [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
+                      [--speed-ramps on|off|KINDS] [--speed-up {on,off}]
+                      [--drop-speed {rush,impact,both,off}] [--slowmo-smooth {flow,blend,off}]
+                      [--labels {ai,off}] [--loop | --no-loop] [--min-score N] [--look LOOK]
+                      [--grade-strength 0-1] [--variants N] [--route-map {intro,tracker,both,off}]
+                      [--allow-similar] [--music-start SEC] [--upload-copy | --no-upload-copy]
+                      [--cookies-from-browser BROWSER] [--cookies FILE] [--sfx {on,off}]
+                      [--ambience {on,off}] [--clip-sound {auto,on,off}] [--sfx-level DB]
+                      [--sfx-licenses LIST] [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND]
+                      [--hook HOOK] [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
                       [--exclude GLOB] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--no-recursive]
                       [--include-live-photos] [--watch {auto,gemini,off}] [--rescore]
                       [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
@@ -67,8 +68,16 @@ options:
                         location title behind the skyline
   --split-screens {lots,some,off}
                         split-screen / grid moments
-  --speed-ramps {on,off}
-                        velocity speed ramps on moving clips
+  --speed-ramps on|off|KINDS
+                        speed ramps on moving clips: on, off, or which ones, e.g. velocity,slam
+                        (velocity, slam, bullet, rush, surge)
+  --speed-up {on,off}   speed up moving clips in busy sections (with motion blur)
+  --drop-speed {rush,impact,both,off}
+                        at the biggest drop: the shot before speeds into it (rush), the shot on it
+                        starts in slow motion (impact)
+  --slowmo-smooth {flow,blend,off}
+                        slow motion from clips under 50 fps: optical-flow in-between frames
+                        (default), cross-fade, or none
   --labels {ai,off}     a short AI label on each shot
   --loop, --no-loop     seamless loop ending
   --min-score N         lowest AI score (1-10) a shot may have to be used (default: style's

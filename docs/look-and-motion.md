@@ -32,11 +32,60 @@ When you swung the camera fast on purpose (a whip pan), TripShots cuts **inside 
 ## Split screens, speed ramps and other trending cuts
 
 * **Split screens and grids:** `split2` (two stacked), `split3` (three strips), `grid4` (2×2) and `columns3` (three tall columns). In **reveal** mode the panels slide, wipe or pop in one per beat. In **cycle** mode, once all are on screen they keep cutting to new clips on each beat, like several videos playing side by side. Each panel is cropped around its own subject. Set `panels: {use: 0.4, mode: mixed}` in a style, or use `--split-screens lots|some|off`.
-* **Velocity speed ramps:** a clip rushes in fast with motion blur, slams into slow motion on the hit, then speeds back out. Only used on clips with real movement (drone, pans, cars). `velocity: {use: 0.3}` or `--speed-ramps on`.
+* **Speed ramps:** see [Speed](#speed) below.
 * **Bass-hit pulse:** a bulge/"pop" distortion on beats in intense sections (`motion: {pulse: 0.1}`).
 * **Labelled montage:** the AI writes a short label for each shot ("Golden hour", "Worth every mile"). `text: {labels: {mode: ai}}` or `--labels ai`.
 * **Seamless loop:** the last moment dissolves into the first frame, so the reel replays without a visible restart (`loop: true` or `--loop`).
 * The new **`split-beat`** style uses all of these.
+
+## Speed
+
+Changing a clip's speed gives a shot impact: slow motion lingers on a moment, a speed-up gives energy, and a
+ramp from one to the other lands a hit on the beat. TripShots picks these itself from the style, only on
+clips with real movement (drone, pans, walking, cars, water), and only where the clip has enough footage.
+
+| Effect | What it does | Good for |
+|---|---|---|
+| **Slow motion** | Calm clips play at half speed | Water, birds, people, waves |
+| **Speed-up** | Moving clips in busy sections play 1.6× (medium) to 2.2× (intense), with motion blur | Driving, walking, crowds, clouds |
+| `velocity` ramp | Rushes in at 2.6×, slams into slow motion **on the beat**, speeds back out | The classic "velocity edit" |
+| `slam` ramp | Real time, then slow motion from the beat to the end of the shot | A jump, a landing, a wave breaking |
+| `bullet` ramp | A short slow-motion hold around the beat, then real time again | A moment frozen in passing |
+| `rush` ramp | Real time, then speeds up to 3.2× into the next cut | Building into a drop or a whip |
+| `surge` ramp | A slow start that takes off to 2.4× | Take-offs, drone lift-offs, running |
+| `impact` ramp | Starts in slow motion and picks up to real time | The shot right after a drop |
+
+**Smooth slow motion.** Footage shot at 50 fps or more gives real slow motion. Slower footage (24/30 fps)
+gets in-between frames made with optical flow, so it glides instead of stuttering (`speed.smooth: flow`, the
+default; `blend` cross-fades frames, `off` repeats them). Ramps use the clip's full frame rate, so 60 fps
+clips stay sharp in their slow part.
+
+**The drop.** `speed.drop` sets what happens around the song's biggest drop: `rush` (the shot before speeds
+into it), `impact` (the shot on it starts in slow motion), `both`, or `off`.
+
+```yaml
+velocity: {use: 0.3}                # share of moving clips with a ramp
+speed:
+  ramps: [velocity, slam, rush]     # which ramps to pick from
+  fast: 0.2                         # share of moving clips sped up in busy sections
+  fast_max: 2.2
+  drop: both                        # rush | impact | both | off
+  smooth: flow                      # flow | blend | off
+```
+
+From the command line: `--speed-ramps on|off|velocity,slam`, `--speed-up on|off`,
+`--drop-speed rush|impact|both|off` and `--slowmo-smooth flow|blend|off`; in the app, the Make tab's speed
+menus. To change one shot, edit the plan ([plan.json](plan-format.md)) or ask an agent; for example
+`{"op": "ramp", "segment": 4, "ramp": "slam", "hit": 0.5}` or `{"op": "speed", "segment": 6, "speed": 2}`.
+The storyboard shows each shot's speed or ramp; a whoosh lands where a ramp slams into slow motion.
+
+| Style | Ramps | Speed-ups | Drop |
+|---|---|---|---|
+| `beat-montage` | velocity, slam, rush on 30% | 20% | both |
+| `pov-hook` | velocity, rush, surge on 20% | 35% | rush |
+| `cinematic` | slam, bullet on 25% | none | impact |
+| `split-beat` | velocity, slam on 35% | 15% | off |
+| `slow-scenic` | none | none | off |
 
 ## Hype effects and the beat check
 

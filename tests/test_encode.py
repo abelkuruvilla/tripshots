@@ -1,4 +1,13 @@
+import pytest
+
 from tripshots import encode
+
+
+@pytest.fixture(autouse=True)
+def _forget_choice():
+    """These tests fake the encoders: don't let their pick leak into later tests that really render."""
+    yield
+    encode._choice = None
 
 
 def test_software_when_asked(monkeypatch):

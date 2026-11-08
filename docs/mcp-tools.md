@@ -149,6 +149,8 @@ music: an audio file path or an Instagram reel link (its sound is used). None = 
 style: from list_styles_and_looks (default: the app's default). duration: seconds (default: the style's).
 hook: opening text, 7 words max (default: the AI writes one). location: "Place, Region" label.
 look: colour look or "auto". route_map: intro | tracker | both | off.
+speed_ramps: on | off | which ramps, e.g. "velocity,slam" (velocity, slam, bullet, rush, surge).
+speed_up: on | off (fast-forward moving clips in busy sections). drop_speed: rush | impact | both | off.
 upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
   same sound inside Instagram: do this when the music is a commercial song.
 Returns the plan path and the storyboard image to review (or a job id to poll).
@@ -168,6 +170,9 @@ Returns the plan path and the storyboard image to review (or a job id to poll).
 | `dry_run` | boolean | true |
 | `name` | string/null | null |
 | `upload_copy` | boolean | false |
+| `speed_ramps` | string/null | null |
+| `speed_up` | string/null | null |
+| `drop_speed` | string/null | null |
 
 ## job_status
 
@@ -211,7 +216,10 @@ edits, applied in order:
   {"op":"swap","segment":3,"shot_id":"S012"}  {"op":"move","from":5,"to":1}  {"op":"exchange","a":2,"b":6}
   {"op":"text","type":"hook"|"location"|"cta","text":"..."}  {"op":"remove_text","type":"location"}
   {"op":"transition","segment":2,"to":"whip"|"zoom_in"|"zoom_out"|"spin"|"flash"|"glitch"|"blur"|"dissolve"|"dip"|null}
-  {"op":"speed","segment":4,"speed":0.5}  {"op":"frame","segment":4,"subject_x":0.3}
+  {"op":"speed","segment":4,"speed":0.5}  (0.5 slow motion, 2 = twice as fast)
+  {"op":"ramp","segment":4,"ramp":"velocity"|"slam"|"bullet"|"rush"|"impact"|"surge"|null,"hit":0.6}
+    (hit = seconds into the slot where it slams into slow motion; "points":[[0,1],[0.4,0.3],[1,1]] for a custom curve)
+  {"op":"frame","segment":4,"subject_x":0.3}
   {"op":"set","path":"motion.beat_punch","value":0.04}
 Returns the new storyboard. Then render_reel.
 

@@ -102,8 +102,15 @@ DEFAULT_STYLE: dict = {
     },
     # split screens / grids whose panels appear and keep cutting on the beat
     "panels": {"use": 0.0, "kinds": ["split2", "grid4", "split3", "columns3"], "mode": "mixed", "max": 2},
-    # velocity: rush in, slam into slow motion on the hit (only on clips with movement)
+    # speed effects (retime.py). velocity.use: share (0-1) of moving clips that get a speed ramp, picked from
+    # speed.ramps: velocity (rush in, slam into slow motion on the beat, speed out) | slam (real time, then
+    # slow motion from the beat) | bullet (slow-motion hold around the beat) | rush (speeds up into the next
+    # cut) | surge (slow start, takes off). speed.fast: share of moving clips in busy sections sped up
+    # (1.6x medium, 2.2x intense, at most fast_max, with motion blur). speed.drop: the biggest drop gets
+    # rush (the shot before speeds into it) | impact (the shot on it starts in slow motion) | both | off.
+    # speed.smooth: slow motion from clips under 50 fps: flow (optical-flow in-between frames) | blend | off.
     "velocity": {"use": 0.0},
+    "speed": {"ramps": ["velocity"], "fast": 0.0, "fast_max": 2.5, "drop": "off", "smooth": "flow"},
     "loop": False,  # dissolve the end into the first frame so the reel replays seamlessly
     # photo in a frame with the subject stepping out of it (needs rembg for the cut-out)
     "popout": {"use": 0.0, "bg": "paper", "variant": "auto"},

@@ -39,3 +39,4 @@ panels:
   mode: mixed
   max: 1
 velocity: {use: 0.3}
+speed: {ramps: [velocity, slam, rush], fast: 0.2, fast_max: 2.2, drop: both, smooth: flow}

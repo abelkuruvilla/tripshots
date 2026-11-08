@@ -41,6 +41,7 @@ def cmd_make(a):
                music_start=a.music_start, upload_copy=a.upload_copy, min_score=a.min_score,
                allow_similar=a.allow_similar, rescore=a.rescore, text_preset=a.text_preset, behind=a.behind,
                extras={"split": a.split_screens, "ramps": a.speed_ramps, "labels": a.labels, "loop": a.loop,
+                       "speed_up": a.speed_up, "drop_speed": a.drop_speed, "smooth": a.slowmo_smooth,
                        "name": a._label},
                look=a.look, grade_strength=a.grade_strength, route_map=a.route_map, sound=sound_args(a))
     print(json.dumps(res, indent=2))
@@ -426,7 +427,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="text look (overrides the style)")
     m.add_argument("--behind", choices=["auto", "on", "off"], help="location title behind the skyline")
     m.add_argument("--split-screens", choices=["lots", "some", "off"], help="split-screen / grid moments")
-    m.add_argument("--speed-ramps", choices=["on", "off"], help="velocity speed ramps on moving clips")
+    m.add_argument("--speed-ramps", metavar="on|off|KINDS",
+                   help="speed ramps on moving clips: on, off, or which ones, e.g. velocity,slam "
+                        "(velocity, slam, bullet, rush, surge)")
+    m.add_argument("--speed-up", choices=["on", "off"], help="speed up moving clips in busy sections (with motion blur)")
+    m.add_argument("--drop-speed", choices=["rush", "impact", "both", "off"],
+                   help="at the biggest drop: the shot before speeds into it (rush), the shot on it starts in slow motion (impact)")
+    m.add_argument("--slowmo-smooth", choices=["flow", "blend", "off"],
+                   help="slow motion from clips under 50 fps: optical-flow in-between frames (default), cross-fade, or none")
     m.add_argument("--labels", choices=["ai", "off"], help="a short AI label on each shot")
     m.add_argument("--loop", action=argparse.BooleanOptionalAction, default=None, help="seamless loop ending")
     m.add_argument("--min-score", type=float, metavar="N",

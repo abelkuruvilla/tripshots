@@ -125,7 +125,7 @@ To finish a reel in Instagram's Edits app instead (text, sound effects and the s
 * **Landscape to vertical:** the AI says where the subject is (`subject_x`) and the crop follows it. Panoramas become slow pans.
 * **Photos:** smooth sub-pixel Ken Burns (no zoompan jitter)
 * **Hardware video encoding:** on a Mac, encoding uses the Mac's built-in video engine (VideoToolbox); on a PC, an NVIDIA (NVENC) or Intel (Quick Sync) encoder. Each is tested once with a real 1080×1920 encode before it's used, and if it fails mid-render the rest of the render switches to libx264 by itself. `--encoder auto|hardware|software` (or `TRIPSHOTS_ENCODER`, or the app's Settings tab); `tripshots doctor` shows which one is in use. Software encoding gives slightly smaller files at the same quality; Instagram re-encodes every upload anyway.
-* **High-fps clips (60/120 fps):** half-speed slow motion in calmer sections (styles with `slowmo: true`)
+* **High-fps clips (60/120 fps):** half-speed slow motion in calmer sections (styles with `slowmo: true`). 24/30 fps clips get optical-flow in-between frames when slowed down, and speed ramps and speed-ups are placed on the beat ([Speed](look-and-motion.md#speed))
 * **Shaky or blurry clips:** pushed down or dropped. Long clips are split into chunks, and the steadiest, sharpest window is used.
 * **Location labels:** from photo/video GPS via OpenStreetMap (cached), or `--location`
 * **Instagram safe zones:** text stays out of the areas the Reels UI covers

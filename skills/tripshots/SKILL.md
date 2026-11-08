@@ -52,7 +52,10 @@ scene, people, place, trip, focus, colours, near-duplicates). Search it with MCP
   split-beat (split screens). Hook: 7 words max, specific ("Old Faithful at 6am", not "Amazing trip").
 - Look at the storyboard: strongest image first, no near-duplicates side by side, nothing blurry or dark, a calm wide
   shot last. Fix with `edit_plan` (MCP) or by editing the plan JSON: swap a slot's shot (candidates: MCP
-  `shot_candidates`, CLI `tripshots scan sel:xxxx --top 40`), move/exchange slots, set hook text, transitions.
+  `shot_candidates`, CLI `tripshots scan sel:xxxx --top 40`), move/exchange slots, set hook text, transitions, speed.
+  For impact, a moving clip can get a speed ramp on a beat (`{"op":"ramp","segment":4,"ramp":"slam"}`;
+  velocity, slam, bullet, rush, impact, surge) or a speed-up (`{"op":"speed","segment":6,"speed":2}`). Keep calm
+  scenic shots at real time or slow motion.
   Slot timing stays on the beat.
 
 ## 4. Render and hand over

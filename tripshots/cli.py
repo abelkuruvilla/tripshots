@@ -320,8 +320,11 @@ def cmd_doctor(a):
         found = util.which(tool)
         print(f"{tool:<10} {'ok  ' + found if found else 'MISSING'}")
         ok &= bool(found)
-    for f in ("zscale", "tonemap", "xfade", "lut3d"):
+    for f in ("xfade", "lut3d"):
         print(f"filter {f:<8} {'ok' if util.has_filter(f) else 'missing (optional)'}")
+    hdr = ("zscale + tonemap" if util.has_filter("zscale") and util.has_filter("tonemap")
+           else "built-in tables (lut3d; same result)" if util.has_filter("lut3d") else "MISSING: HDR clips will look flat")
+    print(f"{'HDR':<10} {hdr}")
     cl = util.which("claude")
     if cl:
         from .ai import ClaudeCLI

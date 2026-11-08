@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Python | 3.10 or newer (tested on 3.11–3.13) |
-| ffmpeg | 6 or newer, with `zscale` for HDR footage (`tripshots doctor` checks) |
+| ffmpeg | 6 or newer (`tripshots doctor` checks). HDR iPhone footage works with any build: `zscale` is used when present, built-in tables otherwise |
 | An AI backend | optional but recommended: [Claude Code](https://docs.claude.com/en/docs/claude-code) logged in with a Claude subscription, a MiniMax key, or an Anthropic API key ([AI backends](ai-backends.md)) |
 | Node.js 22+ | only for animated route maps |
 | OS | macOS is the main target (Apple Silicon and Intel). Linux works (CI runs on Ubuntu). Windows is untested. |

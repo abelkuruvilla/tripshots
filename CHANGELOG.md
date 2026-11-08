@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Clone picks shots by eye.** The AI now sees the reference shots and pictures of your candidate shots side by side (before, it only read your shots' tags), and is told to match light and mood first (golden hour to golden hour), then content and framing, and to prefer your video clips for a video reference. Candidates are pre-ranked by light and colour likeness to each reference shot. The reference description also records each shot's light, people and mood.
+- **One shot per moment.** Photos of a burst, the photo and the clip of the same view, and chunks of one clip are grouped by picture likeness and capture time, and a clone (and `make`) uses each moment once while it has choice; the AI only sees one shot per moment.
+- Clone shots move like the reference shots (Ken Burns direction and push in or out, pan direction), calm slots use real slow motion from 50 fps+ clips, and a black shot at the end of a reference becomes a fade to black instead of a 7-frame photo.
+
+### Fixed
+- The crop on moving-camera shots (drones, handheld) drifted toward whatever was bright and lost the subject; it now follows the subject the AI framed by matching it frame to frame. Shots with a person no longer pan across a wide view that starts or ends without them.
+
 ### Added
 - **Speed effects:** five new speed ramps next to `velocity`: `slam` (into slow motion on the beat), `bullet` (a slow-motion hold), `rush` (speeds up into the next cut), `surge` (takes off) and `impact` (out of slow motion after a drop), plus custom curves (`ramp_points`). Ramps now slam into slow motion on a beat. Speed-ups (1.6–2.2×) with motion blur on moving clips in busy sections, and a speed effect around the biggest drop (`speed.drop`). Slow motion from 24/30 fps clips gets optical-flow in-between frames instead of stutter or ghosting, and ramps use 60 fps clips' full frame rate. New style section `speed`; `make --speed-ramps on|off|KINDS --speed-up --drop-speed --slowmo-smooth`; Make tab menus; plan edit op `ramp` (MCP `edit_plan`); `make_reel` takes `speed_ramps`, `speed_up`, `drop_speed`. The storyboard shows each shot's speed, exports carry it, and the sound design puts a whoosh where a ramp hits.
 

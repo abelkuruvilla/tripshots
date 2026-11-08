@@ -8,10 +8,12 @@ tripshots clone https://www.instagram.com/reel/XXXX/ ~/Trips/Iceland --variants 
 ```
 
 1. The reel is cut into its shots at its exact cut frames (hard cuts, crossfades and white-flash cuts are recognised), so every cut stays on its soundtrack's beat.
-2. The AI looks at each shot (wide landscape, aerial, close detail, walking POV…, plus how the camera moves and how busy it is) and reads its on-screen text, where it sits and what it's for (hook, place name, label, closing line).
-3. The AI picks your best matching shot for every slot, with runners-up, and rewrites the text for your trip in the same format ("POV: you made it to Bali" becomes "POV: you made it to Moraine Lake"). It never invents facts your footage doesn't show.
-4. The reel's colour grade is measured into a look and applied to your shots (or pick `--look`). Its sound is used, and an upload copy without the music (`.nomusic.mp4`, or `.noaudio.mp4` with sound design off) is written so you can post with the original sound from Instagram, starting at 0:00.
-5. `NAME.clone.jpg` shows reference vs. your shot, slot by slot. Swap anything you don't like in the plan (`shot_id`) and `render`.
+2. The AI looks at each shot (wide landscape, aerial, close detail, walking POV…, how the camera moves and how busy it is, and its **light and mood**: golden hour, dusk, midday, a silhouette or someone seen from behind) and reads its on-screen text, where it sits and what it's for (hook, place name, label, closing line).
+3. Your footage is sorted into **moments**: a burst of photos, the photo and the clip of one view, or chunks of one clip count as one moment, and a clone uses each moment once.
+4. For every slot the closest moments are found by light and colour (a warm, low-sun reference shot gets your golden-hour shots, not a blue midday sky), content and kind (the reference is video, so your clips come first and photos fill in only when no clip fits). The AI then **looks at both**: the reference shots and pictures of these candidates side by side, and picks the best for every slot, with runners-up. It rewrites the text for your trip in the same format ("POV: you made it to Bali" becomes "POV: you made it to Moraine Lake") and never invents facts your footage doesn't show.
+5. Each shot moves like the reference shot did: a photo pushes in, pulls out or drifts the same way, a pan travels the same way, so cuts flow the way they do in the reference. Calm slots play 50 fps+ clips in real slow motion. The crop follows the subject the AI framed even while a drone or your hand moves, and never pans past a person. A black shot at the end of the reference becomes a fade to black.
+6. The reel's colour grade is measured into a look and applied to your shots (or pick `--look`). Its sound is used, and an upload copy without the music (`.nomusic.mp4`, or `.noaudio.mp4` with sound design off) is written so you can post with the original sound from Instagram, starting at 0:00.
+7. `NAME.clone.jpg` shows reference vs. your shot, slot by slot. Swap anything you don't like in the plan (`shot_id`) and `render`.
 
 Options: `--variants N` (runner-up shots and alternative text), `--keep-text` (copy the text word for word), `--hype` (add freeze-frame and glitch), `--text-preset`, `-s style` (motion and text look). In the app: the **Clone** tab.
 

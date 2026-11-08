@@ -425,6 +425,7 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
     style = load_style(style_name or "beat-montage")
     style.setdefault("velocity", {})["use"] = 0.0      # keep the reference's own pacing
     style.setdefault("popout", {})["use"] = 0.0
+    style["shots"]["slowmo"] = True  # calm slots: 50 fps+ clips play in real slow motion, as reels like these do
     if not hype:
         style.setdefault("motion", {}).update({"freeze": False, "rgb_split": 0.0})
     if text_preset:
@@ -446,14 +447,22 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
             places[s["id"]] = seen[k]
     rdir = Path(refd["dir"])
     texts = {}
+    from .diversity import scene_groups
+    groups = scene_groups(shots)
+    n_moments = len(set(groups.values()))
+    if n_moments < len(shots):
+        log(f"{len(shots)} shots are {n_moments} different moments (bursts, the photo and the clip of one view): "
+            "a clone uses each moment once")
+    fallback = cl.heuristic_match(slots, refd["shots"], shots, refd, groups, depth=12)
+    motion = cl.ref_motion(refd)
     if backend:
         try:
-            match, texts = cl.ai_match(slots, refd["shots"], shots, places, backend, rdir)
+            match, texts = cl.ai_match(slots, refd["shots"], shots, places, backend, rdir, refd, groups)
         except Exception as e:
-            log(f"AI matching failed ({e}); matching by tags instead")
-            match = cl.heuristic_match(slots, refd["shots"], shots)
+            log(f"AI matching failed ({e}); matching by light, colour and tags instead")
+            match = fallback
     else:
-        match = cl.heuristic_match(slots, refd["shots"], shots)
+        match = fallback
         if any(sl.get("text") for sl in slots) and not keep_text:
             log("no AI backend: the reference's on-screen text is left out (use --keep-text to copy it as is)")
     # colour: the reference's grade becomes a look, unless you choose one
@@ -478,7 +487,8 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
     results = []
     for v in range(max(1, variants)):
         o = _variant_path(out, v, variants)
-        plan = cl.build_clone_plan(refd, slots, match, texts, shots, style, variant=v, keep_text=keep_text)
+        plan = cl.build_clone_plan(refd, slots, match, texts, shots, style, variant=v, keep_text=keep_text,
+                                   groups=groups, fallback=fallback, motion=motion)
         plan["work"] = str(work)
         plan["sound"] = style.get("sound") or {}
         plan["music"]["label"] = "the original reel's sound" if is_link else Path(ref).stem

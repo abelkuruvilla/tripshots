@@ -134,6 +134,10 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         sp["smooth"] = ex["smooth"]
     if ex.get("labels"):
         style["text"].setdefault("labels", {})["mode"] = ex["labels"]
+    stc = style.setdefault("story", {})
+    for k in ("format", "arc", "captions", "critic", "parallax"):
+        if ex.get(k):
+            stc[k] = ex[k]
     if ex.get("variant"):
         style["shots"]["variant"] = int(ex["variant"])
     if ex.get("avoid_hooks"):
@@ -164,8 +168,41 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
     mus = analyze_music(music, work) if music else None
     if not music:
         log("no --music given: rendering a silent reel timed to 100 BPM (add a trending sound in Instagram)")
+    st = style.setdefault("story", {})
+    arc = str(st.get("arc", "on")).lower() not in ("off", "false", "0", "none")
+    words = None
+    places_all: dict = {}
+    if arc:
+        if music and str(st.get("words", "auto")) != "off":
+            from . import lyrics
+            words = lyrics.words(music, mus.get("duration") if mus else None)
+            style["_words"] = words
+        if style["text"]["location"].get("mode") != "off" or str(st.get("format")) in ("auto", "list"):
+            seen: dict = {}
+            for s in sorted(shots, key=lambda s: -float(s.get("ai", {}).get("score", 5)))[:60]:
+                if s.get("gps"):
+                    k = (round(s["gps"][0], 2), round(s["gps"][1], 2))
+                    if k not in seen:
+                        seen[k] = place_name(*s["gps"])
+                    places_all[s["id"]] = seen[k]
+        from . import formats, results as results_mod
+        fmt = formats.choose(str(st.get("format") or "auto"), shots, places_all, words, results_mod.preferences())
+        if fmt == "list" and len({formats.short_place(v) for v in places_all.values() if v}) < 3:
+            fmt = "montage"
+        if int(ex.get("variant") or 0) == 1 and str(st.get("format") or "auto") == "auto":
+            # the second variant tests a different idea, not just a different first shot
+            fmt = {"montage": "reveal", "list": "montage", "pov": "montage", "series": "reveal",
+                   "reveal": "montage"}[fmt]
+        st["format"] = fmt
+        style["_places"] = places_all
+        log(f"format: {fmt}")
     plan = build_plan(shots, mus, style, duration, str(music.resolve()) if music else None)
     plan["photo_zoom"] = style["layout"].get("photo_zoom", 1.12)
+    words_rel = None
+    if arc and words and words.get("lines"):
+        from . import lyrics
+        words_rel = lyrics.window(words, float(plan["music"]["start"] or 0), plan["duration"] + 0.5)
+        plan["words"] = {k: words_rel.get(k) for k in ("kind", "language", "punch_t", "source")}
     if mmeta:
         plan["music"]["label"] = mmeta.get("label")
         plan["music"]["source_url"] = mmeta.get("url")
@@ -178,8 +215,24 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
             if s.get("gps"):
                 places[s["id"]] = place_name(*s["gps"])
     hook_cfg = style["text"]["hook"]
+    if arc and st.get("hook_text", "on") == "on" and hook_cfg.get("mode") == "off":
+        hook_cfg = {**hook_cfg, "mode": "ai"}
+        style["text"]["hook"] = hook_cfg
     copy = {}
-    if backend:
+    if backend and arc:
+        from . import formats
+        day, n_days = formats.trip_day([by_id[sg["shot_id"]] for sg in plan["segments"] if sg.get("shot_id") in by_id],
+                                       shots)
+        fmt = st.get("format", "montage")
+        if fmt == "series" and not day:
+            fmt = st["format"] = "montage"
+        plist = [formats.short_place(places_all.get(sg["shot_id"])) for sg in plan["segments"]]
+        plist = [p for p in dict.fromkeys(plist) if p] + ([location] if location else [])
+        copy = ai_mod.write_story_copy(backend, plan, by_id, style, fmt, plist, words_rel,
+                                       {"day": day, "n_places": len(plist)})
+        if copy.get("hooks"):
+            log("hooks: " + " | ".join(f"{h['text']} ({h['score']:.1f})" for h in copy["hooks"]))
+    elif backend:
         copy = ai_mod.write_hook_and_caption(backend, {**plan, "overlays": [
             {"type": "location", "text": v} for v in places.values() if v] + (
             [{"type": "location", "text": location}] if location else [])}, by_id, style,
@@ -187,11 +240,26 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
             want_cta=(style["text"].get("cta") or {}).get("mode") == "ai")
     hook_text = hook or (hook_cfg.get("text") if hook_cfg.get("mode") == "text" else None) or copy.get("hook")
     if hook_text and hook_cfg.get("mode") != "off" or hook:
-        plan["overlays"].append({"type": "hook", "text": hook_text, "start": float(hook_cfg.get("start", 0.2)),
-                                 "duration": float(hook_cfg.get("duration", 2.6))})
+        h_start, h_dur = float(hook_cfg.get("start", 0.2)), float(hook_cfg.get("duration", 2.6))
+        if arc:  # on screen from the third frame, held while the opening plays
+            first = plan["segments"][0]
+            h_start = 0.1
+            h_dur = round(max(2.0, min(3.2, first["out_start"] + first["dur"] + 1.0)) - h_start, 3)
+        plan["overlays"].append({"type": "hook", "text": hook_text, "start": h_start, "duration": h_dur})
         style["text"]["hook"]["mode"] = "on"
         plan["text"] = style["text"]
+    if arc and st.get("format") == "list":
+        style["text"]["location"]["mode"] = "off"  # the numbered place cards name every place
     add_location_overlays(plan, by_id, places, style, override=location)
+    if arc:
+        from . import formats, lyrics
+        formats.apply(plan, st.get("format", "montage"), by_id, places_all, copy,
+                      plan["segments"][0]["out_start"] + plan["segments"][0]["dur"])
+        caps = lyrics.caption_overlays(words_rel, plan["duration"], str(st.get("captions", "auto")))
+        if caps:
+            plan["overlays"] += caps
+            log(f"captions: {len(caps)} line(s) of the {words_rel.get('kind')}")
+        plan.setdefault("story", {}).update({"hook_type": copy.get("hook_type"), "hooks": copy.get("hooks") or []})
     cta_cfg = style["text"].get("cta") or {}
     cta_text = cta_cfg.get("text") if cta_cfg.get("mode") == "text" else (
         copy.get("cta") if cta_cfg.get("mode") == "ai" else None)
@@ -210,7 +278,8 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         except ReelError as e:
             log(f"route map skipped: {e}")
     lab_cfg = style["text"].get("labels") or {}
-    if lab_cfg.get("mode") == "ai" and backend:
+    has_caps = any(o["type"] == "caption" for o in plan["overlays"])
+    if lab_cfg.get("mode") == "ai" and backend and not has_caps and st.get("format") != "list":
         busy = [(o["start"], o["start"] + o["duration"]) for o in plan["overlays"] if o.get("mode") != "tracker"]
         cands = [sg for sg in plan["segments"] if sg["dur"] >= 0.75 and not sg.get("panel")
                  and not any(a < sg["out_start"] + sg["dur"] and sg["out_start"] < b for a, b in busy)]
@@ -233,7 +302,15 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
     plan["work"] = str(work)
     plan["sound"] = style.get("sound") or {}
     from .effects import mark_effects
+    if arc and str(st.get("match_cuts", True)).lower() not in ("false", "off", "0"):
+        from . import matchcut
+        matchcut.apply(plan, by_id)
     mark_effects(plan, style)
+    critic_report = None
+    if arc and str(st.get("critic", "auto")) != "off":
+        from . import critic
+        critic_report = critic.review(plan, by_id, shots, style, backend if st.get("critic", "auto") in ("auto", "ai")
+                                      else None, work)
     from . import grade as grade_mod
     grade_img = None
     try:
@@ -253,6 +330,13 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
     log(f"plan: {len(plan['segments'])} shots, {plan['duration']:.1f}s at {plan['tempo']:.0f} BPM -> {plan_path.name}")
     result = {"plan": str(plan_path), "storyboard": str(sb), "caption": str(caption_path) if caption_path else None,
               "grade": str(grade_img) if grade_img else None, **exports}
+    if arc:
+        result["idea"] = f"{st.get('format')}" + (f", hook: {copy.get('hook_type')}" if copy.get("hook_type") else "")
+    if critic_report:
+        cp = out.with_suffix(".critic.json")
+        write_json(cp, critic_report)
+        result["critic"] = str(cp)
+        result["score"] = critic_report.get("score")
     if dry_run:
         return result
     render(plan, out, work, workers=workers)

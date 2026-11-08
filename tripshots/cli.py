@@ -42,6 +42,8 @@ def cmd_make(a):
                allow_similar=a.allow_similar, rescore=a.rescore, text_preset=a.text_preset, behind=a.behind,
                extras={"split": a.split_screens, "ramps": a.speed_ramps, "labels": a.labels, "loop": a.loop,
                        "speed_up": a.speed_up, "drop_speed": a.drop_speed, "smooth": a.slowmo_smooth,
+                       "format": a.format, "arc": a.arc, "captions": a.captions, "critic": a.critic,
+                       "parallax": a.parallax,
                        "name": a._label},
                look=a.look, grade_strength=a.grade_strength, route_map=a.route_map, sound=sound_args(a))
     print(json.dumps(res, indent=2))
@@ -336,6 +338,34 @@ def cmd_cookies(a):
     print(f"\nreel links use: {cur or none}")
 
 
+def cmd_results(a):
+    from . import results as R
+    if a.action == "add":
+        if not a.reel:
+            raise SystemExit("tripshots results add NAME.mp4 --views N --avg-watch S --sends N ...")
+        row = R.add(a.reel, {"views": a.views, "reach": a.reach, "avg_watch": a.avg_watch, "sends": a.sends,
+                             "saves": a.saves, "likes": a.likes, "comments": a.comments})
+        print(json.dumps(row, indent=2))
+        return
+    if a.action == "sync":
+        R.sync([Path(x) for x in a.roots] if a.roots else None)
+    rows = R.load()
+    if not rows:
+        print("no results yet: `tripshots results add NAME.mp4 --views ... --avg-watch ... --sends ...` "
+              "or `tripshots results sync`")
+        return
+    print(f"{'reel':<48} {'format':<9} {'hook':<10} {'views':>7} {'watch':>6} {'sends':>6} {'score':>6}")
+    for r in sorted(rows, key=lambda r: -(r.get("score") or 0)):
+        f, m = r.get("features") or {}, r.get("metrics") or {}
+        print(f"{Path(r['reel']).stem[:48]:<48} {str(f.get('format') or '-'):<9} {str(f.get('hook_type') or '-'):<10} "
+              f"{m.get('views') or m.get('reach') or '-':>7} {m.get('avg_watch') or '-':>6} {m.get('sends') or '-':>6} "
+              f"{r.get('score') if r.get('score') is not None else '-':>6}")
+    pr = R.preferences()
+    if pr.get("format"):
+        print(f"\nso far: {pr['format']} reels with {pr.get('hook_type') or 'any'} hooks do best "
+              f"({pr['n']} scored){'' if pr.get('confident') else ' (not enough data yet to change defaults)'}")
+
+
 def cmd_doctor(a):
     from .ai import get_backend
     ok = True
@@ -467,6 +497,16 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--slowmo-smooth", choices=["flow", "blend", "off"],
                    help="slow motion from clips under 50 fps: optical-flow in-between frames (default), cross-fade, or none")
     m.add_argument("--labels", choices=["ai", "off"], help="a short AI label on each shot")
+    m.add_argument("--format", choices=["auto", "montage", "pov", "list", "series", "reveal"],
+                   help="reel format: montage, POV, a numbered list of places, a 'Day N' series, a slow reveal "
+                        "(default auto: from your footage, the sound and your results)")
+    m.add_argument("--arc", choices=["on", "off"], help="plan the reel as a story with a hook and a payoff (default on); "
+                                                       "off = the older even cut grid")
+    m.add_argument("--captions", choices=["auto", "original", "english", "off"],
+                   help="lines of dialogue / lyrics on screen (auto: dialogue gets English subtitles, songs none)")
+    m.add_argument("--critic", choices=["auto", "rules", "off"],
+                   help="check the plan like an editor and fix weak spots (auto: rules + AI review)")
+    m.add_argument("--parallax", choices=["auto", "on", "off"], help="photos move in depth (2.5D) instead of a flat zoom")
     m.add_argument("--loop", action=argparse.BooleanOptionalAction, default=None, help="seamless loop ending")
     m.add_argument("--min-score", type=float, metavar="N",
                    help="lowest AI score (1-10) a shot may have to be used (default: style's min_score - 2)")
@@ -550,6 +590,15 @@ def build_parser() -> argparse.ArgumentParser:
     mu.add_argument("--refresh", action="store_true", help="download again even if cached")
     add_cookie_args(mu)
     mu.set_defaults(fn=cmd_music)
+
+    rs = sub.add_parser("results", help="record how your reels did on Instagram; learn what works for your audience")
+    rs.add_argument("action", nargs="?", choices=["show", "add", "sync"], default="show")
+    rs.add_argument("reel", nargs="?", help="add: the reel (.mp4 or .plan.json)")
+    for k, h in (("views", "plays / views"), ("reach", "accounts reached"), ("avg-watch", "average watch time (s)"),
+                 ("sends", "shares / sends"), ("saves", "saves"), ("likes", "likes"), ("comments", "comments")):
+        rs.add_argument(f"--{k}", type=float, help=h)
+    rs.add_argument("--roots", nargs="*", help="sync: folders with your reels (default: the output folder)")
+    rs.set_defaults(fn=cmd_results)
 
     ck = sub.add_parser("cookies", help="which browsers TripShots can borrow your Instagram login from (for reel links)")
     ck.add_argument("--login", metavar="BROWSER", nargs="?", const="auto",

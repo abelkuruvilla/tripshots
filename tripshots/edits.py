@@ -38,7 +38,7 @@ PROFILE = EDITS_DIR / "profile.json"
 DEFAULT_URL = "http://127.0.0.1:19501/mcp"
 # Edits is sandboxed: it can only open files inside its own container
 STAGE = Path.home() / "Library/Containers/com.burbn.basel.mac/Data/tmp/tripshots"
-NATIVE_TYPES = ("hook", "location", "cta", "label")
+NATIVE_TYPES = ("hook", "location", "cta", "label", "caption")
 
 
 # ================================================================== package

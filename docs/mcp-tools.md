@@ -151,6 +151,9 @@ hook: opening text, 7 words max (default: the AI writes one). location: "Place, 
 look: colour look or "auto". route_map: intro | tracker | both | off.
 speed_ramps: on | off | which ramps, e.g. "velocity,slam" (velocity, slam, bullet, rush, surge).
 speed_up: on | off (fast-forward moving clips in busy sections). drop_speed: rush | impact | both | off.
+format: auto | montage | pov | list (numbered places) | series ("Day N of") | reveal. Every reel is planned as a
+  story (hook, build, payoff, looping end) and checked by the critic; the result's "score" and "critic" file
+  say what it fixed and what is still weak.
 upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
   same sound inside Instagram: do this when the music is a commercial song.
 Returns the plan path and the storyboard image to review (or a job id to poll).
@@ -173,6 +176,24 @@ Returns the plan path and the storyboard image to review (or a job id to poll).
 | `speed_ramps` | string/null | null |
 | `speed_up` | string/null | null |
 | `drop_speed` | string/null | null |
+| `format` | string/null | null |
+
+## reel_results
+
+How the user's posted reels did, and what works for their audience. With `reel` (a reel's .mp4 or
+.plan.json) and numbers from Instagram Insights (views, avg_watch in seconds, sends = shares, saves...),
+records them first. Returns every recorded reel with its score (watch-through and sends per view) and the
+format / hook type that has done best so far; `make_reel` with format=auto leans on it once confident.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `reel` | string/null | null |
+| `views` | number/null | null |
+| `avg_watch` | number/null | null |
+| `sends` | number/null | null |
+| `saves` | number/null | null |
+| `likes` | number/null | null |
+| `comments` | number/null | null |
 
 ## job_status
 

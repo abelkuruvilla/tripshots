@@ -275,6 +275,12 @@ def shot_motion(t_abs: float, seg: dict, beats: list[float], cfg: dict) -> tuple
             angle += 0.6 * math.exp(-d / 0.18) * math.sin(d * 37.0)
             scale *= 1.04  # hide borders while shaking
 
+    # hook punch: the opening shot starts pushed in and settles within 0.45 s, so something moves on the
+    # very first frames even when the shot itself is calm (the scroll decision takes about 1.4 s)
+    if cfg.get("hook_punch") and seg.get("role") == "hook" and start < 0.05 and local < 0.45:
+        q = _clip(local / 0.45)
+        scale *= 1 + 0.12 * (1 - q) ** 3
+
     push = float(cfg.get("video_push", 0.0) or 0.0)
     if push > 0 and seg.get("kind") == "video" and seg.get("static", False) and dur > 0:
         scale *= 1 + push * _clip(local / dur)

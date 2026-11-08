@@ -426,8 +426,17 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
     el.box = (x0, top, x0 + max(widths), top + block_h)
     bright = band_brightness(frame, el.box)
     el.scrim = 0.34 if bright > 0.62 else (0.2 if bright > 0.45 else 0.0)
+    if frame is not None and cfg.get("legible", True):
+        # busy texture behind the words (rock, foliage, waves) eats thin type: shade it
+        busy = busy_map_score(frame, max(0, int(el.box[1])), min(frame.shape[0], int(el.box[3]) + 1))
+        if busy > 0.55:
+            el.scrim = max(el.scrim, 0.3)
     # entrance times
-    if anim == "pop":
+    if cfg.get("fast_in") and anim in ("pop", "scale", "typewriter"):
+        # the opening line must read within the first second: every word in by about 0.5 s
+        times = [min(0.5, 0.07 * i) for i in range(len(items))] if anim != "typewriter" else \
+            [min(0.6, 0.6 * i / max(1, len(items))) for i in range(len(items))]
+    elif anim == "pop":
         times = _beat_steps(start, len(items), beats, duration)
     elif anim == "typewriter":
         cps = max(14.0, len(items) / max(0.6, duration * 0.4))
@@ -444,6 +453,25 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
         img, pad = _render_text(txt, fnt, shadow=0.6 if el.scrim < 0.3 else 0.45)
         el.sprites.append(Sprite(img, x - pad, y - pad, ti, li))
     return el
+
+
+CAPTION = {"font": "montserrat-bold", "size": 58, "anim": "slide", "uppercase": False, "line_gap": 1.1,
+           "position": "lower", "legible": True}
+# smallest sizes (px at 1080 wide) that still read on a phone held at arm's length
+MIN_SIZE = {"hook": 88, "label": 64, "cta": 60, "caption": 54}
+
+
+def legible(kind: str, cfg: dict) -> dict:
+    """Bump a text style up to readable sizes (a minimal preset can stay elegant, not tiny)."""
+    cfg = dict(cfg)
+    if kind in MIN_SIZE:
+        cfg["size"] = max(int(cfg.get("size", MIN_SIZE[kind])), MIN_SIZE[kind])
+    if kind == "location":
+        if cfg.get("layout") == "line":
+            cfg["size"] = max(int(cfg.get("size", 40)), 54)
+        cfg["sub_size"] = max(int(cfg.get("sub_size", 30)), 34)
+        cfg["mono_size"] = max(int(cfg.get("mono_size", 24)), 28)
+    return cfg
 
 
 def build_location(main: str, sub: str | None, coords: str | None, start: float, duration: float,

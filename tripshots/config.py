@@ -112,6 +112,17 @@ DEFAULT_STYLE: dict = {
     "velocity": {"use": 0.0},
     "speed": {"ramps": ["velocity"], "fast": 0.0, "fast_max": 2.5, "drop": "off", "smooth": "flow"},
     "loop": False,  # dissolve the end into the first frame so the reel replays seamlessly
+    # story (story.py, formats.py): plan every reel as a story instead of an even slideshow.
+    # arc: on | off (off = the older even cut grid). format: auto | montage | pov | list | series | reveal.
+    # hook_text: on (big hook line from the third frame, written by the AI) | style (the style's own hook setting).
+    # hook_punch: the first shot settles from a push-in within 0.45 s. people_first: shots with you in them
+    # win the hook, payoff and ending. loop: the ending is chosen to flow back into the opening.
+    # captions: lines of dialogue/lyrics on screen: auto (dialogue: yes, songs: no) | original | english | off.
+    # parallax: photos move in depth (2.5D) instead of a flat zoom: auto | on | off.
+    # match_cuts: order and cut moving shots so their motion carries across the cut.
+    # critic: check the plan like an editor and fix what it can: auto (rules + AI when available) | rules | off.
+    "story": {"arc": "on", "format": "auto", "hook_text": "on", "hook_punch": True, "people_first": True,
+              "loop": True, "captions": "auto", "parallax": "auto", "match_cuts": True, "critic": "auto"},
     # photo in a frame with the subject stepping out of it (needs rembg for the cut-out)
     "popout": {"use": 0.0, "bg": "paper", "variant": "auto"},
     "caption": {"tone": "warm, concise, first-person travel storyteller", "hashtags": 12},

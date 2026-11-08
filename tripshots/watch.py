@@ -32,6 +32,10 @@ PROMPT_VERSION = 1
 WATCH_DIR = lib.LIB_DIR / "watch"
 DEFAULT_MODEL = os.environ.get("TRIPSHOTS_GEMINI_MODEL", "gemini-flash-latest")
 FALLBACK_MODEL = os.environ.get("TRIPSHOTS_GEMINI_FALLBACK", "gemini-2.5-flash")
+# requests a minute TripShots allows itself (Gemini's free tier allows about 10 for Flash); it slows down further
+# when Gemini says the limit is lower, and speeds back up after a run of successes
+RPM = float(os.environ.get("TRIPSHOTS_GEMINI_RPM") or 10)
+RATE_LIMIT_WAITS = 6  # per clip, before giving up on it
 
 MOTIONS = ("static", "pan", "tilt", "zoom", "walking", "handheld", "drone", "timelapse")
 FRAMINGS = ("upright", "tilted", "sideways", "upside_down")
@@ -201,6 +205,69 @@ def _refused(e: Exception) -> bool:
     return code in (401, 403) or "api key not valid" in msg or "permission_denied" in msg
 
 
+def _quota(e: Exception) -> dict | None:
+    """What a 429 RESOURCE_EXHAUSTED says: {"daily": bool, "retry": seconds or None, "limit": n or None}."""
+    msg = str(e)
+    if getattr(e, "code", None) != 429 and "RESOURCE_EXHAUSTED" not in msg and "429" not in msg[:5]:
+        return None
+    ids = re.findall(r"quotaId'?\"?:\s*'?\"?([A-Za-z-]+)", msg)
+    m = re.search(r"retryDelay'?\"?:\s*'?\"?(\d+(?:\.\d+)?)s", msg) or re.search(r"retry in (\d+(?:\.\d+)?)\s*s", msg, re.I)
+    lim = re.search(r"quotaValue'?\"?:\s*'?\"?(\d+)", msg)
+    return {"daily": any("PerDay" in q for q in ids) and not any("PerMinute" in q for q in ids),
+            "retry": float(m.group(1)) if m else None, "limit": int(lim.group(1)) if lim else None,
+            "requests": not ids or any("Requests" in q for q in ids)}
+
+
+class Pacer:
+    """Spaces Gemini requests across all worker threads to stay under a requests-a-minute limit. On a 429 every
+    worker pauses until Gemini's retry time, and the pace drops; after a run of successes it creeps back up."""
+
+    def __init__(self, rpm: float = RPM):
+        self.rpm = self.max_rpm = max(0.5, float(rpm))
+        self.next = self.pause_until = 0.0
+        self.streak = 0
+        self.told = 0.0
+        self._lock = threading.Lock()
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.time()
+            t = max(now, self.next, self.pause_until)
+            self.next = t + 60.0 / self.rpm
+        if t > now:
+            time.sleep(t - now)
+
+    def limited(self, delay: float, limit: int | None = None) -> float:
+        """Gemini said slow down: everyone waits `delay` s, then goes slower. Returns the wait."""
+        with self._lock:
+            now = time.time()
+            if limit and limit * 0.9 < self.max_rpm:
+                self.max_rpm = max(0.5, limit * 0.9)
+            self.rpm = max(0.5, min(self.rpm * 0.6, self.max_rpm))
+            self.pause_until = max(self.pause_until, now + delay)
+            self.next = max(self.next, self.pause_until)
+            self.streak = 0
+            wait = self.pause_until - now
+            if now - self.told > 30:
+                self.told = now
+                log(f"watch: Gemini rate limit reached{f' ({limit} requests a minute on this key)' if limit else ''}: "
+                    f"pausing {wait:.0f} s, then {self.rpm:.1f} a minute (TRIPSHOTS_GEMINI_RPM sets the pace)")
+        return wait
+
+    def ok(self) -> None:
+        with self._lock:
+            self.streak += 1
+            if self.streak >= 5 and self.rpm < self.max_rpm:
+                self.rpm = min(self.max_rpm, self.rpm + 1)
+                self.streak = 0
+
+
+def _backoff(n: int, base: float = 5.0, cap: float = 120.0) -> float:
+    """Exponential backoff with jitter (n = 1, 2, ...)."""
+    import random
+    return min(cap, base * 2 ** (n - 1)) * random.uniform(0.8, 1.2)
+
+
 def _flash_rank(name: str) -> tuple:
     """Prefer plain Flash models, newest version first ("gemini-2.5-flash" over "gemini-2.0-flash")."""
     n = name.split("/")[-1]
@@ -219,6 +286,7 @@ class Gemini:
         self.models = self._resolve([m for m in dict.fromkeys([model, fallback]) if m])
         self._busy_until = 0.0
         self._lock = threading.Lock()
+        self.pacer = Pacer()
 
     def _available(self) -> list[str] | None:
         try:
@@ -273,27 +341,38 @@ class Gemini:
         from google.genai import types
         if not self.models:
             raise GeminiUnavailable("no Gemini model works for this key")
-        try:
-            up = self._active(self.client.files.upload(file=str(proxy)))
-        except Exception as e:
-            if _refused(e):
-                raise GeminiUnavailable(f"the Gemini key was refused ({str(e)[:100]})")
-            raise
+        if not hasattr(self, "pacer"):
+            self.pacer = Pacer()
+        up = None
+        for n in range(1, RATE_LIMIT_WAITS + 1):  # uploads can be rate limited too
+            try:
+                up = self._active(self.client.files.upload(file=str(proxy)))
+                break
+            except Exception as e:
+                if _refused(e):
+                    raise GeminiUnavailable(f"the Gemini key was refused ({str(e)[:100]})")
+                q = _quota(e)
+                if n == RATE_LIMIT_WAITS or not (q or getattr(e, "code", None) in (500, 503)):
+                    raise
+                time.sleep(self.pacer.limited(q["retry"] or _backoff(n, 10), q["limit"]) if q else _backoff(n))
         try:
             cfg = types.GenerateContentConfig(response_mime_type="application/json", response_json_schema=SCHEMA)
             last = None
-            attempt = 0
+            attempt = waits = 0
             while attempt < 3:
                 models = list(self.models)
                 if not models:
                     raise GeminiUnavailable("no Gemini model works for this key")
                 busy = len(models) > 1 and time.time() < self._busy_until
                 model = models[1] if busy else models[0]
+                self.pacer.wait()
                 try:
                     r = self.client.models.generate_content(model=model, contents=[up, PROMPT.format(duration=duration)],
                                                             config=cfg)
                     from .ai import extract_json
-                    return extract_json(r.text or ""), model
+                    out = extract_json(r.text or "")
+                    self.pacer.ok()
+                    return out, model
                 except GeminiUnavailable:
                     raise
                 except Exception as e:  # rate limits, overload, bad JSON, missing model
@@ -303,16 +382,34 @@ class Gemini:
                     if _gone(e):
                         self._drop(model, str(e))  # raises when none are left
                         continue  # straight to the next model, no wait, no attempt used
+                    q = _quota(e)
+                    if q and (q["daily"] or q["limit"] == 0):
+                        # this model's daily quota (or a model the plan doesn't include): another model has its own
+                        why = ("its daily quota is used up" if q["daily"] else "not included in this key's plan")
+                        if len(self.models) <= 1:
+                            raise GeminiUnavailable(
+                                f"Gemini's daily quota for this key is used up ({model}). Clips watched so far are kept; "
+                                "run again after it resets (midnight Pacific time) to watch the rest" if q["daily"]
+                                else f"{model} is {why}")
+                        self._drop(model, why)
+                        continue
+                    if q:  # requests or tokens a minute: everyone waits, then goes slower
+                        waits += 1
+                        if waits > RATE_LIMIT_WAITS:
+                            raise RuntimeError("Gemini kept rate limiting; this clip is skipped (local analysis only)")
+                        time.sleep(self.pacer.limited(q["retry"] or _backoff(waits, 10), q["limit"]))
+                        continue
                     attempt += 1
                     if getattr(e, "code", None) == 503 and len(models) > 1 and not busy:
                         with self._lock:
                             self._busy_until = time.time() + 300  # overloaded: use the next model for a while
                         continue
-                    time.sleep(min(60, 5 * 2 ** attempt))
+                    time.sleep(_backoff(attempt))
             raise RuntimeError(f"Gemini failed: {str(last)[:200]}")
         finally:
             try:
-                self.client.files.delete(name=up.name)  # nothing stays uploaded
+                if up is not None:
+                    self.client.files.delete(name=up.name)  # nothing stays uploaded
             except Exception:
                 pass
 

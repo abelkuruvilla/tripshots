@@ -38,7 +38,10 @@ Ways to get a new style:
 | `motion.video_push` | 0.06 | Slow push-in on static clips |
 | `motion.freeze` / `rgb_split` | false / 0 | Freeze-frame on the biggest drop; share of hard cuts with a colour split |
 | `motion.pulse` | | Bulge on intense beats (e.g. 0.1) |
-| `grade.look` / `strength` / `ai` | `auto` / 0.75 / true | Colour look (`auto`, `none`, a preset, or your look), strength, AI colourist |
+| `grade.look` / `strength` / `ai` / `match` | `auto` / 0.75 / true / gentle | Colour look (`auto`, `none`, a preset, or your look), strength, AI colourist; `match: full` takes every shot fully into the look (learned styles, clones) |
+| `frame.aspect` | `9:16` | The picture's shape: `9:16` full screen, `16:9` or `2.39:1` a cinematic letterbox with the text in the bars |
+| `taste.look` / `weight` / `light` / `people` | none / 0 / [] / "" | What shots should look like (set by `learn`): the references' light and colour vector, how strongly to prefer it, their kinds of light, how people appear |
+| `layout.pan_speed` | 0.06 | Pans and drifts: at most this share of the picture's width per second |
 | `color.*` | | Used when `grade.look` is `none`: `saturation`, `contrast`, `brightness`, `gamma`, `warmth`, `vignette`, `sharpen`, `lut` (your own `.cube`) |
 | `text.preset` | `bold` | `bold`, `editorial`, `minimal`, `handwritten`, `typewriter` |
 | `text.font` | | Your own font file for everything |

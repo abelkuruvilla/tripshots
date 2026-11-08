@@ -123,7 +123,9 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
 
     lengths: list[tuple[float, str]] = []   # (beats, role)
     # hook: one shot, about 1-2 s, then the setup
-    hook_n = fit(max(1.0, round(1.4 / bl)), 0.9, 2.4)
+    # pace: a style learned from slow, cinematic references holds every shot longer (its beats per cut)
+    pace = max(1.0, min(4.0, float((cuts.get("beats_per_cut") or {}).get("medium", 2) or 2) / 2))
+    hook_n = fit(max(1.0, round(1.4 * min(pace, 1.8) / bl)), 0.9, 2.4 * min(pace, 1.8))
     lengths.append((hook_n, "hook"))
     pos = hook_n
     # setup until the build: a medium pace
@@ -133,7 +135,7 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
     while pos < setup_end - 0.01:
         lvl = _level(energy[min(int(pos), len(energy) - 1)] if energy else 0.5, th)
         pat = PATTERNS["calm" if lvl == "calm" else "medium"]
-        n = fit(pat[k % len(pat)])
+        n = fit(pat[k % len(pat)] * pace)
         k += 1
         if pos + n > setup_end:
             n = setup_end - pos
@@ -150,7 +152,7 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
     rem = peak_i - pos
     bi = 0
     while rem > 0.01:
-        n = fit(BUILD[min(bi, len(BUILD) - 1)], min_s * 0.8, max_s)
+        n = fit(BUILD[min(bi, len(BUILD) - 1)] * pace, min_s * 0.8, max_s)
         n = min(n, rem)
         if n * bl < max(0.3, min_s * 0.7):
             if lengths:
@@ -161,17 +163,17 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
         rem -= n
         bi += 1
     # peak: the payoff, held (4-8 beats, at least 2 s)
-    peak_n = fit(8 if bl < 0.45 else 4, 2.0, max(2.0, max_s * 2.2))
+    peak_n = fit((8 if bl < 0.45 else 4) * min(pace, 2.0), 2.0, max(2.0, max_s * 2.2))
     lengths.append((peak_n, "peak"))
     pos += peak_n
     # ending: a held closer (at least ~2 s); the release fills what is between
-    end_n = fit(4 if bl >= 0.4 else 6, 1.8, max(2.0, max_s * 1.8))
+    end_n = fit((4 if bl >= 0.4 else 6) * min(pace, 2.0), 1.8, max(2.0, max_s * 1.8))
     rel_end = end_i - end_n
     k = int(_rand("release", variant) * 9)
     while pos < rel_end - 0.01:
         lvl = _level(energy[min(int(pos), len(energy) - 1)] if energy else 0.5, th)
         pat = PATTERNS[lvl]
-        n = fit(pat[k % len(pat)])
+        n = fit(pat[k % len(pat)] * pace)
         k += 1
         if pos + n > rel_end:
             n = rel_end - pos
@@ -323,6 +325,8 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
     order: list[dict | None] = [None] * len(segs)
     st = style.get("story") or {}
     ctx = {"people_weight": 1.6 if st.get("people_first", True) else 0.5, "tease": tease, "looks": {}}
+    from .planner import taste_scores
+    taste = taste_scores(chosen, style)  # a learned style's light, colour and people
 
     def used_pen(s):  # thin footage repeats shots in the pool: never the same one twice while others remain
         return -50.0 if any(o is not None and o["id"] == s["id"] for o in order) else 0.0
@@ -330,8 +334,8 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
     def take(idx: int, role: str, extra=None):
         if not pool:
             return
-        ranked = sorted(pool, key=lambda s: role_score(s, role, ctx) + used_pen(s) + (extra(s) if extra else 0),
-                        reverse=True)
+        ranked = sorted(pool, key=lambda s: role_score(s, role, ctx) + taste.get(s["id"], 0.0) + used_pen(s)
+                        + (extra(s) if extra else 0), reverse=True)
         pick = ranked[min(variant, len(ranked) - 1)] if role == "hook" and variant else ranked[0]
         order[idx] = pick
         pool.remove(pick)
@@ -381,7 +385,8 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
                 if prev is not None and groups and groups.get(s["id"], s["id"]) == groups.get(prev["id"], prev["id"]):
                     pen -= 3.0
                 return pen + (_rand("mix", variant, s["id"], i) - 0.5) * (1.2 if variant else 0.3)
-            ranked = sorted(pool, key=lambda s: role_score(s, role, ctx) + adj(s) + used_pen(s), reverse=True)
+            ranked = sorted(pool, key=lambda s: role_score(s, role, ctx) + 0.5 * taste.get(s["id"], 0.0) + adj(s)
+                            + used_pen(s), reverse=True)
             order[i] = ranked[0]
             pool.remove(ranked[0])
     # footage thinner than the slots: repeat the best (planner merged most of these away)

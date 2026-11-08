@@ -173,7 +173,8 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
     -> hue moves (e.g. greens toward teal) -> split-tone tints per zone -> highlight protection."""
     notes = notes or {}
     s = float(np.clip(strength, 0, 1))
-    keep = bool(notes.get("keep_mood"))
+    full = notes.get("match") == "full"  # a learned/cloned look: take its mood, not just a hint of it
+    keep = bool(notes.get("keep_mood")) and not full
     s_tone = s * (0.5 if keep else 1.0)
     s_col = s * (0.6 if keep else 1.0)
     stops = float(np.clip(notes.get("exposure", 0.0) or 0.0, -1.5, 1.5))
@@ -192,13 +193,13 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
     tq = np.array(look["Lq"], np.float64)
     # adopt the look's contrast shape fully, but its overall brightness only halfway: a sunny
     # beach stays sunny under a dark look, it just gets the look's contrast and colour
-    tq = sq[3] + (tq - tq[3]) + (tq[3] - sq[3]) * 0.5
+    tq = sq[3] + (tq - tq[3]) + (tq[3] - sq[3]) * (0.85 if full else 0.5)
     if keep:  # shots whose own light is the story: half of the contrast change, no brightness change
         tq = sq + ((tq - tq[3]) - (sq - sq[3])) * 0.5
     # tones move roughly like exposure: a dark tone can only be lifted a little (L 10 -> 15, not
     # 28) so a black background stays black; a bright tone can only be pulled down a little
-    up = np.minimum(18, 0.5 * sq + 1)
-    down = np.minimum(14, 0.3 * (100 - sq) + 1)
+    up = np.minimum(28 if full else 18, 0.5 * sq + 1)
+    down = np.minimum(24 if full else 14, (0.45 if full else 0.3) * (100 - sq) + 1)
     tq = sq + np.clip(tq - sq, -down, up)
     xp = np.concatenate([[0.0], sq, [100.0]])
     blk = float(np.clip(float(look.get("black", 1)), 0, 20))
@@ -210,7 +211,7 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
     xp, fp = np.clip(xp, 0, 130), np.clip(fp, 0, 100)
 
     src_ch = max(5.0, float(src["chroma"]))
-    c_scale = float(np.clip((float(look["chroma"]) / src_ch) ** 0.5, 0.75, 1.4))
+    c_scale = float(np.clip((float(look["chroma"]) / src_ch) ** (0.8 if full else 0.5), 0.55 if full else 0.75, 1.4))
     c_scale = 1 + (c_scale - 1) * s_col
 
     # white balance: remove the shot's own cast (measured on neutral pixels)
@@ -468,18 +469,21 @@ def grade_plan(plan: dict, by_id: dict, cfg: dict, backend, work: Path) -> dict 
             name = auto_look(list(stats.values()))
             why = "picked from the footage's overall colour"
     look = get_look(name)
-    luts = {i: str(shot_lut(stats[i], look, strength, {k: notes[i].get(k) for k in ("exposure", "wb", "keep_mood")}))
+    match = cfg.get("match")
+    luts = {i: str(shot_lut(stats[i], look, strength, {**{k: notes[i].get(k) for k in ("exposure", "wb", "keep_mood")},
+                                                       **({"match": match} if match else {})}))
             for i in ids}
     for seg in plan["segments"]:
         for c in (seg.get("clips") or [seg]):
             if c.get("shot_id") in luts:
                 c["lut"] = luts[c["shot_id"]]
                 c["grade_note"] = notes[c["shot_id"]].get("light", "")
-    g = {"look": name, "strength": strength, "why": why, "grain": look.get("grain", 0),
+    g = {"look": name, "strength": strength, "why": why, "grain": look.get("grain", 0), "match": match,
          "vignette": bool(look.get("vignette"))}
     plan["grade"] = g
     log(f"grade: look '{name}' at {int(strength * 100)}%" + (f" ({why})" if why else "")
-        + f", {sum(1 for i in ids if notes[i].get('keep_mood'))} shot(s) keep their own light")
+        + (", every shot taken fully into the look" if match == "full" else
+           f", {sum(1 for i in ids if notes[i].get('keep_mood'))} shot(s) keep their own light"))
     return g
 
 

@@ -82,7 +82,16 @@ tripshots learn https://www.instagram.com/reel/AAA/ https://www.instagram.com/re
 tripshots make ~/Trips/Iceland -m track.mp3 --style my-vibe
 ```
 
-`learn` downloads the reels and finds every cut. It measures how many beats each shot lasts, what share of cuts land on the beat, the colour grade, and the first-shot length. Then it shows sampled frames to the AI, which describes the text hook, transitions and mood. The result is saved as `~/.tripshots/styles/my-vibe.yaml`, plain YAML you can tweak. Instagram usually needs your browser login for downloads, which is what `--cookies-from-browser` is for. You can also pass local `.mp4` files you saved.
+`learn` downloads the reels and finds every cut. It measures how many beats each shot lasts, what share of cuts land on the beat, the colour grade, and the first-shot length. Then it shows sampled frames to the AI, which describes the text hook, transitions and mood. The result is saved as `~/.tripshots/styles/my-vibe.yaml`, plain YAML you can tweak.
+
+A learned style copies more than timing:
+- **Taste.** The references' light and colour (and the kind of light and of people the AI sees in them: golden backlight, people seen from behind) steer which of your shots are chosen, so a moody golden-hour reference doesn't get your bright blue-sky postcards.
+- **Shape.** A widescreen reference makes a widescreen reel: a cinematic letterbox in the 9:16 frame, with the text in the black bars (`frame: {aspect: 16:9}`).
+- **Look.** The references' grade is applied at full strength (`grade: {match: full}`): every shot is taken into the mood, not just tinted.
+- **Pace and movement.** Shots are held as long as the references hold theirs, and pans move as slowly as the references' camera (`layout.pan_speed`).
+- **Format and text.** The format is fixed (no numbered place cards in a cinematic reel), and the references' own text decides whether a hook line appears.
+
+Styles learned before this version don't have these: re-learn one with `tripshots learn -n my-vibe` (no links: it uses the reels it was learned from, already downloaded). Instagram usually needs your browser login for downloads, which is what `--cookies-from-browser` is for. You can also pass local `.mp4` files you saved.
 
 ## Edit by hand (or with Claude)
 

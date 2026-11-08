@@ -107,6 +107,47 @@ def _quality(s: dict) -> float:
     return float(s.get("ai", {}).get("score", 5.0))
 
 
+def taste_scores(shots: list[dict], style: dict) -> dict[str, float]:
+    """Bonus (about -3..+3) for shots that look like what the style was learned from: the same light and colour
+    (golden backlight for a golden, backlit reference), its kind of light and of people, and shots that fit
+    the frame's shape."""
+    t = style.get("taste") or {}
+    w = float(t.get("weight", 0) or 0)
+    ref = t.get("look")
+    from .framing import FRAME
+    out: dict[str, float] = {}
+    if w <= 0 and FRAME["ar"] <= 1.0:
+        return out
+    import numpy as np
+    from .diversity import look_similarity, thumb_look
+    ref_v = np.array(ref, np.float32) if ref else None
+    lights = {str(x).lower() for x in t.get("light") or []}
+    people = str(t.get("people") or "").lower()
+    from .story import has_people
+    for s in shots:
+        v = 0.0
+        if ref_v is not None and w > 0:
+            lv = thumb_look(s.get("thumb"))
+            if lv is not None and len(lv) == len(ref_v):
+                v += w * (6.0 * look_similarity(ref_v, lv) - 2.0)
+        a = s.get("ai") or {}
+        tod = str(a.get("time_of_day") or "").lower()
+        if lights and w > 0:
+            words = (tod + " " + " ".join(a.get("tags", [])[:10]) + " " + str(a.get("note", ""))).lower()
+            hit = any(l.replace("_", " ") in words or l.split("_")[0] in words for l in lights)
+            v += w * (1.0 if hit else -0.5)
+        if people and w > 0:
+            hp = has_people(s)
+            if people in ("silhouette", "back_to_camera", "facing_camera", "crowd"):
+                v += w * (0.8 if hp else -0.3)
+            elif people == "none":
+                v += w * (-0.6 if hp else 0.3)
+        if FRAME["ar"] > 1.0 and s.get("w") and s.get("h") and s["w"] < s["h"]:
+            v -= 2.0  # an upright clip in a wide cinematic band loses most of its picture
+        out[s["id"]] = round(v, 3)
+    return out
+
+
 def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
     sh = style["shots"]
     pool = [s for s in shots if s.get("ai", {}).get("usable", True)]
@@ -123,6 +164,7 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
     if len(good) < n:
         log(f"only {len(good)} usable shots for {n} cuts; some shots will repeat")
     per_src = int(sh.get("max_per_source", 3))
+    taste = taste_scores(good, style)
     from .diversity import scene_groups
     group = scene_groups(good) if not sh.get("allow_similar") else {}
     used_group = Counter()
@@ -134,7 +176,7 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
             if used_src[s["src"]] >= per_src:
                 continue
             tags = s.get("ai", {}).get("tags", [])[:4]  # the main subjects (newer verdicts list up to 12)
-            v = _quality(s) - 0.6 * used_src[s["src"]] - 0.25 * sum(used_tags[t] for t in tags)
+            v = _quality(s) + taste.get(s["id"], 0.0) - 0.6 * used_src[s["src"]] - 0.25 * sum(used_tags[t] for t in tags)
             # avoid near-duplicate chunks of the same clip
             if any(c["src"] == s["src"] and abs(c["t0"] - s["t0"]) < 6 for c in chosen):
                 v -= 2.0
@@ -267,6 +309,12 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
                music_path: str | None = None) -> dict:
     target = float(target or style["duration"]["target"])
     target = clamp(target, style["duration"]["min"], style["duration"]["max"])
+    from .framing import band_height, set_frame
+    ar = set_frame((style.get("frame") or {}).get("aspect"))
+    letterbox = ar > 1.0
+    if letterbox:  # a cinematic band: full-screen layouts (split screens, pop-out frames) don't fit it
+        style.setdefault("panels", {})["use"] = 0.0
+        style.setdefault("popout", {})["use"] = 0.0
     grid = cut_grid(music, style, target)
     segs = grid["segments"]
     st = style.get("story") or {}
@@ -341,6 +389,9 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         else:
             e, kb_dir = _entry_for(next(it_normal), seg, style, kb_dir)
         e["idx"] = i
+        ps = (style.get("layout") or {}).get("pan_speed")
+        if ps is not None and e.get("layout") in ("pan", "kenburns"):
+            e["pan_speed"] = float(ps)
         if seg.get("role"):
             e["role"] = seg["role"]
             if seg["role"] in ("hook", "peak", "ending") and e.get("layout") == "kenburns":
@@ -362,6 +413,8 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         "motion": {**style.get("motion", {}), **({"hook_punch": True} if arc and st.get("hook_punch", True) else {})},
         "loop": bool(style.get("loop", False)) or (arc and bool(st.get("loop", True))),
         **({"story": {"format": fmt, "arc": [s.get("role") for s in out]}} if arc else {}),
+        **({"frame": {"aspect": (style.get("frame") or {}).get("aspect"), "ar": round(ar, 4),
+                      "band": band_height(ar)}} if letterbox else {}),
     }
 
 

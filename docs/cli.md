@@ -271,10 +271,11 @@ options:
 
 ```text
 usage: tripshots learn [-h] -n NAME [-b BACKEND] [--cookies-from-browser BROWSER] [--cookies FILE]
-                       refs [refs ...]
+                       [refs ...]
 
 positional arguments:
-  refs
+  refs                  reel links or video files (none: re-learn the style named by -n from the
+                        reels it was learned from)
 
 options:
   -h, --help            show this help message and exit

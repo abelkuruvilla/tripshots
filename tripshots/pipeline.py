@@ -557,6 +557,7 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
             name = "clone-" + rdir.name.replace("ref_", "")[:8]
             grade_mod.save_look(grade_mod.look_from_images(frames, name, "Colour of the cloned reel."), name)
             look = name
+            style["grade"]["match"] = "full"  # a clone takes on the reference's mood, not a hint of it
     style["grade"]["look"] = look or style["grade"].get("look", "auto")
     if grade_strength is not None:
         style["grade"]["strength"] = float(grade_strength)

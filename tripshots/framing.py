@@ -142,16 +142,40 @@ def focus_box(shot: dict) -> dict | None:
 PAN_SPEED = 0.06
 
 
+FRAME = {"ar": OUT_W / OUT_H}  # the picture's shape (width / height); a letterbox reel sets 16/9 or 2.39
+
+
+def set_frame(aspect: str | float | None) -> float:
+    """Set the picture shape for this plan ("9:16", "16:9", "2.39:1" or a number). Returns width/height."""
+    ar = OUT_W / OUT_H
+    if isinstance(aspect, (int, float)):
+        ar = float(aspect)
+    elif aspect and ":" in str(aspect):
+        a, b = str(aspect).split(":", 1)
+        try:
+            ar = float(a) / float(b)
+        except ValueError:
+            pass
+    FRAME["ar"] = max(OUT_W / OUT_H, min(2.6, ar))
+    return FRAME["ar"]
+
+
+def band_height(ar: float | None = None) -> int:
+    """Height of the picture band in the 1080x1920 reel (1920 = full screen)."""
+    ar = ar or FRAME["ar"]
+    return min(OUT_H, int(round(OUT_W / ar / 2)) * 2)
+
+
 def crop_fraction(w: int, h: int) -> float:
-    """Width of a 9:16 crop as a fraction of a (wider) source frame."""
-    return min(1.0, (h * OUT_W / OUT_H) / max(w, 1))
+    """Width of the reel's picture crop as a fraction of a (wider) source frame."""
+    return min(1.0, (h * FRAME["ar"]) / max(w, 1))
 
 
 def decide_layout(shot: dict, box: dict, want: str) -> tuple[str, dict]:
     """Pick crop/pan/blur_fill for a landscape source so the subject survives the vertical cut."""
     w, h = shot["w"], shot["h"]
     ar = w / max(h, 1)
-    if ar <= 0.75:
+    if ar <= 0.75 and FRAME["ar"] <= 0.75:
         return "fill", {}
     if want not in ("auto", None):
         return want, ({"pan_from": box["x0"], "pan_to": box["x1"]} if want == "pan" else {})

@@ -78,7 +78,7 @@ This makes three versions: each opens on a different strong shot, orders the mid
 
 ```bash
 tripshots learn https://www.instagram.com/reel/AAA/ https://www.instagram.com/reel/BBB/ \
-  --name my-vibe --cookies-from-browser chrome
+  --name my-vibe --cookies-from-browser auto
 tripshots make ~/Trips/Iceland -m track.mp3 --style my-vibe
 ```
 

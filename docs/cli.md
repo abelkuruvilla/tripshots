@@ -13,6 +13,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
 | [`music`](#music) | download the sound of an Instagram reel (or any yt-dlp link) |
+| [`cookies`](#cookies) | which browsers TripShots can borrow your Instagram login from (for reel links) |
 | [`scan`](#scan) | analyze + score footage and list the best shots |
 | [`frame`](#frame) | pop-out frame stills: the subject steps out of a framed photo |
 | [`look`](#look) | copy the colour grade of reels/videos/photos you like into a reusable look |
@@ -115,9 +116,10 @@ options:
 
 instagram login (most reels need it):
   --cookies-from-browser BROWSER
-                        chrome | safari | firefox | brave | edge (use the browser where you're
-                        logged in to Instagram; 'chrome:Profile 1' for another profile). Default:
-                        $TRIPSHOTS_COOKIES_BROWSER
+                        auto | chrome | safari | brave | arc | firefox | edge | vivaldi | opera:
+                        the browser where you're logged in to Instagram (auto = the first one that
+                        is; 'chrome:Profile 1' for another profile; `tripshots cookies` checks
+                        them). Default: $TRIPSHOTS_COOKIES_BROWSER
   --cookies FILE        cookies.txt exported from your browser (alternative)
 
 sound design (real sound effects on the cuts, ambience per place):
@@ -184,9 +186,10 @@ options:
 
 instagram login (most reels need it):
   --cookies-from-browser BROWSER
-                        chrome | safari | firefox | brave | edge (use the browser where you're
-                        logged in to Instagram; 'chrome:Profile 1' for another profile). Default:
-                        $TRIPSHOTS_COOKIES_BROWSER
+                        auto | chrome | safari | brave | arc | firefox | edge | vivaldi | opera:
+                        the browser where you're logged in to Instagram (auto = the first one that
+                        is; 'chrome:Profile 1' for another profile; `tripshots cookies` checks
+                        them). Default: $TRIPSHOTS_COOKIES_BROWSER
   --cookies FILE        cookies.txt exported from your browser (alternative)
 
 sound design (real sound effects on the cuts, ambience per place):
@@ -264,9 +267,10 @@ options:
 
 instagram login (most reels need it):
   --cookies-from-browser BROWSER
-                        chrome | safari | firefox | brave | edge (use the browser where you're
-                        logged in to Instagram; 'chrome:Profile 1' for another profile). Default:
-                        $TRIPSHOTS_COOKIES_BROWSER
+                        auto | chrome | safari | brave | arc | firefox | edge | vivaldi | opera:
+                        the browser where you're logged in to Instagram (auto = the first one that
+                        is; 'chrome:Profile 1' for another profile; `tripshots cookies` checks
+                        them). Default: $TRIPSHOTS_COOKIES_BROWSER
   --cookies FILE        cookies.txt exported from your browser (alternative)
 ```
 
@@ -286,10 +290,22 @@ options:
 
 instagram login (most reels need it):
   --cookies-from-browser BROWSER
-                        chrome | safari | firefox | brave | edge (use the browser where you're
-                        logged in to Instagram; 'chrome:Profile 1' for another profile). Default:
-                        $TRIPSHOTS_COOKIES_BROWSER
+                        auto | chrome | safari | brave | arc | firefox | edge | vivaldi | opera:
+                        the browser where you're logged in to Instagram (auto = the first one that
+                        is; 'chrome:Profile 1' for another profile; `tripshots cookies` checks
+                        them). Default: $TRIPSHOTS_COOKIES_BROWSER
   --cookies FILE        cookies.txt exported from your browser (alternative)
+```
+
+## cookies
+
+```text
+usage: tripshots cookies [-h] [--login [BROWSER]]
+
+options:
+  -h, --help         show this help message and exit
+  --login [BROWSER]  also check that this browser (default: each readable one) is logged in to
+                     Instagram; on a Mac this may ask for the Keychain once
 ```
 
 ## scan
@@ -361,9 +377,10 @@ options:
 
 instagram login (most reels need it):
   --cookies-from-browser BROWSER
-                        chrome | safari | firefox | brave | edge (use the browser where you're
-                        logged in to Instagram; 'chrome:Profile 1' for another profile). Default:
-                        $TRIPSHOTS_COOKIES_BROWSER
+                        auto | chrome | safari | brave | arc | firefox | edge | vivaldi | opera:
+                        the browser where you're logged in to Instagram (auto = the first one that
+                        is; 'chrome:Profile 1' for another profile; `tripshots cookies` checks
+                        them). Default: $TRIPSHOTS_COOKIES_BROWSER
   --cookies FILE        cookies.txt exported from your browser (alternative)
 ```
 

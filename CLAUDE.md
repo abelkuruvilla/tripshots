@@ -7,8 +7,8 @@ The user is not a video editor. Make the creative calls yourself, show the resul
 - `tripshots make <folders...> -m <song> [-s style] [-d secs] [--hook TEXT] [--location TEXT] [--dry-run] [-o out.mp4]`
 - `tripshots scan <folders...> --top 30`: ranked shot list with ids, AI scores, tags and notes
 - `tripshots render <plan.json> [-o out.mp4]`: re-render after editing the plan
-- `tripshots learn <urls-or-files...> -n <name> [--cookies-from-browser chrome]`: create a style from reference reels
-- `tripshots music <reel-url> [--cookies-from-browser chrome]`: download a reel's sound (cached) and report its BPM. `make -m <reel-url>` does this automatically, cuts from 0:00 and also writes `NAME.noaudio.mp4` for upload + in-app sound
+- `tripshots learn <urls-or-files...> -n <name> [--cookies-from-browser auto|chrome|safari|brave|arc|...]` (browsercookies.py checks the browser, explains failures, passes only instagram.com cookies; `tripshots cookies [--login]` diagnoses): create a style from reference reels
+- `tripshots music <reel-url> [--cookies-from-browser auto]`: download a reel's sound (cached) and report its BPM. `make -m <reel-url>` does this automatically, cuts from 0:00 and also writes `NAME.noaudio.mp4` for upload + in-app sound
 - `tripshots library [--forget-ai|--wipe]`: per-file memory (metadata, shot analysis, AI verdicts) keyed by file content; reused by every run. `--rescore` on make/scan re-asks the AI
 - `tripshots` (no args) or `tripshots ui`: the Textual app (tui.py) for the user; it shells out to the same CLI commands. State in ~/.tripshots/tui.json, settings in ~/.tripshots/.env
 - `tripshots frame <photos|folders> [-f post|story|square|both] [--bg paper|blur|solid|dark] [--variant auto|top|bottom] [--border] [-o dir]`: pop-out frame stills (popout.py, rembg cut-out cached in library/masks). In reels, photo segments with `layout: popout` animate it (style `popout.use`)

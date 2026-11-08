@@ -12,7 +12,7 @@ decide what to turn on.
 | Place names (location titles, trips) | GPS coordinates rounded to about 100 m–2 km | OpenStreetMap Nominatim | `--no-location`, `trips --no-names`, or `TRIPSHOTS_OFFLINE=1` |
 | Place search (`find --place`) | The place name you typed | OpenStreetMap Nominatim | Use `--near` or `--text`, or `TRIPSHOTS_OFFLINE=1` |
 | Sound effects | Search words such as "whoosh" or "ocean waves" | Openverse | `--sfx off --ambience off`, or put your own sounds in `~/.tripshots/sfx/library/` |
-| Reel links (music, learn, clone, look) | The link, with your browser's Instagram cookies if you pass `--cookies-from-browser` | Instagram, via yt-dlp | Use local files |
+| Reel links (music, learn, clone, look) | The link, with your browser's Instagram cookies (only instagram.com's, in a temporary file deleted afterwards) if you pass `--cookies-from-browser` | Instagram, via yt-dlp | Use local files |
 | Installing (`./install.sh`) | Search words for a starter set of sound effects | Openverse | Run it as `TRIPSHOTS_OFFLINE=1 ./install.sh` |
 | Sending to Edits | The package files, copied into Edits' sandbox on your Mac; tool calls to Edits' local automation server | The Edits app on your computer (it posts to Instagram only when you post) | Don't use `tripshots edits` |
 | Model downloads | Nothing about you | GitHub / Hugging Face (face models), PyPI, npm | Download once; then works offline |

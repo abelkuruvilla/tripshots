@@ -43,9 +43,9 @@ def _cookie_opts(cookies_browser: str | None, cookies_file: str | None) -> dict:
             raise ReelError(f"cookies file not found: {p}")
         opts["cookiefile"] = str(p)
     elif cookies_browser:
-        # e.g. "chrome", "safari", "firefox", "chrome:Profile 1"
-        name, _, profile = cookies_browser.partition(":")
-        opts["cookiesfrombrowser"] = (name.lower(), profile or None, None, None)
+        # e.g. "chrome", "safari", "brave", "chrome:Profile 1", "auto": checked here first, so a failure says why
+        from .browsercookies import cookie_file
+        opts["cookiefile"], _ = cookie_file(cookies_browser)
     return opts
 
 
@@ -83,11 +83,12 @@ def _friendly(err: Exception, used_cookies: bool) -> ReelError:
     if any(k in low for k in ("proxy", "unable to connect", "name resolution", "timed out", "network is unreachable")):
         return ReelError(f"could not reach the site (network problem): {msg.splitlines()[-1][:200]}")
     if any(k in low for k in ("login", "rate-limit", "rate limit", "cookies", "not available", "401", "403", "private")):
-        hint = ("Instagram wants a logged-in session. Re-run with --cookies-from-browser chrome "
-                "(or safari/firefox; you must be logged in to instagram.com in that browser). "
-                "On macOS, Safari needs Full Disk Access for your terminal.") if not used_cookies else \
-               ("Still blocked with cookies. Open the reel in that browser once (to refresh the session), "
-                "make sure the account can see it, then retry. Updating yt-dlp often fixes this: ./install.sh")
+        hint = ("Instagram wants a logged-in session. Re-run with --cookies-from-browser auto (it uses the browser "
+                "you're logged in to instagram.com with; or name one: chrome, safari, brave, arc, firefox, edge), "
+                "or set it in the app's Settings → Instagram login.") if not used_cookies else \
+               ("Instagram refused even with your login. Open instagram.com in that browser (the session may have "
+                "expired or need a security check), make sure the account can see the reel, then retry. "
+                "Updating yt-dlp often fixes this: ./install.sh")
         return ReelError(f"could not download: {msg.splitlines()[-1][:200]}\n{hint}")
     return ReelError(f"could not download: {msg.splitlines()[-1][:300]}")
 

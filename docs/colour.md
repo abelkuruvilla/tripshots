@@ -15,7 +15,7 @@ tripshots make ~/Trips/Bali -m song.mp3                              # look: aut
 
 # copy the colour of reels you like
 tripshots look https://www.instagram.com/reel/AAA/ https://www.instagram.com/reel/BBB/ \
-  --name dreamy --cookies-from-browser chrome
+  --name dreamy --cookies-from-browser auto
 tripshots make ~/Trips/Bali -m song.mp3 --look dreamy --grade-strength 0.9
 
 # grade photos and videos on their own (copies; originals untouched) + before/after sheet

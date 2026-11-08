@@ -314,6 +314,28 @@ def cmd_ask(a):
                          find_only=a.find_only), indent=2))
 
 
+def cmd_cookies(a):
+    from . import browsercookies as bc
+    icon = {"ok": "ok", "blocked": "BLOCKED", "no_store": "no cookies", "not_installed": "not installed",
+            "unsupported": "-"}
+    rows = bc.report()
+    for st in rows:
+        line = f"{st['name']:<9} {icon[st['status']]:<14}"
+        if st["status"] == "ok":
+            line += f" {st['store']}"
+        elif st["status"] not in ("not_installed", "unsupported"):
+            line += f" {st['detail']}"
+        print(line)
+    if a.login:
+        targets = [a.login] if a.login != "auto" else [s["browser"] for s in rows if s["status"] == "ok"]
+        for b in targets:
+            st = bc.login_status(b)
+            print(f"{bc.NAMES.get(b.split(':')[0].lower(), b)} Instagram login: {'yes' if st == 'ok' else st}")
+    cur = os.environ.get("TRIPSHOTS_COOKIES_BROWSER")
+    none = "no login (set it in the app's Settings, TRIPSHOTS_COOKIES_BROWSER, or pass --cookies-from-browser auto)"
+    print(f"\nreel links use: {cur or none}")
+
+
 def cmd_doctor(a):
     from .ai import get_backend
     ok = True
@@ -338,6 +360,14 @@ def cmd_doctor(a):
     try:
         import yt_dlp
         print(f"{'yt-dlp':<10} ok {yt_dlp.version.__version__} (update: re-run ./install.sh if reel links stop working)")
+        cb = os.environ.get("TRIPSHOTS_COOKIES_BROWSER")
+        if cb and cb.split(":")[0].lower() != "auto":
+            from .browsercookies import check
+            st = check(cb.split(":")[0])
+            print(f"{'instagram':<10} login from {st['name']}: " + ("cookie store readable (`tripshots cookies --login` "
+                  "checks the login)" if st["status"] == "ok" else st["detail"]))
+        else:
+            print(f"{'instagram':<10} login from {cb or 'no browser set'} (`tripshots cookies` shows which browsers can be used)")
     except ImportError:
         print(f"{'yt-dlp':<10} not installed (needed for reel links: music + learn)")
     from .popout import have_cutout
@@ -398,8 +428,9 @@ def build_parser() -> argparse.ArgumentParser:
     def add_cookie_args(sp):
         g = sp.add_argument_group("instagram login (most reels need it)")
         g.add_argument("--cookies-from-browser", metavar="BROWSER",
-                       help="chrome | safari | firefox | brave | edge (use the browser where you're logged in "
-                            "to Instagram; 'chrome:Profile 1' for another profile). Default: $TRIPSHOTS_COOKIES_BROWSER")
+                       help="auto | chrome | safari | brave | arc | firefox | edge | vivaldi | opera: the browser where "
+                            "you're logged in to Instagram (auto = the first one that is; 'chrome:Profile 1' for "
+                            "another profile; `tripshots cookies` checks them). Default: $TRIPSHOTS_COOKIES_BROWSER")
         g.add_argument("--cookies", metavar="FILE", help="cookies.txt exported from your browser (alternative)")
 
     def add_source_args(sp):
@@ -519,6 +550,12 @@ def build_parser() -> argparse.ArgumentParser:
     mu.add_argument("--refresh", action="store_true", help="download again even if cached")
     add_cookie_args(mu)
     mu.set_defaults(fn=cmd_music)
+
+    ck = sub.add_parser("cookies", help="which browsers TripShots can borrow your Instagram login from (for reel links)")
+    ck.add_argument("--login", metavar="BROWSER", nargs="?", const="auto",
+                    help="also check that this browser (default: each readable one) is logged in to Instagram; "
+                         "on a Mac this may ask for the Keychain once")
+    ck.set_defaults(fn=cmd_cookies)
 
     sc = sub.add_parser("scan", help="analyze + score footage and list the best shots")
     sc.add_argument("inputs", nargs="+")

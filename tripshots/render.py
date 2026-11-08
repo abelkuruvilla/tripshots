@@ -532,7 +532,9 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
     # ---- final encode: frames from the compositor + text overlays + music
     total = total_f / fps
     inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OUT_W}x{OUT_H}", "-r", str(fps), "-i", "-"]
-    fc, n_in = ["[0:v]format=yuv420p[vout]"], 1
+    vfade = min(float(plan.get("fade_out_video") or 0), total_f / fps * 0.5)
+    fc, n_in = [f"[0:v]{f'fade=t=out:st={total_f / fps - vfade:.3f}:d={vfade:.3f},' if vfade > 0.05 else ''}"
+                "format=yuv420p[vout]"], 1
     music = plan.get("music") or {}
     if music.get("path") and Path(music["path"]).exists():
         inputs += ["-ss", f"{music['start']:.3f}", "-t", f"{total + 0.1:.3f}", "-i", music["path"]]

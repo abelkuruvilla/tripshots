@@ -35,26 +35,39 @@ For EACH shot return:
 - "content": what it shows in at most 8 words (e.g. "turquoise lake below snowy peaks")
 - "camera": static | pan | push | handheld | drone | timelapse
 - "energy": calm | medium | intense (how busy the shot feels)
+- "light": golden_hour | sunset | blue_hour | midday | overcast | night | fog | indoor (the light and time of day)
+- "people": none | silhouette | back_to_camera | facing_camera | crowd | hands_only
+- "mood": a few words on the feeling and colour ("warm backlit, moody, soft haze")
 - "text": the exact on-screen text in this frame ("" if none; ignore Instagram's UI, watermarks and text that is part
   of a map or graphic). Text often appears word by word or stays across several shots: when the same line
   continues over neighbouring shots, give the COMPLETE line on every shot it appears in, identically.
 - "text_pos": top | center | bottom
 - "text_role": hook | location | label | cta | caption
 Reply with JSON only: {{"shots": [{{"id": "R01", "type": "...", "content": "...", "camera": "...", "energy": "...",
-"text": "", "text_pos": "center", "text_role": "hook"}}]}}"""
+"light": "golden_hour", "people": "silhouette", "mood": "...", "text": "", "text_pos": "center",
+"text_role": "hook"}}]}}"""
 
 MATCH_PROMPT = """You are recreating a reference Instagram Reel shot for shot with the user's own travel footage.
+What makes the reference feel the way it does is its LIGHT, MOOD and MOVEMENT, more than its exact subjects.
+
+Images: first the reference shots (labelled R01, R02... in order), then the user's candidate shots (labelled
+with their ids; "VIDEO" tiles are clips, the others photos).
 
 Reference slots (in order; dur in seconds):
 {slots}
 
-The user's shots (id, kind, usable length, AI score 1-10, tags, note, place):
+The user's candidates (id, kind, usable length, AI score 1-10, light, people, tags, note, place):
 {shots}
 
-1. For every slot pick the 3 best user shots, best first. Match what the slot shows (type/content) first,
-   then its camera movement and energy. A video must be at least as long as the slot (a photo always fits).
-   Use each shot at most once in your FIRST choices unless there are more slots than shots. Put the most
-   striking shot in R01 (it is the hook).
+1. For every slot pick the 3 best user shots, best first. Judge from the PICTURES:
+   a. the same light and mood first (golden hour backlight with golden hour backlight, a moody dusk with a dusk;
+      never a flat blue midday photo for a warm, low-sun reference shot if anything closer exists),
+   b. then what it shows and how it is framed (a person seen from behind, a silhouette, a wide vista, a detail),
+   c. then movement: the reference is video, so prefer the user's VIDEO clips (a clip at least as long as the
+      slot); use a photo only when no clip comes close.
+   Keep the whole reel coherent, like one trip at one time of day. Every candidate is a different moment: use
+   each at most once in your FIRST choices (unless there are more slots than candidates). Put the most striking
+   shot that fits in R01 (it is the hook).
 2. Rewrite every reference on-screen text for the user's trip, keeping its format, tone, word count and
    role (a "POV: ..." stays a POV, a place name becomes one of the user's places{places_hint}). Give 3
    alternatives per text, best first. Never invent facts the footage does not show.
@@ -201,6 +214,36 @@ def analyze_reference(ref: str, work: Path, cookies: dict | None = None) -> dict
     return res
 
 
+def ref_motion(ref: dict) -> dict[str, dict]:
+    """How the camera moves in each reference shot: {"dx": share of the frame width per second (+ = the
+    camera moves right), "zoom": per second (+ = pushes in)}. Cached next to the reference."""
+    rdir = Path(ref["dir"])
+    cache = read_json(rdir / "motion.json")
+    if cache and len(cache) == len(ref["shots"]):
+        return cache
+    w, h, fps = 160, 284, 10
+    proc = subprocess.run(ffmpeg_base() + ["-i", ref["file"], "-vf", f"fps={fps},scale={w}:{h},format=gray",
+                                           "-f", "rawvideo", "-"], capture_output=True)
+    a = np.frombuffer(proc.stdout, np.uint8)
+    n = len(a) // (w * h)
+    fr = a[: n * w * h].reshape(n, h, w)
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    rx, ry = xx - w / 2, yy - h / 2
+    r2 = rx ** 2 + ry ** 2 + 1.0
+    out = {}
+    for rs in ref["shots"]:
+        i0, i1 = int(rs["t0"] * fps) + 1, int(rs["t1"] * fps) - 1
+        dxs, zs = [], []
+        for i in range(max(0, i0), min(n - 1, i1)):
+            f = cv2.calcOpticalFlowFarneback(fr[i], fr[i + 1], None, 0.5, 3, 15, 3, 5, 1.2, 0)
+            dxs.append(-float(np.median(f[..., 0])) / w)              # content moves left = camera moves right
+            zs.append(float(np.mean((f[..., 0] * rx + f[..., 1] * ry) / r2)))
+        out[rs["id"]] = {"dx": round(float(np.median(dxs)) * fps, 4) if dxs else 0.0,
+                         "zoom": round(float(np.median(zs)) * fps, 4) if zs else 0.0}
+    write_json(rdir / "motion.json", out)
+    return out
+
+
 def _sheet(paths: list[tuple[str, str]], out: Path, cols: int = 6, tile=(240, 427)) -> Path:
     from PIL import Image, ImageDraw
     from .text import load_font
@@ -228,11 +271,12 @@ def describe_reference(ref: dict, backend) -> dict:
     from .ai import extract_json
     rdir = Path(ref["dir"])
     cache = read_json(rdir / "slots.json")
-    if cache and len(cache.get("shots", [])) == len(ref["shots"]):
+    if cache and len(cache.get("shots", [])) == len(ref["shots"]) and (cache.get("version") == 2 or backend is None):
         return cache
     if backend is None:
         out = {"shots": [{"id": s["id"], "type": "other", "content": "", "camera": "static",
                           "energy": "intense" if s["dur"] < 0.8 else ("calm" if s["dur"] > 2.2 else "medium"),
+                          "light": "", "people": "", "mood": "",
                           "text": "", "text_pos": "center", "text_role": "caption"} for s in ref["shots"]],
                "source": "none"}
         return out
@@ -258,9 +302,11 @@ def describe_reference(ref: dict, backend) -> dict:
         shots.append({"id": s["id"], "type": r.get("type") if r.get("type") in TYPES else "other",
                       "content": str(r.get("content", ""))[:80], "camera": str(r.get("camera", "static")),
                       "energy": r.get("energy") if r.get("energy") in ("calm", "medium", "intense") else "medium",
+                      "light": str(r.get("light") or "")[:20], "people": str(r.get("people") or "")[:20],
+                      "mood": str(r.get("mood") or "")[:60],
                       "text": str(r.get("text") or "").strip(), "text_pos": r.get("text_pos", "center"),
                       "text_role": r.get("text_role", "caption")})
-    out = {"shots": shots, "source": backend.name}
+    out = {"shots": shots, "source": backend.name, "version": 2}
     write_json(rdir / "slots.json", out)
     return out
 
@@ -282,49 +328,172 @@ def _fits(shot: dict, dur: float) -> bool:
     return shot["kind"] == "photo" or (shot["t1"] - shot["t0"]) >= dur * 0.6
 
 
-def heuristic_match(slots: list[dict], ref_shots: list[dict], shots: list[dict]) -> dict[str, list[str]]:
-    used: dict[str, int] = {}
+def ref_looks(ref: dict) -> dict[str, np.ndarray]:
+    """Light and colour of every reference shot (from its frame)."""
+    from .diversity import look
     out = {}
-    for sl, rs in zip(slots, ref_shots):
-        want = _TYPE_TAGS.get(sl["type"], [])
-        moving_slot = rs["motion"] > 6 or sl["camera"] in ("pan", "handheld", "drone", "push")
-
-        def score(s):
-            a = s.get("ai", {})
-            text = " ".join(a.get("tags", [])) + " " + a.get("note", "")
-            v = float(a.get("score", 5))
-            v += 1.5 * sum(1 for w in want if w in text.lower())
-            v += 0.8 if (s["kind"] == "video") == moving_slot else 0
-            v -= 3.0 * used.get(s["id"], 0)
-            v -= 4.0 if not _fits(s, rs["dur"]) else 0
-            return v
-        ranked = sorted(shots, key=score, reverse=True)[:3]
-        out[sl["id"]] = [s["id"] for s in ranked]
-        if ranked:
-            used[ranked[0]["id"]] = used.get(ranked[0]["id"], 0) + 1
+    for rs in ref["shots"]:
+        img = cv2.imread(rs.get("frame") or "")
+        if img is not None:
+            out[rs["id"]] = look(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     return out
 
 
-def ai_match(slots, ref_shots, shots, places, backend, rdir: Path) -> tuple[dict, dict]:
+def is_black(rs: dict) -> bool:
+    """A (near) black reference shot: a fade, not a picture to fill."""
+    img = cv2.imread(rs.get("frame") or "", cv2.IMREAD_GRAYSCALE)
+    return img is not None and float(img.mean()) < 16 and float(np.percentile(img, 98)) < 48
+
+
+def _tag_fit(sl: dict, s: dict) -> float:
+    a = s.get("ai", {})
+    text = (" ".join(a.get("tags", [])) + " " + a.get("note", "") + " " + str(a.get("time_of_day") or "")).lower()
+    v = 1.0 * sum(1 for w in _TYPE_TAGS.get(sl.get("type", "other"), []) if w in text)
+    light = str(sl.get("light") or "")
+    if light in ("golden_hour", "sunset") and any(w in text for w in ("golden", "sunset", "sunrise", "dusk")):
+        v += 1.5
+    if light == "night" and any(w in text for w in ("night", "stars", "milky")):
+        v += 1.5
+    ppl = str(sl.get("people") or "")
+    n = int((a.get("people") or {}).get("count") or 0) if isinstance(a.get("people"), dict) else 0
+    if ppl and ppl not in ("none", "crowd", "hands_only"):
+        v += 1.0 if n >= 1 or any(w in text for w in ("person", "silhouette", "hiker", "man", "woman")) else -0.5
+    elif ppl == "none" and n >= 1:
+        v -= 0.5
+    return v
+
+
+def rank_for_slot(sl: dict, rs: dict, shots: list[dict], rlook, looks: dict, video_ref: bool = True) -> list:
+    """User shots for one slot, best first: light/colour likeness, content, kind and quality."""
+    from .diversity import look_similarity
+    moving = rs.get("motion", 0) > 6 or sl.get("camera") in ("pan", "handheld", "drone", "push")
+
+    def score(s):
+        v = 0.6 * float(s.get("ai", {}).get("score", 5))
+        if rlook is not None and looks.get(s["id"]) is not None:
+            v += 6.0 * look_similarity(rlook, looks[s["id"]])
+        v += _tag_fit(sl, s)
+        if s["kind"] == "video":
+            v += 1.5 if video_ref else 0.0
+            v += 0.8 if moving else 0.0
+        v -= 4.0 if not _fits(s, rs["dur"]) else 0.0
+        return v
+    return sorted(shots, key=score, reverse=True)
+
+
+def _distinct(shots: list[dict], groups: dict) -> list[dict]:
+    """One shot per moment: the best of each scene group (a clip wins a tie, it moves)."""
+    best = {}
+    for s in shots:
+        g = groups.get(s["id"], s["id"])
+        key = (float(s.get("ai", {}).get("score", 5)), s["kind"] == "video", -len(s["id"]))
+        if g not in best or key > best[g][0]:
+            best[g] = (key, s)
+    return [v[1] for v in best.values()]
+
+
+def heuristic_match(slots: list[dict], ref_shots: list[dict], shots: list[dict], ref: dict | None = None,
+                    groups: dict | None = None, depth: int = 3) -> dict[str, list[str]]:
+    """Without the AI (and as its fallback): rank by light/colour likeness, tags, kind and quality."""
+    from .diversity import scene_groups, thumb_look
+    groups = groups if groups is not None else scene_groups(shots)
+    pool = _distinct(shots, groups)
+    looks = {s["id"]: thumb_look(s.get("thumb")) for s in pool}
+    rl = ref_looks(ref) if ref else {}
+    used: set = set()
+    out = {}
+    for sl, rs in zip(slots, ref_shots):
+        ranked = [s for s in rank_for_slot(sl, rs, pool, rl.get(rs["id"]), looks) if s["id"] not in used]
+        out[sl["id"]] = [s["id"] for s in ranked[:depth]]
+        if ranked:
+            used.add(ranked[0]["id"])
+    return out
+
+
+def candidate_pool(slots, ref_shots, shots, ref, groups, per_slot: int = 6, cap: int = 48) -> list[dict]:
+    """The user shots worth showing the AI: distinct moments, the closest few to each slot, plus the best clips."""
+    from .diversity import thumb_look
+    pool = _distinct([s for s in shots if s.get("ai", {}).get("usable", True)] or shots, groups)
+    looks = {s["id"]: thumb_look(s.get("thumb")) for s in pool}
+    rl = ref_looks(ref)
+    ranked = [rank_for_slot(sl, rs, pool, rl.get(rs["id"]), looks)[:per_slot * 4]
+              for sl, rs in zip(slots, ref_shots) if not is_black(rs)]
+    picked: dict[str, dict] = {}
+    for k in range(per_slot):  # round robin: every slot gets its closest few in
+        for r in ranked:
+            s = next((s for s in r if s["id"] not in picked), None)
+            if s is not None and len(picked) < cap:
+                picked[s["id"]] = s
+    return sorted(picked.values(), key=lambda s: s["id"])
+
+
+def _cand_sheets(pool: list[dict], rdir: Path, per_sheet: int = 24) -> list[Path]:
+    from PIL import Image, ImageDraw
+    from .text import load_font
+    out = []
+    font = load_font(24, "bold")
+    tile, cols = (300, 220), 4
+    for b in range(0, len(pool), per_sheet):
+        part = pool[b:b + per_sheet]
+        rows = math.ceil(len(part) / cols)
+        sheet = Image.new("RGB", (cols * (tile[0] + 6) + 6, rows * (tile[1] + 6) + 6), (30, 30, 30))
+        d = ImageDraw.Draw(sheet)
+        for i, s in enumerate(part):
+            x, y = 6 + (i % cols) * (tile[0] + 6), 6 + (i // cols) * (tile[1] + 6)
+            try:
+                with Image.open(s["thumb"]) as im:
+                    im = im.convert("RGB")
+                    im.thumbnail(tile)
+                    sheet.paste(im, (x + (tile[0] - im.width) // 2, y + (tile[1] - im.height) // 2))
+            except Exception:
+                pass
+            lab = s["id"] + (" VIDEO" if s["kind"] == "video" else "")
+            d.rectangle([x, y, x + 12 + int(font.getlength(lab)), y + 32], fill=(255, 214, 0) if s["kind"] == "video" else (255, 255, 255))
+            d.text((x + 6, y + 3), lab, font=font, fill=(0, 0, 0))
+        p = rdir / f"cands_{b // per_sheet + 1}.jpg"
+        sheet.save(p, "JPEG", quality=84)
+        out.append(p)
+    return out
+
+
+def ai_match(slots, ref_shots, shots, places, backend, rdir: Path, ref: dict | None = None,
+             groups: dict | None = None) -> tuple[dict, dict]:
     from .ai import extract_json
+    from .diversity import scene_groups
     by_id = {s["id"]: s for s in shots}
+    groups = groups if groups is not None else scene_groups(shots)
     sl_txt = "\n".join(f"{sl['id']}: {rs['dur']:.2f}s, {sl['type']}, \"{sl['content']}\", camera {sl['camera']}, "
-                       f"{sl['energy']}" + (f", text \"{sl['text']}\" ({sl['text_role']})" if sl["text"] else "")
-                       for sl, rs in zip(slots, ref_shots))
-    pool = sorted(shots, key=lambda s: -float(s.get("ai", {}).get("score", 5)))[:60]
-    sh_txt = "\n".join(
-        f"{s['id']}: {s['kind']}, {('%.1fs' % (s['t1'] - s['t0'])) if s['kind'] == 'video' else 'any length'}, "
-        f"{s.get('ai', {}).get('score', 5)}, {','.join(s.get('ai', {}).get('tags', []))}, "
-        f"\"{s.get('ai', {}).get('note', '')}\"" + (f", {places.get(s['id'])}" if places.get(s["id"]) else "")
-        for s in pool)
+                       f"{sl['energy']}" + (f", light {sl['light']}" if sl.get("light") else "")
+                       + (f", people {sl['people']}" if sl.get("people") else "")
+                       + (f", mood \"{sl['mood']}\"" if sl.get("mood") else "")
+                       + (f", text \"{sl['text']}\" ({sl['text_role']})" if sl["text"] else "")
+                       for sl, rs in zip(slots, ref_shots) if not is_black(rs))
+    pool = candidate_pool(slots, ref_shots, shots, ref or {"shots": ref_shots}, groups)
+
+    def line(s):
+        a = s.get("ai", {})
+        n = (a.get("people") or {}).get("count") if isinstance(a.get("people"), dict) else None
+        return (f"{s['id']}: {s['kind']}, {('%.1fs' % (s['t1'] - s['t0'])) if s['kind'] == 'video' else 'any length'}"
+                + (", slow-motion capable" if s["kind"] == "video" and float(s.get("fps") or 0) >= 48 else "")
+                + f", {a.get('score', 5)}, {a.get('time_of_day') or '?'}, people {n if n is not None else '?'}, "
+                f"{','.join(a.get('tags', [])[:8])}, \"{a.get('note', '')}\""
+                + (f", {places.get(s['id'])}" if places.get(s["id"]) else ""))
+    sh_txt = "\n".join(line(s) for s in pool)
     plist = list(dict.fromkeys(v for v in places.values() if v))
     hint = f"; the user's places: {', '.join(plist[:8])}" if plist else ""
-    key = short_hash(sl_txt + sh_txt + hint, 12)
+    key = short_hash("v2" + sl_txt + sh_txt + hint, 12)
     cache = read_json(rdir / f"match_{key}.json")
     if cache:
         return cache["slots"], cache["texts"]
-    log(f"AI: matching {len(slots)} slots to your shots ({backend.name})")
-    data = extract_json(backend.ask(MATCH_PROMPT.format(slots=sl_txt, shots=sh_txt, places_hint=hint), None,
+    images = []
+    if ref:
+        refs = [(s["id"], s.get("frame_in") or s["frame"]) for s in ref["shots"] if s.get("frame")]
+        for b in range(0, len(refs), 18):
+            images.append(_sheet(refs[b:b + 18], rdir / f"refsheet_{b // 18 + 1}.jpg"))
+    images += _cand_sheets(pool, rdir)
+    n_sl = sum(1 for rs in ref_shots if not is_black(rs))
+    log(f"AI: matching {n_sl} slots to {len(pool)} distinct shots of yours, by eye ({backend.name})")
+    data = extract_json(backend.ask(MATCH_PROMPT.format(slots=sl_txt, shots=sh_txt, places_hint=hint), images[:5],
                                     max_tokens=4000))
     m = {}
     for r in data.get("slots", []):
@@ -342,29 +511,44 @@ def ai_match(slots, ref_shots, shots, places, backend, rdir: Path) -> tuple[dict
 
 
 # ================================================================ plan
-def _assign(slots, ref_shots, match, shots_by_id, variant: int) -> list[str]:
-    """One shot per slot: the variant-th choice where possible, no repeats while there is choice."""
-    used = set()
+def _assign(slots, ref_shots, match, shots_by_id, variant: int, groups: dict | None = None,
+            fallback: dict | None = None) -> list[str]:
+    """One shot per slot: the variant-th choice where possible, never the same moment twice while there is
+    choice (a scene group counts as one moment)."""
+    groups = groups or {}
+    used, used_g = set(), set()
     out = []
+
+    def g(c):
+        return groups.get(c, c)
     for sl, rs in zip(slots, ref_shots):
-        cands = list(match.get(sl["id"], []))
-        if not cands:
-            cands = [s for s in shots_by_id]
+        cands = [c for c in match.get(sl["id"], []) if c in shots_by_id]
         order = cands[variant:] + cands[:variant] if variant < len(cands) else cands
-        pick = next((c for c in order if c not in used and _fits(shots_by_id[c], rs["dur"])), None) or \
-            next((c for c in order if c not in used), None) or order[0]
+        order += [c for c in (fallback or {}).get(sl["id"], []) if c not in order]
+        pick = next((c for c in order if c not in used and g(c) not in used_g and _fits(shots_by_id[c], rs["dur"])),
+                    None) or next((c for c in order if c not in used and g(c) not in used_g), None) or \
+            next((c for c in order if c not in used), None) or (order[0] if order else next(iter(shots_by_id)))
         used.add(pick)
+        used_g.add(g(pick))
         out.append(pick)
     return out
 
 
 def build_clone_plan(ref: dict, slots: list[dict], match: dict, texts: dict, shots: list[dict], style: dict,
-                     variant: int = 0, keep_text: bool = False) -> dict:
+                     variant: int = 0, keep_text: bool = False, groups: dict | None = None,
+                     fallback: dict | None = None, motion: dict | None = None) -> dict:
     from .music import analyze_music
     from .planner import _entry_for, _snap, choose_transitions  # noqa: F401
     by_id = {s["id"]: s for s in shots}
     rshots = ref["shots"]
-    picks = _assign(slots, rshots, match, by_id, variant)
+    # a (near) black reference shot is a fade, not a picture: the shot before it holds and dips to black
+    black = {k for k in range(1, len(rshots)) if is_black(rshots[k])}
+    keep = [k for k in range(len(rshots)) if k not in black]
+    got = _assign([slots[k] for k in keep], [rshots[k] for k in keep], match, by_id, variant, groups, fallback)
+    picks = [None] * len(rshots)
+    for k, sid in zip(keep, got):
+        picks[k] = sid
+    motion = motion or {}
     total = ref["duration"]
     beats, drops, tempo = [], [], 0.0
     if ref.get("audio"):
@@ -378,19 +562,36 @@ def build_clone_plan(ref: dict, slots: list[dict], match: dict, texts: dict, sho
                     drops.append(beats[j])
     segs = []
     kb_dir = 0
+    plan_fade = 0.0
     for k, (rs, sl, sid) in enumerate(zip(rshots, slots, picks)):
-        level = sl.get("energy", "medium")
-        seg = {"out_start": round(rs["f0"] / OUT_FPS, 4), "dur": round((rs["f1"] - rs["f0"]) / OUT_FPS, 4),
-               "level": level}
+        dur = round((rs["f1"] - rs["f0"]) / OUT_FPS, 4)
+        if sid is None:  # black: the previous shot holds over it
+            prev = segs[-1]
+            prev["dur"] = round(prev["dur"] + dur, 4)
+            if k == len(rshots) - 1:
+                plan_fade = round(dur + 0.25, 3)
+                prev["trans_out"], prev["trans_dur"] = None, 0.0
+            elif k + 1 < len(rshots) and k + 1 not in black:
+                prev["trans_out"], prev["trans_dur"] = "dip", 0.4
+            if prev.get("kind") == "video" and not prev.get("ramp"):
+                sh = by_id[prev["shot_id"]]
+                need = prev["dur"] * float(prev.get("speed", 1) or 1)
+                if sh["t1"] - prev["in"] < need:
+                    from .planner import _best_window
+                    prev["in"] = round(_best_window(sh, min(need, sh["t1"] - sh["t0"])), 3)
+            continue
+        seg = {"out_start": round(rs["f0"] / OUT_FPS, 4), "dur": dur, "level": sl.get("energy", "medium")}
         e, kb_dir = _entry_for(by_id[sid], seg, style, kb_dir)
-        e.update({"idx": k, "clone_of": rs["id"], "trans_out": None, "trans_dur": 0.0, "trans_params": {},
+        e.update({"idx": len(segs), "clone_of": rs["id"], "trans_out": None, "trans_dur": 0.0, "trans_params": {},
                   "drop": any(abs(seg["out_start"] - d) < 0.12 for d in drops)})
+        nxt = k + 1
+        if nxt < len(rshots) and nxt not in black:  # the reference's flash cuts and dissolves
+            if rshots[nxt].get("flash_in"):
+                e["trans_out"] = "flash"
+            elif rshots[nxt].get("dissolve_in"):
+                e["trans_out"], e["trans_dur"] = "dissolve", 0.33
+        _follow_motion(e, motion.get(rs["id"]) or {})
         segs.append(e)
-    for k in range(len(segs) - 1):  # the reference's flash cuts and dissolves
-        if rshots[k + 1].get("flash_in"):
-            segs[k]["trans_out"] = "flash"
-        elif rshots[k + 1].get("dissolve_in"):
-            segs[k]["trans_out"], segs[k]["trans_dur"] = "dissolve", 0.33
     # on-screen text: consecutive shots showing the same text form one overlay
     overlays = []
     k = 0
@@ -419,7 +620,21 @@ def build_clone_plan(ref: dict, slots: list[dict], match: dict, texts: dict, sho
         "transition_duration": 0.3, "color": style["color"], "text": style["text"], "segments": segs,
         "overlays": overlays, "beats": beats, "drops": drops, "motion": style.get("motion", {}),
         "loop": False, "clone": {"source": ref["source"], "variant": variant + 1},
+        **({"fade_out_video": plan_fade} if plan_fade else {}),
     }
+
+
+def _follow_motion(e: dict, mv: dict) -> None:
+    """Move like the reference shot did, so cuts flow the same way: a photo's Ken Burns pushes in, pulls out
+    or drifts in the reference's direction; a pan across a wide clip travels the same way."""
+    dx, zoom = float(mv.get("dx", 0) or 0), float(mv.get("zoom", 0) or 0)
+    if e.get("kind") == "photo" and e.get("layout") == "kenburns":
+        if abs(dx) > 0.04 and abs(dx) > abs(zoom) * 2:
+            e["kb"] = "right" if dx > 0 else "left"
+        elif abs(zoom) > 0.02:
+            e["kb"] = "in" if zoom > 0 else "out"
+    elif e.get("layout") == "pan" and abs(dx) > 0.04:
+        e["pan_reverse"] = dx < 0
 
 
 def compare_sheet(ref: dict, plan: dict, by_id: dict, out: Path) -> Path:

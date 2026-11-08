@@ -6,7 +6,7 @@ from collections import Counter
 import numpy as np
 
 from .config import OUT_FPS
-from .framing import decide_layout, subject_for
+from .framing import crop_fraction, decide_layout, person_box, subject_for
 from .panels import layout_rects, plan_panel_clips
 from .music import beats_in_window, choose_window
 from .util import ReelError, clamp, log
@@ -117,6 +117,9 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
     if len(good) < n:
         log(f"only {len(good)} usable shots for {n} cuts; some shots will repeat")
     per_src = int(sh.get("max_per_source", 3))
+    from .diversity import scene_groups
+    group = scene_groups(good) if not sh.get("allow_similar") else {}
+    used_group = Counter()
     chosen, used_src, used_tags = [], Counter(), Counter()
     cands = sorted(good, key=_quality, reverse=True)
     while len(chosen) < n and cands:
@@ -132,6 +135,8 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
             dup = s.get("ai", {}).get("duplicate_of")
             if dup and any(c["id"] == dup or c.get("ai", {}).get("duplicate_of") == s["id"] for c in chosen):
                 v -= 2.5
+            # the same moment again (a burst, the photo and the clip of one view): only when footage is thin
+            v -= 4.0 * used_group[group.get(s["id"], s["id"])]
             if v > best_v:
                 best, best_v = s, v
         if best is None:
@@ -139,6 +144,7 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
             continue
         chosen.append(best)
         cands.remove(best)
+        used_group[group.get(best["id"], best["id"])] += 1
         used_src[best["src"]] += 1
         for t in best.get("ai", {}).get("tags", [])[:4]:
             used_tags[t] += 1
@@ -367,7 +373,7 @@ def use_incam(segs: list[dict], by_id: dict, style: dict, max_n: int = 3) -> int
 
 def _shot_fields(shot: dict, dur: float, level: str, style: dict, kb_dir: int, size=None) -> tuple[dict, int]:
     """Render fields for one shot used for `dur` seconds (full screen, or a panel of `size`)."""
-    e = {"shot_id": shot["id"], "kind": shot["kind"], "src": shot["src"],
+    e = {"shot_id": shot["id"], "kind": shot["kind"], "src": shot["src"], "thumb": shot.get("thumb"),
          "note": shot.get("ai", {}).get("note", ""), "score": _quality(shot)}
     box = subject_for(shot)
     e["subject"], e["subject_x"] = box, box["cx"]
@@ -385,6 +391,11 @@ def _shot_fields(shot: dict, dur: float, level: str, style: dict, kb_dir: int, s
                   "src_w": shot["w"], "src_h": shot["h"], "fps": shot.get("fps")})
         if size is None:
             lay, extra = decide_layout(shot, box, style["layout"].get("landscape", "auto"))
+            pb = person_box(shot)
+            if lay == "pan" and pb and (pb["x1"] - pb["x0"]) <= crop_fraction(shot["w"], shot["h"]) * 0.95:
+                # a pan across a wide view would start or end without the person: frame the person instead
+                lay, extra = "crop", {}
+                e["subject"], e["subject_x"] = pb, pb["cx"]
             e["layout"] = lay
             e.update(extra)
             e["track"] = lay == "crop" and (shot["metrics"].get("activity", 0) > 0.012

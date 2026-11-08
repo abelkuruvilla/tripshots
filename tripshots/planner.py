@@ -6,7 +6,7 @@ from collections import Counter
 import numpy as np
 
 from .config import OUT_FPS
-from .framing import crop_fraction, decide_layout, person_box, subject_for
+from .framing import crop_fraction, decide_layout, focus_box, subject_for
 from .panels import layout_rects, plan_panel_clips
 from .music import beats_in_window, choose_window
 from .util import ReelError, clamp, log
@@ -343,6 +343,8 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         e["idx"] = i
         if seg.get("role"):
             e["role"] = seg["role"]
+            if seg["role"] in ("hook", "peak", "ending") and e.get("layout") == "kenburns":
+                e["kb"] = "in"  # the moments that matter push in on their subject, no sideways drift
         e["drop"] = any(abs(e["out_start"] - d) < 0.12 for d in grid["drops"]) or e.get("role") == "peak"
         out.append(e)
     apply_speed(out, {s["id"]: s for s in shots}, grid, style)
@@ -428,11 +430,11 @@ def _shot_fields(shot: dict, dur: float, level: str, style: dict, kb_dir: int, s
                   "src_w": shot["w"], "src_h": shot["h"], "fps": shot.get("fps")})
         if size is None:
             lay, extra = decide_layout(shot, box, style["layout"].get("landscape", "auto"))
-            pb = person_box(shot)
-            if lay == "pan" and pb and (pb["x1"] - pb["x0"]) <= crop_fraction(shot["w"], shot["h"]) * 0.95:
-                # a pan across a wide view would start or end without the person: frame the person instead
+            fb = focus_box(shot)
+            if lay == "pan" and fb and (fb["x1"] - fb["x0"]) <= crop_fraction(shot["w"], shot["h"]) * 0.95:
+                # a pan across a wide view would start or end without the person (or the main subject): frame it
                 lay, extra = "crop", {}
-                e["subject"], e["subject_x"] = pb, pb["cx"]
+                e["subject"], e["subject_x"] = fb, fb["cx"]
             e["layout"] = lay
             e.update(extra)
             e["track"] = lay == "crop" and (shot["metrics"].get("activity", 0) > 0.012
@@ -447,6 +449,9 @@ def _shot_fields(shot: dict, dur: float, level: str, style: dict, kb_dir: int, s
                 and str(st.get("parallax", "auto")).lower() in ("auto", "on", "true")):
             e["parallax"] = True
             e["depth_key"] = f"{shot.get('sig') or shot['id']}"
+        fb = focus_box(shot)
+        if fb:  # Ken Burns pushes towards (and drifts around) the person or the main subject
+            e["subject"], e["subject_x"], e["focus"] = fb, fb["cx"], True
         modes = ["in", "right", "out", "in_rot", "left", "up"] if size is None else ["in", "out"]
         e.update({"still": shot["still"], "kb": modes[kb_dir % len(modes)], "layout": "kenburns",
                   "src_w": shot["w"], "src_h": shot["h"], "static": False})

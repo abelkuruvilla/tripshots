@@ -117,6 +117,31 @@ def person_box(shot: dict) -> dict | None:
     return None
 
 
+def focus_box(shot: dict) -> dict | None:
+    """What a vertical crop should hold on to: the person if there is one, else the most important AI subject
+    that fits a 9:16 window (subjects are listed most important first). None = a wide view with no one focus."""
+    pb = person_box(shot)
+    if pb:
+        return pb
+    cf = crop_fraction(shot.get("w") or 16, shot.get("h") or 9)
+    for sj in (shot.get("ai") or {}).get("subjects") or []:
+        b = sj.get("box")
+        if isinstance(b, (list, tuple)) and len(b) == 4:
+            try:
+                box = make_box(*[float(v) for v in b])
+            except (TypeError, ValueError):
+                continue
+            if box["x1"] - box["x0"] <= cf * 1.05:
+                box["source"] = "ai"
+                return box
+    return None
+
+
+# a pan or drift across a still or a wide clip moves at most this share of the picture's width per second:
+# slow enough to read as a deliberate camera move, not a slide that loses the subject
+PAN_SPEED = 0.06
+
+
 def crop_fraction(w: int, h: int) -> float:
     """Width of a 9:16 crop as a fraction of a (wider) source frame."""
     return min(1.0, (h * OUT_W / OUT_H) / max(w, 1))

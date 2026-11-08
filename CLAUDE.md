@@ -57,7 +57,7 @@ Use the `make-reel` skill in `.claude/skills/make-reel/SKILL.md`. In short:
 
 - Clone plans: segments carry `clone_of` (reference shot id, e.g. R03) and keep the reference's exact `dur`; don't change durations, only swap `shot_id`. Overlays carry `clone_of` (the original text). `music.path` is the reference's own sound (start 0).
 - In-camera whips: a segment with `incam_out` {type, at, src} ends in the middle of the camera's own swing (hard cut, `trans_out` null); the next may have `incam_in: true`. To drop one, delete `incam_out` and give `trans_out` a value. Raw 360 files (.insv, 2:1 equirect) are skipped on purpose: they need reframing in Insta360 Studio first.
-- Effects: plan-level `freeze` {t, dur} (hero freeze on a drop), segment `rgb: true` (colour-split on its first frames). Remove them to turn them off. Every render logs a beat check (cuts within 1 frame of the plan, cuts on a beat).
+- Effects: plan-level `freeze` {t, dur} (hero freeze on a drop), segment `rgb: true` (colour-split on its first frames), segment `shake: true` (camera shake on a drop; effects.mark_shakes: intense drops only, never mostly-calm reels/slow motion/freeze; clones only where the reference shakes, `ref_shake`). Remove them to turn them off. Every render logs a beat check (cuts within 1 frame of the plan, cuts on a beat).
 
 - Sound: plan-level `sound` {sfx, ambience, level_db, licenses}. Sound effects follow the edit automatically, so changing transitions/freeze/text and re-rendering re-designs them. Don't add sounds on plain hard cuts; never use NC/ND/SA-licensed audio.
 

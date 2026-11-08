@@ -62,9 +62,46 @@ def mark_effects(plan: dict, style: dict) -> None:
         if _rand("rgb", s.get("shot_id", ""), i, style.get("shots", {}).get("variant", 0)) < share:
             s["rgb"] = True
             n += 1
-    if plan.get("freeze") or n:
+    n_shake = mark_shakes(plan, m)
+    if plan.get("freeze") or n or n_shake:
         log("hype: " + ", ".join(x for x in (f"freeze-frame at {plan['freeze']['t']:.2f}s" if plan.get("freeze")
-                                            else "", f"colour-split on {n} cut(s)" if n else "") if x))
+                                            else "", f"colour-split on {n} cut(s)" if n else "",
+                                            f"camera shake on {n_shake} drop(s)" if n_shake else "") if x))
+
+
+SLOW_RAMPS = {"slam", "bullet", "impact"}
+
+
+def mark_shakes(plan: dict, m: dict) -> int:
+    """Camera shake on a drop is a hype move: it suits a hard-hitting drop in a busy part of an energetic reel,
+    and jars everywhere else. A segment gets `shake: true` only when
+      * the style asks for it (motion.shake_on_drop), and the reel isn't mostly calm,
+      * the cut lands on a drop in an intense section,
+      * the shot plays at real speed or faster (shaking slow motion looks like a mistake),
+      * no freeze-frame already hits there (it has its own jolt).
+    A clone shakes only where the reference itself shakes (`ref_shake`, measured from the reference)."""
+    segs = plan["segments"]
+    for s in segs:
+        s.pop("shake", None)
+    n = 0
+    if plan.get("clone") is not None:
+        for s in segs:
+            if s.get("ref_shake"):
+                s["shake"] = True
+                n += 1
+        if not m.get("freeze"):  # --hype adds the usual drop shakes on top
+            return n
+    if not m.get("shake_on_drop") or not segs:
+        return n
+    calm = sum(1 for s in segs if s.get("level") == "calm") / len(segs)
+    if calm >= 0.6:
+        return n
+    for s in segs:
+        if (s.get("drop") and s.get("level") == "intense" and not s.get("hero") and not s.get("panel")
+                and s.get("ramp") not in SLOW_RAMPS and float(s.get("speed", 1) or 1) >= 0.95 and not s.get("shake")):
+            s["shake"] = True
+            n += 1
+    return n
 
 
 # --------------------------------------------------------------- compositor helpers

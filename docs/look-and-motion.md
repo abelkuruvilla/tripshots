@@ -89,6 +89,7 @@ The storyboard shows each shot's speed or ramp; a whoosh lands where a ramp slam
 
 ## Hype effects and the beat check
 
+* **Camera shake on a drop** (`motion: {shake_on_drop: true}`): a short jolt when a cut lands on a drop. It is used only where it fits: a drop in an intense section of a reel that isn't mostly calm, on a shot playing at real speed or faster, and not where a freeze-frame already hits. A clone shakes only where the reference shakes. The plan marks those segments `shake: true`; delete it to drop one.
 * **Freeze-frame**: on the song's biggest drop the picture freezes for about half a second with a white flash, a push-in and a little shake, then carries on. On in `beat-montage`, `pov-hook` and `split-beat` (`motion: {freeze: true}`).
 * **Colour-split glitch**: a short RGB split on some hard cuts (`motion: {rgb_split: 0.3}` = 30% of them).
 * **Beat check**: after every render, TripShots finds each hard cut in the finished video and reports how many land within one frame of the plan and on a beat ("beat check: 12/12 measurable cuts within 1 frame").

@@ -263,7 +263,10 @@ def shot_motion(t_abs: float, seg: dict, beats: list[float], cfg: dict) -> tuple
                 bump = max(bump, math.exp(-d / tau))
         scale *= 1 + amp * bump
 
-    if cfg.get("shake_on_drop") and seg.get("drop"):
+    # explicit per segment (effects.mark_shakes); plans from before that: only intense drops
+    shake = seg.get("shake") if "shake" in seg else (cfg.get("shake_on_drop") and seg.get("drop")
+                                                       and level == "intense")
+    if shake:
         d = local
         if 0 <= d < 0.7:
             k = math.exp(-d / 0.18) * float(cfg.get("shake_px", 22))

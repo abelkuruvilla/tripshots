@@ -13,7 +13,7 @@ Only segments whose content changed are re-rendered.
 | `music` | `{path, start, fade_out}`: the track, where in it the reel starts, fade at the end |
 | `segments` | The shots, in order (below) |
 | `overlays` | Text and maps (below) |
-| `motion` | `beat_punch` (zoom bump per beat, e.g. 0.06), `punch_on` (energy levels), `shake_on_drop`, `video_push`, `pulse` |
+| `motion` | `beat_punch` (zoom bump per beat, e.g. 0.06), `punch_on` (energy levels), `shake_on_drop` (allows segment `shake: true` on fitting drops), `video_push`, `pulse` |
 | `grade` | `{look, strength, why, grain, vignette}`; per-shot LUTs live on the segments |
 | `color`, `text`, `photo_zoom`, `transition_duration` | Copied from the style at plan time |
 | `freeze` | `{t, dur}`: hero freeze-frame on a drop. Delete to turn off |

@@ -219,7 +219,7 @@ def ref_motion(ref: dict) -> dict[str, dict]:
     camera moves right), "zoom": per second (+ = pushes in)}. Cached next to the reference."""
     rdir = Path(ref["dir"])
     cache = read_json(rdir / "motion.json")
-    if cache and len(cache) == len(ref["shots"]):
+    if cache and len(cache) == len(ref["shots"]) and all("shake" in v for v in cache.values()):
         return cache
     w, h, fps = 160, 284, 10
     proc = subprocess.run(ffmpeg_base() + ["-i", ref["file"], "-vf", f"fps={fps},scale={w}:{h},format=gray",
@@ -227,19 +227,27 @@ def ref_motion(ref: dict) -> dict[str, dict]:
     a = np.frombuffer(proc.stdout, np.uint8)
     n = len(a) // (w * h)
     fr = a[: n * w * h].reshape(n, h, w)
+    win = cv2.createHanningWindow((w, h), cv2.CV_32F)
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     rx, ry = xx - w / 2, yy - h / 2
     r2 = rx ** 2 + ry ** 2 + 1.0
     out = {}
     for rs in ref["shots"]:
         i0, i1 = int(rs["t0"] * fps) + 1, int(rs["t1"] * fps) - 1
-        dxs, zs = [], []
+        dxs, dys, zs = [], [], []
         for i in range(max(0, i0), min(n - 1, i1)):
             f = cv2.calcOpticalFlowFarneback(fr[i], fr[i + 1], None, 0.5, 3, 15, 3, 5, 1.2, 0)
-            dxs.append(-float(np.median(f[..., 0])) / w)              # content moves left = camera moves right
+            (sx, sy), _ = cv2.phaseCorrelate(fr[i].astype(np.float32), fr[i + 1].astype(np.float32), win)
+            dxs.append(-float(sx) / w)              # content moves left = camera moves right
+            dys.append(float(sy) / w)
             zs.append(float(np.mean((f[..., 0] * rx + f[..., 1] * ry) / r2)))
+        # an added camera shake: the picture jerks back and forth in the first moments of the shot, much more
+        # than it moves afterwards (a handheld clip shakes evenly all the way through: that is not this)
+        jit = np.hypot(np.diff(dxs), np.diff(dys)) * w if len(dxs) > 3 else np.zeros(0)
+        early, rest = jit[:5], jit[5:]
+        shake = bool(len(early) and early.max() > 3.0 and early.max() > 3 * (float(np.median(rest)) if len(rest) else 0.5))
         out[rs["id"]] = {"dx": round(float(np.median(dxs)) * fps, 4) if dxs else 0.0,
-                         "zoom": round(float(np.median(zs)) * fps, 4) if zs else 0.0}
+                         "zoom": round(float(np.median(zs)) * fps, 4) if zs else 0.0, "shake": shake}
     write_json(rdir / "motion.json", out)
     return out
 
@@ -591,6 +599,8 @@ def build_clone_plan(ref: dict, slots: list[dict], match: dict, texts: dict, sho
             elif rshots[nxt].get("dissolve_in"):
                 e["trans_out"], e["trans_dur"] = "dissolve", 0.33
         _follow_motion(e, motion.get(rs["id"]) or {})
+        if (motion.get(rs["id"]) or {}).get("shake"):
+            e["ref_shake"] = True  # the reference shakes here: so does the clone (effects.mark_shakes)
         segs.append(e)
     # on-screen text: consecutive shots showing the same text form one overlay
     overlays = []

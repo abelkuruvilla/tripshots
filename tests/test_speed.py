@@ -123,3 +123,20 @@ def test_drop_rush_and_impact():
     style = {"speed": {"drop": "both", "fast": 0}, "velocity": {"use": 0}}
     planner.apply_speed(segs, by_id, {"beats": [], "drops": [1.0]}, style)
     assert segs[0]["ramp"] == "rush" and segs[1]["ramp"] == "impact" and not segs[2].get("ramp")
+
+
+def test_shake_only_on_intense_drops():
+    from tripshots.effects import mark_shakes
+    from tripshots.motion import shot_motion
+    m = {"shake_on_drop": True, "shake_px": 22}
+    segs = [{"out_start": 0.0, "dur": 1.0, "level": "intense", "drop": True, "kind": "video"},
+            {"out_start": 1.0, "dur": 1.0, "level": "calm", "drop": True, "kind": "video"},
+            {"out_start": 2.0, "dur": 1.0, "level": "intense", "drop": True, "kind": "video", "ramp": "slam"},
+            {"out_start": 3.0, "dur": 1.0, "level": "intense", "drop": False, "kind": "video"}]
+    plan = {"segments": segs}
+    assert mark_shakes(plan, m) == 1 and segs[0]["shake"] and not segs[1].get("shake")
+    assert shot_motion(1.05, segs[1], [], m)[2] == 0.0           # no shake on the calm drop
+    calm = {"segments": [dict(s, level="calm") for s in segs[:3]] + [segs[3]]}
+    assert mark_shakes(calm, m) == 0                              # a mostly calm reel never shakes
+    clone = {"clone": {}, "segments": [dict(segs[0]), dict(segs[1], ref_shake=True)]}
+    assert mark_shakes(clone, m) == 1 and clone["segments"][1]["shake"] and not clone["segments"][0].get("shake")

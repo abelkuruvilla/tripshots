@@ -34,7 +34,7 @@ Ways to get a new style:
 | `transitions.at` | `sections` | Always put one at energy changes and drops |
 | `transitions.in_camera` | true | Cut inside your own whip pans ([Look and motion](look-and-motion.md#in-camera-transitions)) |
 | `motion.beat_punch` / `punch_on` | 0.05 / [intense] | Zoom bump per beat, and at which energy levels |
-| `motion.shake_on_drop` / `shake_px` | true / 22 | Shake on the drop |
+| `motion.shake_on_drop` / `shake_px` | true / 22 | Allow a camera shake on drops in intense sections (never in mostly calm reels, slow motion or a freeze) |
 | `motion.video_push` | 0.06 | Slow push-in on static clips |
 | `motion.freeze` / `rgb_split` | false / 0 | Freeze-frame on the biggest drop; share of hard cuts with a colour split |
 | `motion.pulse` | | Bulge on intense beats (e.g. 0.1) |

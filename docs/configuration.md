@@ -17,6 +17,7 @@ Settings tab writes it too). A `.env` in the current folder is read first. Real 
 | `GEMINI_API_KEY` | | Optional Gemini video watching |
 | `TRIPSHOTS_WATCH` | `auto` | `auto` (on when a key is set), `gemini`, `off` |
 | `TRIPSHOTS_GEMINI_MODEL`, `TRIPSHOTS_GEMINI_FALLBACK` | `gemini-flash-latest`, `gemini-2.5-flash` | Gemini models |
+| `TRIPSHOTS_GEMINI_RPM` | 10 | Gemini requests a minute. TripShots slows down further when Gemini reports a lower limit; raise it on a paid key |
 | `TRIPSHOTS_FOOTAGE` | the app's recent folders | Folders `find`, `trips`, `ask` and agents search (separated by `:`; `;` on Windows) |
 | `TRIPSHOTS_MUSIC` | | Folders with music that `ask` and agents can choose from |
 | `TRIPSHOTS_OUT` | `./reels` (the app and the MCP server: `~/Movies/Reels` on macOS, `~/reels` elsewhere) | Where new reels are written when no `-o` is given |

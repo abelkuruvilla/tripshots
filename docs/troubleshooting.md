@@ -7,7 +7,7 @@ sound effects, the route-map runtime, HEIC support, the encoder, footage folders
 |---|---|
 | "Claude Code isn't logged in" / `Not logged in · Please run /login` | Run `claude auth login` (or `claude`, then `/login`), then `tripshots doctor`: the `claude` line should say "logged in". Logging in to the Claude desktop app doesn't log in Claude Code. If doctor says logged in but runs still fail (Claude Code keeps its login in the macOS keychain, which a few setups can't reach), run `claude setup-token` and put the token in `~/.tripshots/.env` as `CLAUDE_CODE_OAUTH_TOKEN=…` |
 | `claude CLI failed` / no AI backend | Install Claude Code and run `claude` once to log in, or set another backend ([AI backends](ai-backends.md)). `-b none` works without AI |
-| HDR iPhone clips look grey | Your ffmpeg lacks `zscale`: install ffmpeg from Homebrew (`brew install ffmpeg`) |
+| HDR iPhone clips look grey or flat | `tripshots doctor` → the **HDR** line. Without `zscale` (Homebrew's standard `ffmpeg` no longer has it) TripShots uses built-in tables with `lut3d` and gets the same colours; update TripShots if you see the old "lacks zscale" warning. `brew install ffmpeg-full` adds zscale, but isn't needed |
 | HEIC photos skipped | `pip install pillow-heif` (macOS can also convert with `sips`) |
 | "only N usable shots" | Thin or rejected footage: add footage, `--allow-similar`, `--min-score 4`, or a shorter `-d` |
 | The AI rejected every shot | It uses the best of them anyway and says so; check the storyboard |

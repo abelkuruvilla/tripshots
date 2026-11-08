@@ -51,7 +51,7 @@ NAME.mp4 + cover, caption, .edl, .storyboard.md, sound sheet, upload copy
 | `planner.py`, `panels.py`, `framing.py`, `motion.py`, `fx.py` | The edit plan, split screens, crops and tracking, motion, ffmpeg filters |
 | `render.py`, `encode.py` | Segment rendering, frame compositing, encoder choice |
 | `text.py`, `typo.py`, `mask.py` | Storyboards, animated typography, sky masks for titles behind the skyline |
-| `grade.py` | Looks, per-shot correction, LUTs, copying a reel's colour |
+| `grade.py`, `hdrlut.py` | Looks, per-shot correction, LUTs, copying a reel's colour; HDR to SDR without zscale |
 | `effects.py` | Freeze-frame, colour split, the beat check |
 | `routemap.py` | Animated route maps (HyperFrames, Natural Earth) |
 | `sound.py` | Sound design: cues, takes, Openverse / earshot / library sounds, mixing, mastering |

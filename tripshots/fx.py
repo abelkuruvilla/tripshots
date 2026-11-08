@@ -8,21 +8,28 @@ from .util import has_filter, log
 _warned_hdr = False
 
 
+def zscale_chain(transfer: str | None) -> list[str]:
+    """HDR -> SDR with zscale + tonemap (tools/make_hdr_luts.py measures this into the fallback tables)."""
+    if transfer == "smpte2084":  # HDR10 / Dolby Vision (PQ)
+        npl, tm = 100, "tonemap=hable:desat=0"
+    else:  # HLG (iPhone default): reference white is 203 nits; mobius keeps mid-tones natural
+        npl, tm = 203, "tonemap=mobius:param=0.3:desat=0"
+    return [f"zscale=t=linear:npl={npl}", "format=gbrpf32le", "zscale=p=bt709",
+            tm, "zscale=t=bt709:m=bt709:r=tv"]
+
+
 def hdr_chain(info: dict) -> list[str]:
     """Tone-map iPhone/Android HDR (HLG/PQ) to SDR so footage doesn't look washed out."""
     global _warned_hdr
     if not info.get("hdr"):
         return []
     if has_filter("zscale") and has_filter("tonemap"):
-        if info.get("transfer") == "smpte2084":  # HDR10 / Dolby Vision (PQ)
-            npl, tm = 100, "tonemap=hable:desat=0"
-        else:  # HLG (iPhone default): reference white is 203 nits; mobius keeps mid-tones natural
-            npl, tm = 203, "tonemap=mobius:param=0.3:desat=0"
-        return [f"zscale=t=linear:npl={npl}", "format=gbrpf32le", "zscale=p=bt709",
-                tm, "zscale=t=bt709:m=bt709:r=tv"]
+        return zscale_chain(info.get("transfer"))
+    if has_filter("lut3d"):  # no zscale (Homebrew's standard ffmpeg): the same maths as a LUT (hdrlut.py)
+        from .hdrlut import chain
+        return chain(info)
     if not _warned_hdr:
-        log("HDR footage found but this ffmpeg lacks zscale; colors may look flat "
-            "(macOS: `brew install ffmpeg` includes it)")
+        log("HDR footage found but this ffmpeg has neither zscale nor lut3d; colours may look flat")
         _warned_hdr = True
     return []
 

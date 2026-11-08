@@ -6,6 +6,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- HDR footage (iPhone HLG, HDR10) looked flat with Homebrew's standard `ffmpeg`, which no longer includes `zscale` ("this ffmpeg lacks zscale; colors may look flat"). TripShots now falls back to lookup tables measured from its own zscale + tonemap chain, applied with `lut3d` (in every ffmpeg), so the colours are the same either way. `doctor` shows which HDR route is used.
 - Gemini watching failed on every clip with `models/gemini-flash-latest is not found for API version v1` on newer google-genai versions. TripShots now uses the v1beta API (where the `-latest` aliases live), checks which models the key can use, switches to the next model at once on "not found", and stops Gemini for the run, with one log line, when no model or key works. The progress line now counts successes.
 
 ### Changed

@@ -280,7 +280,7 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
                     look: str | None = None, text_preset: str | None = None, variants: int = 1,
                     route_map: str | None = None, dry_run: bool = True, name: str | None = None,
                     upload_copy: bool = False, speed_ramps: str | None = None, speed_up: str | None = None,
-                    drop_speed: str | None = None) -> list:
+                    drop_speed: str | None = None, format: str | None = None) -> list:
     """Plan (dry_run=true, default) or plan+render a reel.
 
     sources: selection ids from find_footage ("sel:xxxx") and/or folders/files.
@@ -290,13 +290,17 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
     look: colour look or "auto". route_map: intro | tracker | both | off.
     speed_ramps: on | off | which ramps, e.g. "velocity,slam" (velocity, slam, bullet, rush, surge).
     speed_up: on | off (fast-forward moving clips in busy sections). drop_speed: rush | impact | both | off.
+    format: auto | montage | pov | list (numbered places) | series ("Day N of") | reveal. Every reel is planned as a
+      story (hook, build, payoff, looping end) and checked by the critic; the result's "score" and "critic" file
+      say what it fixed and what is still weak.
     upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
       same sound inside Instagram: do this when the music is a commercial song.
     Returns the plan path and the storyboard image to review (or a job id to poll)."""
     args = ["make"]
     for flag, v in (("-m", music), ("-s", style), ("-d", duration), ("--hook", hook), ("--location", location),
                     ("--look", look), ("--text-preset", text_preset), ("--route-map", route_map),
-                    ("--speed-ramps", speed_ramps), ("--speed-up", speed_up), ("--drop-speed", drop_speed)):
+                    ("--speed-ramps", speed_ramps), ("--speed-up", speed_up), ("--drop-speed", drop_speed),
+                    ("--format", format)):
         if v not in (None, ""):
             args += [flag, str(v)]
     if variants and variants > 1:
@@ -312,6 +316,23 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
     args += ["--", *sources]  # paths after "--": never read as options
     st = await _run_job(args, "make", name or " ".join(sources))
     return _finished(st)
+
+
+@mcp.tool()
+async def reel_results(reel: str | None = None, views: float | None = None, avg_watch: float | None = None,
+                       sends: float | None = None, saves: float | None = None, likes: float | None = None,
+                       comments: float | None = None) -> dict:
+    """How the user's posted reels did, and what works for their audience. With `reel` (a reel's .mp4 or
+    .plan.json) and numbers from Instagram Insights (views, avg_watch in seconds, sends = shares, saves...),
+    records them first. Returns every recorded reel with its score (watch-through and sends per view) and the
+    format / hook type that has done best so far; `make_reel` with format=auto leans on it once confident."""
+    from . import results as R
+    if reel and any(v is not None for v in (views, avg_watch, sends, saves, likes, comments)):
+        await asyncio.to_thread(R.add, reel, {"views": views, "avg_watch": avg_watch, "sends": sends, "saves": saves,
+                                              "likes": likes, "comments": comments})
+    rows = R.load()
+    return {"reels": [{"reel": r["reel"], "score": r.get("score"), "features": r.get("features"),
+                       "metrics": r.get("metrics")} for r in rows][-30:], "preferences": R.preferences()}
 
 
 @mcp.tool()

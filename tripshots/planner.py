@@ -84,6 +84,10 @@ def cut_grid(music: dict | None, style: dict, target: float) -> dict:
             segs.append({"out_start": round(a / OUT_FPS, 4), "dur": round((b - a) / OUT_FPS, 4), "level": lv})
     total = fb[-1] / OUT_FPS
     beats_out = [round(b - offset, 4) for b in beats if -0.01 <= b - offset <= total + 0.01]
+    energy_out = [float(e) for b, e in zip(beats, energy) if -0.01 <= b - offset <= total + 0.01]
+    # the whole window's beats (not just up to the default cut): the story planner lays out its own length
+    beats_all = [round(b - offset, 4) for b in beats if b - offset >= -0.01]
+    energy_all = [float(e) for b, e in zip(beats, energy) if b - offset >= -0.01]
     # drops: start of a bar whose energy jumps well above the previous bar
     drops = []
     for j in range(4, len(beats) - 3, 1):
@@ -93,7 +97,9 @@ def cut_grid(music: dict | None, style: dict, target: float) -> dict:
             if not drops or beats[j] - offset - drops[-1] > 2.0:
                 drops.append(round(beats[j] - offset, 4))
     return {"music_start": round(start + offset, 4), "segments": segs, "tempo": tempo,
-            "duration": round(total, 4), "beat_len": beat_len, "beats": beats_out, "drops": drops}
+            "duration": round(total, 4), "beat_len": beat_len, "beats": beats_out, "drops": drops,
+            "energy": energy_out, "beats_all": beats_all, "energy_all": energy_all,
+            "thresholds": (lo_th, hi_th)}
 
 
 # ------------------------------------------------------------ shot selection
@@ -263,6 +269,17 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
     target = clamp(target, style["duration"]["min"], style["duration"]["max"])
     grid = cut_grid(music, style, target)
     segs = grid["segments"]
+    st = style.get("story") or {}
+    arc = str(st.get("arc", "on")).lower() not in ("off", "false", "0", "none")
+    variant = int(style["shots"].get("variant", 0) or 0)
+    fmt = str(st.get("format") or "montage")
+    if arc:  # the story engine lays out the reel: roles and a varied rhythm (story.py)
+        from . import story
+        r = story.rhythm(grid, style, target, words=style.get("_words"), variant=variant)
+        segs = r["segments"]
+        grid = {**grid, "segments": segs, "duration": r["duration"], "drops": r["drops"],
+                "beats": [b for b in (grid.get("beats_all") or grid["beats"]) if b <= r["duration"] + 0.01]}
+        log(f"story: {story.describe(segs)}")
     floor = float(style["shots"].get("min_score", 6)) - 2
     allow_similar = bool(style["shots"].get("allow_similar", False))
     good = {s["id"]: s for s in shots if s.get("ai", {}).get("usable", True) and _quality(s) >= floor}
@@ -284,9 +301,12 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         pairs = [p for p in pairs if p[0] <= max_len]
         if not pairs:
             break
+        pairs = [p for p in pairs if segs[p[1]].get("role") not in ("hook", "peak", "ending")
+                 and segs[p[1] + 1].get("role") not in ("hook", "peak", "ending")] or pairs
         _, i = min(pairs)
+        role = "peak" if "peak" in (segs[i].get("role"), segs[i + 1].get("role")) else segs[i].get("role")
         segs[i] = {"out_start": segs[i]["out_start"], "dur": round(segs[i]["dur"] + segs[i + 1]["dur"], 4),
-                   "level": segs[i]["level"]}
+                   "level": segs[i]["level"], **({"role": role} if role else {})}
         del segs[i + 1]
     segs, beat_len = plan_panels(segs, grid, style, avail)
     normal = [sg for sg in segs if not sg.get("panel")]
@@ -295,7 +315,13 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
     # the strongest shots go full-screen; the rest fill panels (they're seen smaller anyway)
     ranked = sorted(chosen, key=_quality, reverse=True)
     full, extra = ranked[:len(normal)], ranked[len(normal):]
-    order_normal = assign(full, normal, style)
+    if arc:
+        from . import story
+        from .diversity import scene_groups
+        order_normal = story.cast(full, normal, style, variant, scene_groups(full), tease=fmt == "reveal",
+                                  places=style.get("_places"), fmt=fmt)
+    else:
+        order_normal = assign(full, normal, style)
     extra = _spread_sources(extra)
     out = []
     kb_dir = 0
@@ -310,21 +336,30 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
                 e, kb_dir = _entry_for(shot, seg, style, kb_dir)
             else:
                 e, kb_dir = _panel_entry(seg, mine, grid, style, kb_dir)
+                if seg.get("role"):
+                    e["role"] = seg["role"]
         else:
             e, kb_dir = _entry_for(next(it_normal), seg, style, kb_dir)
         e["idx"] = i
-        e["drop"] = any(abs(e["out_start"] - d) < 0.12 for d in grid["drops"])
+        if seg.get("role"):
+            e["role"] = seg["role"]
+        e["drop"] = any(abs(e["out_start"] - d) < 0.12 for d in grid["drops"]) or e.get("role") == "peak"
         out.append(e)
     apply_speed(out, {s["id"]: s for s in shots}, grid, style)
     choose_transitions(out, style)
+    if arc:
+        from . import story
+        story.restrain_transitions(out)
     use_incam(out, {s["id"]: s for s in shots}, style)
     return {
         "version": 1, "style": style["name"], "duration": grid["duration"], "tempo": round(grid["tempo"], 1),
         "music": {"path": music_path, "start": grid["music_start"], "fade_out": style["music"].get("fade_out", 0.8)},
         "transition_duration": float(style["transitions"].get("duration", 0.3)),
         "color": style["color"], "text": style["text"], "segments": out, "overlays": [],
-        "beats": grid["beats"], "drops": grid["drops"], "motion": style.get("motion", {}),
-        "loop": bool(style.get("loop", False)),
+        "beats": grid["beats"], "drops": grid["drops"],
+        "motion": {**style.get("motion", {}), **({"hook_punch": True} if arc and st.get("hook_punch", True) else {})},
+        "loop": bool(style.get("loop", False)) or (arc and bool(st.get("loop", True))),
+        **({"story": {"format": fmt, "arc": [s.get("role") for s in out]}} if arc else {}),
     }
 
 
@@ -373,7 +408,9 @@ def use_incam(segs: list[dict], by_id: dict, style: dict, max_n: int = 3) -> int
 
 def _shot_fields(shot: dict, dur: float, level: str, style: dict, kb_dir: int, size=None) -> tuple[dict, int]:
     """Render fields for one shot used for `dur` seconds (full screen, or a panel of `size`)."""
+    from .story import has_people
     e = {"shot_id": shot["id"], "kind": shot["kind"], "src": shot["src"], "thumb": shot.get("thumb"),
+         "people": has_people(shot),
          "note": shot.get("ai", {}).get("note", ""), "score": _quality(shot)}
     box = subject_for(shot)
     e["subject"], e["subject_x"] = box, box["cx"]
@@ -405,6 +442,11 @@ def _shot_fields(shot: dict, dur: float, level: str, style: dict, kb_dir: int, s
         e["static"] = shot["metrics"].get("pan", 0) < 0.003
         e["moving"] = shot["metrics"].get("pan", 0) > 0.004 or shot["metrics"].get("activity", 0) > 0.015
     else:
+        st = style.get("story") or {}
+        if (size is None and str(st.get("arc", "on")).lower() not in ("off", "false")
+                and str(st.get("parallax", "auto")).lower() in ("auto", "on", "true")):
+            e["parallax"] = True
+            e["depth_key"] = f"{shot.get('sig') or shot['id']}"
         modes = ["in", "right", "out", "in_rot", "left", "up"] if size is None else ["in", "out"]
         e.update({"still": shot["still"], "kb": modes[kb_dir % len(modes)], "layout": "kenburns",
                   "src_w": shot["w"], "src_h": shot["h"], "static": False})
@@ -563,7 +605,7 @@ def plan_panels(segs: list[dict], grid: dict, style: dict, avail: int) -> tuple[
     budget = avail - (len(segs) - 2)  # spare shots beyond one per remaining cut
     while i < len(out) - 2 and count < max_n:
         sg = out[i]
-        if sg.get("panel") or sg["level"] == "calm" or _stable_rand("panel", i, sg["out_start"]) >= use:
+        if sg.get("panel") or sg["level"] == "calm" or sg.get("role") in ("hook", "peak", "ending") or _stable_rand("panel", i, sg["out_start"]) >= use:
             i += 1
             continue
         kind = kinds[int(_stable_rand("kind", i) * len(kinds)) % len(kinds)]
@@ -572,7 +614,7 @@ def plan_panels(segs: list[dict], grid: dict, style: dict, avail: int) -> tuple[
         steps = n + (n if m == "cycle" else 1)
         need = steps * step_beats * beat_len
         j, total = i, 0.0
-        while j < len(out) - 1 and total < need * 0.95:
+        while j < len(out) - 1 and total < need * 0.95 and out[j].get("role") not in ("hook", "peak", "ending"):
             total += out[j]["dur"]
             j += 1
         if total < (n + 0.5) * step_beats * beat_len:
@@ -589,7 +631,7 @@ def plan_panels(segs: list[dict], grid: dict, style: dict, avail: int) -> tuple[
         budget -= max(0, extra_needed)
         merged = {"out_start": out[i]["out_start"], "dur": round(sum(x["dur"] for x in out[i:j]), 4),
                   "level": "intense" if any(x["level"] == "intense" for x in out[i:j]) else "medium",
-                  "panel": kind, "pmode": m}
+                  "panel": kind, "pmode": m, **({"role": out[i]["role"]} if out[i].get("role") else {})}
         out[i:j] = [merged]
         count += 1
         i += 3  # leave some full-screen shots between panel moments

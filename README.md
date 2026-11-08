@@ -21,6 +21,7 @@ your footage ─► find shots ─► AI judges each shot ─► beats of the so
 
 - **Ask for footage the way you'd describe it:** by place ("Yellowstone National Park", matched by GPS inside its real outline), dates, or who's in it ("the pictures I'm in", "Lisbon with mom"), using face recognition that runs on your computer.
 - **Works with AI agents:** an [MCP server](docs/agents.md) for Claude Code, Claude Desktop, OpenClaw and any MCP agent, plus a portable [agent skill](skills/tripshots/SKILL.md) and `tripshots ask "…"`.
+- **Tells a story, not a slideshow:** every reel gets a hook in the first second, a build, a payoff on the drop and a looping ending; formats (POV, numbered places, Day N, reveal), cuts that follow dialogue and lyrics, match cuts, photos in depth, and a critic that checks the plan before rendering ([how](docs/storytelling.md)).
 - **Edits like a person would:** an AI (your Claude subscription, MiniMax, or the API) judges every shot; cuts land on the beat; strong shots go on strong beats; landscape footage is reframed to 9:16 around the subject.
 - **Looks finished:** per-shot colour grading, transitions on the beat, animated text, titles behind the skyline, split screens, speed ramps, freeze-frames, animated route maps, real sound effects and ambience.
 - **Yours to change:** every reel is a readable `plan.json` with a storyboard. Swap a shot, change the hook, re-render; or open it in DaVinci Resolve / Premiere (EDL, OpenTimelineIO).
@@ -73,6 +74,7 @@ contact sheets and storyboards come back as images so the agent can see what it 
 | [Getting started](docs/getting-started.md) | Install (macOS, Linux), first reel, first search, first agent |
 | [Making reels](docs/making-reels.md) | Commands, outputs, styles, variants, learning a style, editing, exporting |
 | [Finding footage](docs/finding-footage.md) | Search by place, dates and people; trips; face recognition |
+| [Reels that hold viewers](docs/storytelling.md) | The story arc, formats, hooks, sound with words, the critic, learning from results |
 | [Analysing footage](docs/analysis.md) | Describe everything on its own, in a format other apps read |
 | [AI agents](docs/agents.md) · [MCP tools](docs/mcp-tools.md) | MCP server, agent skill, `ask` |
 | [Look and motion](docs/look-and-motion.md) · [Colour](docs/colour.md) · [Sound](docs/sound.md) · [Clone](docs/clone.md) | What TripShots can do on screen and in the mix |

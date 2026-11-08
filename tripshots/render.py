@@ -14,7 +14,7 @@ from .config import OUT_FPS, OUT_H, OUT_W
 from .fx import color_chain, hdr_chain, seg_color
 from .util import ReelError, ffmpeg_base, hwaccel_args, log, short_hash
 
-RENDER_VERSION = "r4"  # bump when shot rendering changes so cached shots are rebuilt
+RENDER_VERSION = "r5"  # bump when shot rendering changes so cached shots are rebuilt
 
 # intermediates: near-lossless and quick; the final pass does the real compression
 def _enc() -> list[str]:
@@ -172,12 +172,20 @@ def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path
         y0 = max(0.0, min(H - bh, cy - bh / 2))
         frames_kw.append((x0, y0, x0 + bw, y0 + bh))
         rots.append(rot)
+    mover = None
+    if e.get("parallax") and size == (OUT_W, OUT_H):
+        from . import parallax
+        d = parallax.depth(src, e.get("depth_key"))
+        if parallax.worth_it(d):
+            # drift the way the Ken Burns moves (or left to right), about 2.5 % of the frame for the nearest things
+            way = -1.0 if mode in ("left", "out") else 1.0
+            mover = parallax.Mover(src, d, 0.025 * OW, way)
     vf = ",".join(color_chain(seg_color(color, e)) + ["setsar=1", "format=yuv420p"]) or "null"
     cmd = ffmpeg_base() + ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OW}x{OH}", "-r", str(OUT_FPS),
                            "-i", "-", "-vf", vf] + _enc() + [str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
-        for (x0, y0, x1, y1), rot in zip(frames_kw, rots):
+        for k_f, ((x0, y0, x1, y1), rot) in enumerate(zip(frames_kw, rots)):
             sx_, sy_ = OW / (x1 - x0), OH / (y1 - y0)
             M = np.array([[sx_, 0, -x0 * sx_], [0, sy_, -y0 * sy_]], dtype=np.float64)
             if rot:
@@ -187,7 +195,9 @@ def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path
                 R = cv2.getRotationMatrix2D((OW / 2, OH / 2), rot, cover)
                 M = R @ np.vstack([M, [0, 0, 1]])
             fr = cv2.warpAffine(src, M, (OW, OH), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
-            proc.stdin.write(fr.tobytes())
+            if mover is not None:
+                fr = mover.frame(fr, M[:2], k_f / max(1, len(frames_kw) - 1))
+            proc.stdin.write(np.ascontiguousarray(fr).tobytes())
         proc.stdin.close()
     except BrokenPipeError:
         pass
@@ -375,6 +385,8 @@ class TextTrack:
         tcfg = plan.get("text") or {}
         preset = PRESETS.get(str(tcfg.get("preset", "bold")), PRESETS["bold"])
         self.cfg = {}
+        from .typo import CAPTION, legible
+        readable = bool(tcfg.get("legible", True))
         for kind in ("hook", "location", "cta", "label"):
             base = dict(preset[kind])
             own = dict(tcfg.get(kind) or {})
@@ -386,9 +398,13 @@ class TextTrack:
             else:
                 own.pop("position", None)
             base.update(own)
-            self.cfg[kind] = base
-        self.specs = sorted([o for o in plan.get("overlays") or [] if o["type"] in ("hook", "location", "cta", "label")],
-                            key=lambda o: o["start"])
+            self.cfg[kind] = legible(kind, base) if readable else base
+        if plan.get("story"):  # a story reel's hook must read inside the first second
+            self.cfg["hook"]["fast_in"] = True
+        self.cfg["caption"] = legible("caption", {**CAPTION, **{k: v for k, v in (tcfg.get("caption") or {}).items()
+                                                               if v is not None}})
+        self.specs = sorted([o for o in plan.get("overlays") or []
+                             if o["type"] in ("hook", "location", "cta", "label", "caption")], key=lambda o: o["start"])
         self.built: dict[int, object] = {}
         self.beats = beats
 
@@ -414,7 +430,7 @@ class TextTrack:
                     if el is None:
                         el = build_location(main, sub, coords, st, du, self.cfg["location"], frame, subj)
                 else:
-                    cfg = self.cfg[o["type"] if o["type"] in ("cta", "label") else "hook"]
+                    cfg = self.cfg[o["type"] if o["type"] in ("cta", "label", "caption") else "hook"]
                     el = build_hook(o["text"], st, du, cfg, frame, self.beats, subj)
                 self.built[k] = el
             if self.native and not self.baked(k):

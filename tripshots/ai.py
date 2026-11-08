@@ -463,6 +463,97 @@ Return ONLY JSON: {{"hook": "...", "cta": "...", "caption": "...", "hashtags": [
         return {}
 
 
+HOOK_TYPES = ("curiosity", "pov", "number", "bold", "feeling", "tease")
+_CLICHES = ("wanderlust", "vibes", "adventure awaits", "paradise", "breathtaking", "take me back", "living my best")
+
+
+def clean_line(t: str) -> str:
+    """On-screen text without emoji or symbols the fonts can't draw (they'd show as empty boxes)."""
+    import unicodedata
+    keep = []
+    for ch in str(t):
+        cat = unicodedata.category(ch)
+        if cat[0] in "LNPZ" or ch in "&°%$€£+#@'’·":
+            keep.append(ch)
+    return " ".join("".join(keep).split()).strip()
+
+
+def _hook_rules(h: str, fmt: str) -> float:
+    """A cheap second opinion on a hook line (0..10): short, concrete, opens a question, no clichés."""
+    w = h.split()
+    v = 6.0
+    v += 1.0 if 2 <= len(w) <= 7 else -2.5
+    low = h.lower()
+    v -= 2.0 * sum(c in low for c in _CLICHES)
+    v += 0.8 if any(ch.isdigit() for ch in h) else 0.0
+    v += 0.8 if low.startswith("pov") and fmt in ("pov", "montage") else 0.0
+    v += 0.6 if "?" in h or any(x in low for x in ("wait", "nobody", "didn't", "never", "why", "how", "this is")) else 0
+    return max(0.0, min(10.0, v))
+
+
+def write_story_copy(backend: Backend, plan: dict, shots_by_id: dict, style: dict, fmt: str = "montage",
+                     places: list[str] | None = None, words: dict | None = None, extra: dict | None = None) -> dict:
+    """The reel's words for its format: three hook candidates scored on a rubric (the best is used), the closing
+    line, a caption that asks one question and names the places, and a few hashtags."""
+    segs = plan["segments"]
+    tags, notes = [], []
+    for s in segs:
+        a = shots_by_id.get(s["shot_id"], {}).get("ai", {})
+        tags += a.get("tags", [])[:5]
+        if a.get("note"):
+            notes.append(f"{s.get('role', '')}: {a['note']}")
+    places = [p for p in dict.fromkeys(places or []) if p]
+    av = style.get("_avoid_hooks") or []
+    extra = extra or {}
+    fmt_rule = {
+        "montage": 'a curiosity gap or a feeling, specific to these places (e.g. "I almost skipped this stop")',
+        "pov": 'starts with "POV:" and names a specific feeling (e.g. "POV: the road finally opens up")',
+        "list": f'promises a numbered list of these {extra.get("n_places") or len(places)} places '
+                f'(e.g. "{extra.get("n_places") or 3} stops in Utah you can\'t skip")',
+        "series": f'uses the stem "Day {extra.get("day") or "N"} of" + the trip (e.g. "Day {extra.get("day") or 4} of our '
+                  'West Coast road trip")',
+        "reveal": 'teases a payoff at the end without saying what it is (e.g. "Wait for the last one")',
+    }[fmt if fmt in ("montage", "pov", "list", "series", "reveal") else "montage"]
+    sound = ""
+    if words and words.get("lines"):
+        lines = "; ".join(ln.get("english") or ln["text"] for ln in words["lines"][:8])
+        sound = (f"\nThe sound is {words.get('kind')} ({words.get('language') or '?'}), in English: \"{lines[:400]}\". "
+                 "Make the hook set up these words (the picture answers them), without repeating them.")
+    prompt = f"""You write the words for a short travel Reel made from the creator's own footage.
+Format: {fmt}. Places: {', '.join(places) or 'unknown'}.
+What the shots show, in story order: {'; '.join(notes[:10]) or ', '.join(dict.fromkeys(tags))}.{sound}
+Tone: {style.get('caption', {}).get('tone')}.
+Return ONLY JSON: {{"hooks": [{{"text": "...", "type": "curiosity|pov|number|bold|feeling|tease",
+"clarity": 0-10, "curiosity": 0-10, "emotion": 0-10}}], "cta": "...", "caption": "...", "hashtags": ["..."]}}
+- hooks: 3 different on-screen opening lines, max 7 words each, readable in one second, never invented facts.
+  This format's hook {fmt_rule}. Score each honestly: clarity (reads at a glance), curiosity (makes you stay to
+  see), emotion (makes you feel something). No clichés (wanderlust, vibes, paradise, breathtaking).
+  {('Use a clearly different angle from: ' + '; '.join(chr(34) + h + chr(34) for h in av) + '.') if av else ''}
+- cta: closing line, max 6 words, worth sending to a friend (e.g. "Send this to your road trip person").
+- caption: 1-3 short natural lines that name the places in plain words (people search them) and end with ONE
+  question the viewer can answer in a comment.
+- hashtags: {min(6, int(style.get('caption', {}).get('hashtags', 6) or 6))} specific ones (places first), without #."""
+    try:
+        data = extract_json(backend.ask(prompt, None, max_tokens=900))
+    except Exception as e:
+        debug(f"story copy failed: {e}")
+        return {}
+    hooks = []
+    for h in data.get("hooks") or []:
+        if not isinstance(h, dict) or not str(h.get("text", "")).strip():
+            continue
+        t = clean_line(str(h["text"]).strip().strip('"'))
+        ai_score = sum(float(h.get(k, 5) or 5) for k in ("clarity", "curiosity", "emotion")) / 3
+        hooks.append({"text": t, "type": str(h.get("type") or "curiosity"),
+                      "score": round(0.65 * ai_score + 0.35 * _hook_rules(t, fmt), 2)})
+    hooks = [h for h in hooks if h["text"] not in av] or hooks
+    hooks.sort(key=lambda h: -h["score"])
+    return {"hooks": hooks, "hook": hooks[0]["text"] if hooks else None,
+            "hook_type": hooks[0]["type"] if hooks else None,
+            "cta": clean_line(str(data.get("cta", ""))), "caption": str(data.get("caption", "")).strip(),
+            "hashtags": [str(h).lstrip("#").replace(" ", "") for h in data.get("hashtags", [])]}
+
+
 def write_labels(backend: Backend, items: list[dict], places: list[str], tone: str) -> list[str]:
     """Short on-screen labels, one per shot, for the 'labelled montage' format."""
     lines = "\n".join(f"{i + 1}. {it.get('note') or ''} [{', '.join(it.get('tags') or [])}]" for i, it in enumerate(items))

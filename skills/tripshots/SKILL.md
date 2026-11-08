@@ -48,6 +48,9 @@ scene, people, place, trip, focus, colours, near-duplicates). Search it with MCP
 ## 3. Plan, look, fix
 `tripshots make sel:xxxx -m <music> [-s style] [-d secs] [--hook "TEXT"] --dry-run` (MCP `make_reel`, dry_run true).
 - Music: a file the user has (`list_music`), or an Instagram reel link (its sound is used). No music = silent, 100 BPM.
+- Every reel is planned as a story (hook in the first second, build, payoff on the drop, looping end) and checked by
+  a critic; `format` picks montage, pov, list (numbered places, needs 3+ places), series ("Day N of") or reveal (auto by
+  default). After posting, record how it did with `reel_results` so later reels lean towards what works.
 - Style: beat-montage (energetic), pov-hook (story/text), cinematic (emotional, golden hour), slow-scenic (calm nature),
   split-beat (split screens). Hook: 7 words max, specific ("Old Faithful at 6am", not "Amazing trip").
 - Look at the storyboard: strongest image first, no near-duplicates side by side, nothing blurry or dark, a calm wide

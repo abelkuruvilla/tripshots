@@ -458,6 +458,10 @@ class EditStyle(ModalScreen[dict | None]):
         ("Split screens / grids (0 never … 1 often)", ("panels", "use"), "num", None),
         ("Split screen behaviour", ("panels", "mode"), "sel", ["mixed", "reveal", "cycle"]),
         ("Speed ramps on moving clips (0-1)", ("velocity", "use"), "num", None),
+        ("Story arc (hook, build, payoff)", ("story", "arc"), "sel", ["on", "off"]),
+        ("Reel format", ("story", "format"), "sel", ["auto", "montage", "pov", "list", "series", "reveal"]),
+        ("Dialogue / lyric captions", ("story", "captions"), "sel", ["auto", "english", "original", "off"]),
+        ("Photos move in depth (parallax)", ("story", "parallax"), "sel", ["auto", "on", "off"]),
         ("Speed-ups in busy sections (0-1)", ("speed", "fast"), "num", None),
         ("Fastest speed-up (x)", ("speed", "fast_max"), "num", None),
         ("At the biggest drop", ("speed", "drop"), "sel", ["off", "rush", "impact", "both"]),
@@ -611,6 +615,9 @@ class MakeTab(VerticalScroll):
         with Horizontal(classes="row"):
             yield Select([("Speed-ups: style default", ""), ("Speed-ups: on", "on"), ("Speed-ups: off", "off")],
                          value="", id="speed_up", allow_blank=False)
+            yield Select([("Format: auto", ""), ("Format: montage", "montage"), ("Format: POV", "pov"),
+                          ("Format: numbered places", "list"), ("Format: Day N series", "series"),
+                          ("Format: slow reveal", "reveal")], value="", id="format", allow_blank=False)
             yield Select([("Drop: style default", ""), ("Drop: rush into it", "rush"),
                           ("Drop: slow-mo impact", "impact"), ("Drop: both", "both"), ("Drop: no speed effect", "off")],
                          value="", id="drop_speed", allow_blank=False)
@@ -770,6 +777,7 @@ class MakeTab(VerticalScroll):
                 args += [flag, v]
         for flag, wid in (("--text-preset", "preset"), ("--behind", "behind"), ("--split-screens", "split"),
                           ("--speed-ramps", "ramps"), ("--speed-up", "speed_up"), ("--drop-speed", "drop_speed"),
+                          ("--format", "format"),
                           ("--labels", "labels"), ("--look", "look"),
                           ("--route-map", "route_map"), ("--variants", "variants"), ("--sfx", "sfx"),
                           ("--ambience", "ambience")):

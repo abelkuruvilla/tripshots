@@ -5,6 +5,17 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Story engine** ([docs](docs/storytelling.md)): every reel is planned as hook → setup → build → peak → release → ending instead of an even cut grid. Shot lengths vary on purpose (½ to 8 beats; cuts accelerate into the drop; the payoff is held), the best shots are cast into the hook, payoff and ending, shots with you are weighted up and one lands in the first 3 s, the opening settles from a push-in so something moves at once, and the ending is chosen to loop. `make --arc off` keeps the old grid.
+- **Formats:** `--format auto|montage|pov|list|series|reveal` (numbered place cards, "Day N of", a slow reveal), with the AI writing three hook candidates per format, scored on clarity, curiosity and emotion.
+- **Sound with words:** Gemini transcribes dialogue and lyrics with timings and the punchline; dialogue reels cut between lines, land the payoff on the punchline and show English subtitles (`--captions`). Optional offline transcription with faster-whisper.
+- **Match cuts** from each clip's measured camera movement, and **2.5D parallax** for photos (Depth Anything V2 Small, downloaded once; an estimate otherwise; `--parallax`).
+- **Critic:** every plan is scored on eight retention checks and fixed where possible before rendering, plus an AI storyboard review (`NAME.critic.json`, `--critic`).
+- **Results:** `tripshots results add|sync` records how reels did (by hand or from the Instagram Graph API) and learns which formats and hook types work for your audience; MCP `reel_results`. Variants now test different ideas (format, opening, hook).
+
+### Changed
+- Text has minimum sizes so it reads on a phone, busy backgrounds get a shade behind the words, and a story reel's hook is fully on screen within about half a second.
+
 ### Changed
 - **Clone picks shots by eye.** The AI now sees the reference shots and pictures of your candidate shots side by side (before, it only read your shots' tags), and is told to match light and mood first (golden hour to golden hour), then content and framing, and to prefer your video clips for a video reference. Candidates are pre-ranked by light and colour likeness to each reference shot. The reference description also records each shot's light, people and mood.
 - **One shot per moment.** Photos of a burst, the photo and the clip of the same view, and chunks of one clip are grouped by picture likeness and capture time, and a clone (and `make`) uses each moment once while it has choice; the AI only sees one shot per moment.

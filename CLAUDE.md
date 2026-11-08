@@ -29,6 +29,7 @@ The user is not a video editor. Make the creative calls yourself, show the resul
 - Analysis (analysis.py, docs/analysis.md): `tripshots analyze [inputs] [--no-ai --no-faces --no-places --cached -o DIR]` -> media.jsonl (schema tripshots.media/1, tripshots/schemas/media.schema.json) + summary.json. One AI prompt (ai.SCORE_PROMPT, AI_VERSION) serves catalogue and reels; `score_shots(min_version=AI_VERSION)` re-asks older verdicts (analyze only). Technical metrics cached in library table `analysis` (TECH_VERSION). Keep the schema in sync with build_record (tests validate it); additive changes only within /1
 - The app's first tab is **Ask** (tui.AskTab): runs `tripshots ask`, sets footage folders, enrolls people
 - Docs live in `docs/` (index: docs/README.md). `docs/cli.md` and `docs/mcp-tools.md` are generated: after changing a command or an MCP tool, run `python tools/gen_docs.py` (CI checks with `--check` on Python 3.13). `tests/test_docs.py` checks every relative link. User-visible changes go in CHANGELOG.md under Unreleased
+- Story engine (story.py, formats.py, lyrics.py, matchcut.py, parallax.py, critic.py, results.py; docs/storytelling.md): build_plan lays out roles hook/setup/build/peak/release/ending with varied lengths (story.rhythm) and casts shots by role (story.cast); `make --format auto|montage|pov|list|series|reveal --arc on|off --captions --critic --parallax`; style section `story`. `tripshots results add|sync` + MCP `reel_results` feed results.preferences() used by format auto
 - `tripshots styles`, `tripshots doctor`
 
 Outputs sit next to the mp4: `.plan.json`, `.storyboard.jpg`, `.grade.jpg` (before/after), `.cover.jpg`, `.caption.txt`, and with sound design `.sound.jpg`, `.sound.json`, `.sfx.wav`, `.nomusic.mp4` (upload copy that keeps the effects).
@@ -41,6 +42,7 @@ Use the `make-reel` skill in `.claude/skills/make-reel/SKILL.md`. In short:
 4. Give the user the mp4 path, the caption and the cover.
 
 ## Plan.json rules
+- Story reels: segments carry `role` (hook, setup, build, peak, release, ending); plan `story` {format, arc, hook_type, hooks}; `motion.hook_punch`; overlays may include `{"type": "caption"}` (dialogue/lyric subtitles, lower third); photo segments may have `parallax: true` + `depth_key`; video segments `flow` [dx, dy] and `match: "motion"`. When swapping shots keep the hook/peak/ending strongest; NAME.critic.json lists what is weak.
 - Segments tile the timeline. `render` recomputes `out_start` from `dur`. Keep durations multiples of 1/30 s and on beat: only swap shots, or merge two neighbours, unless asked otherwise.
 - `layout`: `crop` (landscape cropped at `subject_x`), `pan` (slow pan across a wide frame), `fill` (already vertical), `blur_fill` (whole landscape frame over a blurred copy), `kenburns` (photos; `kb`: in/out/left/right).
 - `speed` 0.5 = slow motion, 2 = twice as fast (0.2–4). Under 50 fps, slow motion gets optical-flow in-between frames (segment `smooth`: flow|blend|off).

@@ -6,6 +6,7 @@
 
 **Making reels**
 - [Making reels](making-reels.md): the commands, what you get, variants, learning a style, editing by hand, exporting to Resolve/Premiere
+- [Reels that hold viewers](storytelling.md): the story arc, formats, hooks, sound with words, match cuts, parallax, the critic, learning from your results
 - [Finding footage](finding-footage.md): search by place, dates and people; trips; face recognition
 - [Analysing footage](analysis.md): describe every photo and clip on its own; the `tripshots.media/1` format other apps read
 - [Look and motion](look-and-motion.md): transitions, beat-synced motion, text, framing, split screens, maps, effects

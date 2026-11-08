@@ -13,6 +13,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
 | [`music`](#music) | download the sound of an Instagram reel (or any yt-dlp link) |
+| [`results`](#results) | record how your reels did on Instagram; learn what works for your audience |
 | [`cookies`](#cookies) | which browsers TripShots can borrow your Instagram login from (for reel links) |
 | [`scan`](#scan) | analyze + score footage and list the best shots |
 | [`frame`](#frame) | pop-out frame stills: the subject steps out of a framed photo |
@@ -43,13 +44,16 @@ usage: tripshots make [-h] [-m MUSIC]
                       [--behind {auto,on,off}] [--split-screens {lots,some,off}]
                       [--speed-ramps on|off|KINDS] [--speed-up {on,off}]
                       [--drop-speed {rush,impact,both,off}] [--slowmo-smooth {flow,blend,off}]
-                      [--labels {ai,off}] [--loop | --no-loop] [--min-score N] [--look LOOK]
-                      [--grade-strength 0-1] [--variants N] [--route-map {intro,tracker,both,off}]
-                      [--allow-similar] [--music-start SEC] [--upload-copy | --no-upload-copy]
-                      [--cookies-from-browser BROWSER] [--cookies FILE] [--sfx {on,off}]
-                      [--ambience {on,off}] [--clip-sound {auto,on,off}] [--sfx-level DB]
-                      [--sfx-licenses LIST] [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND]
-                      [--hook HOOK] [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
+                      [--labels {ai,off}] [--format {auto,montage,pov,list,series,reveal}]
+                      [--arc {on,off}] [--captions {auto,original,english,off}]
+                      [--critic {auto,rules,off}] [--parallax {auto,on,off}] [--loop | --no-loop]
+                      [--min-score N] [--look LOOK] [--grade-strength 0-1] [--variants N]
+                      [--route-map {intro,tracker,both,off}] [--allow-similar] [--music-start SEC]
+                      [--upload-copy | --no-upload-copy] [--cookies-from-browser BROWSER]
+                      [--cookies FILE] [--sfx {on,off}] [--ambience {on,off}]
+                      [--clip-sound {auto,on,off}] [--sfx-level DB] [--sfx-licenses LIST]
+                      [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND] [--hook HOOK]
+                      [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
                       [--exclude GLOB] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--no-recursive]
                       [--include-live-photos] [--watch {auto,gemini,off}] [--rescore]
                       [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
@@ -80,6 +84,18 @@ options:
                         slow motion from clips under 50 fps: optical-flow in-between frames
                         (default), cross-fade, or none
   --labels {ai,off}     a short AI label on each shot
+  --format {auto,montage,pov,list,series,reveal}
+                        reel format: montage, POV, a numbered list of places, a 'Day N' series, a
+                        slow reveal (default auto: from your footage, the sound and your results)
+  --arc {on,off}        plan the reel as a story with a hook and a payoff (default on); off = the
+                        older even cut grid
+  --captions {auto,original,english,off}
+                        lines of dialogue / lyrics on screen (auto: dialogue gets English
+                        subtitles, songs none)
+  --critic {auto,rules,off}
+                        check the plan like an editor and fix weak spots (auto: rules + AI review)
+  --parallax {auto,on,off}
+                        photos move in depth (2.5D) instead of a flat zoom
   --loop, --no-loop     seamless loop ending
   --min-score N         lowest AI score (1-10) a shot may have to be used (default: style's
                         min_score - 2)
@@ -295,6 +311,31 @@ instagram login (most reels need it):
                         is; 'chrome:Profile 1' for another profile; `tripshots cookies` checks
                         them). Default: $TRIPSHOTS_COOKIES_BROWSER
   --cookies FILE        cookies.txt exported from your browser (alternative)
+```
+
+## results
+
+```text
+usage: tripshots results [-h] [--views VIEWS] [--reach REACH] [--avg-watch AVG_WATCH]
+                         [--sends SENDS] [--saves SAVES] [--likes LIKES] [--comments COMMENTS]
+                         [--roots [ROOTS ...]]
+                         [{show,add,sync}] [reel]
+
+positional arguments:
+  {show,add,sync}
+  reel                  add: the reel (.mp4 or .plan.json)
+
+options:
+  -h, --help            show this help message and exit
+  --views VIEWS         plays / views
+  --reach REACH         accounts reached
+  --avg-watch AVG_WATCH
+                        average watch time (s)
+  --sends SENDS         shares / sends
+  --saves SAVES         saves
+  --likes LIKES         likes
+  --comments COMMENTS   comments
+  --roots [ROOTS ...]   sync: folders with your reels (default: the output folder)
 ```
 
 ## cookies

@@ -49,8 +49,12 @@ def events(plan: dict) -> list[dict]:
             notes.append(f"tripshots transition out: {s['trans_out']}")
         if s.get("incam_out"):
             notes.append("in-camera whip: cut inside the camera's swing")
-        if s.get("ramp"):
-            notes.append("velocity ramp")
+        if s.get("ramp") and not s.get("panel"):
+            from .retime import describe, hit_time, source_seconds
+            speed = source_seconds(s) / dur  # average speed; the curve itself is in the note
+            h = hit_time(s)
+            notes.append(f"{describe(s)}" + (f", slow motion from {h - s['out_start']:.2f}s" if h else "")
+                         + " (shown here at its average speed)")
         if still:
             notes.append(f"still photo, {s.get('kb') or s.get('layout') or 'ken burns'}")
         out.append({"n": i + 1, "src": c.get("src") or "", "still": still, "src_in": src_in,

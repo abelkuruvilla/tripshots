@@ -192,8 +192,9 @@ def storyboard(plan: dict, shots_by_id: dict, out: Path) -> Path:
             from .grade import apply_cube
             tile = Image.fromarray(apply_cube(np.asarray(tile.convert("RGB")), Path(lut)))
         img.paste(tile, (x, y))
-        spd = f" {s['speed']}x" if s.get("speed", 1) != 1 else ""
-        d.text((x, y + th + 4), f"#{i + 1} {s['shot_id']} {s['dur']:.2f}s{spd}", font=fb, fill=(255, 214, 0))
+        from .retime import describe
+        spd = f" {describe(s, short=True)}" if describe(s) else ""
+        d.text((x, y + th + 4), f"#{i + 1} {s['shot_id']} {s['dur']:.1f}s{spd}", font=fb, fill=(255, 214, 0))
         d.text((x, y + th + 26), (s.get("note") or s.get("layout", ""))[:24], font=f, fill=(200, 200, 200))
         if s.get("trans_out"):
             d.text((x + tw - 14, y + th // 2), "»", font=fb, fill=(255, 214, 0))

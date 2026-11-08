@@ -136,7 +136,14 @@ panels:               # split screens / grids (several clips on screen at once)
   use: <0-1>           # 0 = never seen in the references; ~0.4 = a moment or two; ~0.9 = a lot
   kinds: [split2|split3|grid4|columns3]
   mode: reveal|cycle|mixed   # reveal = panels appear one per beat; cycle = they keep cutting to new clips
-velocity: {{use: <0-1>}}   # speed ramps: fast motion slamming into slow motion on the hit
+velocity: {{use: <0-1>}}   # share of moving clips with a speed ramp
+speed:
+  ramps: [velocity|slam|bullet|rush|surge]   # velocity = rush in, slam into slow motion on the beat, speed out;
+                       # slam = real time then slow motion; bullet = slow-motion hold mid-shot; rush = speeds up
+                       # into the next cut; surge = slow start that takes off
+  fast: <0-1>          # share of moving clips sped up (fast-forward with motion blur) in busy sections
+  fast_max: <1.3-3>
+  drop: off|rush|impact|both   # rush = the shot before the drop speeds into it; impact = the drop shot starts in slow motion
 loop: true|false       # the ending flows back into the first shot
 motion:
   pulse: <0-0.15>      # bulge/"pop" distortion on bass hits

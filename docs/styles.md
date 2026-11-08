@@ -47,7 +47,11 @@ Ways to get a new style:
 | `text.cta` | mode `off` | Closing line: `mode` (`off`, `ai`, `text`), `text`, `duration` |
 | `text.labels` | mode `off` | `ai`: a short label on each shot; `max` |
 | `panels.use` / `kinds` / `mode` / `max` | 0 / all / `mixed` / 2 | Split screens: share of segments, which layouts, `reveal`/`cycle`/`mixed`, most per reel |
-| `velocity.use` | 0 | Share of moving clips with a velocity ramp |
+| `velocity.use` | 0 | Share of moving clips with a speed ramp ([Speed](look-and-motion.md#speed)) |
+| `speed.ramps` | [velocity] | Which ramps: `velocity`, `slam`, `bullet`, `rush`, `surge` |
+| `speed.fast` / `fast_max` | 0 / 2.5 | Share of moving clips sped up in busy sections, and the fastest speed |
+| `speed.drop` | `off` | At the biggest drop: `rush`, `impact`, `both`, `off` |
+| `speed.smooth` | `flow` | Slow motion from clips under 50 fps: `flow` (optical flow), `blend`, `off` |
 | `loop` | false | Seamless loop |
 | `popout.use` / `bg` / `variant` | 0 / `paper` / `auto` | Share of photos shown as pop-out frames |
 | `route_map.mode` / `theme` / `title` / `max_stops` | `off` / `auto` / "" / 7 | Animated route map |

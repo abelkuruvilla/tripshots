@@ -309,6 +309,7 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         e["idx"] = i
         e["drop"] = any(abs(e["out_start"] - d) < 0.12 for d in grid["drops"])
         out.append(e)
+    apply_speed(out, {s["id"]: s for s in shots}, grid, style)
     choose_transitions(out, style)
     use_incam(out, {s["id"]: s for s in shots}, style)
     return {
@@ -400,6 +401,92 @@ def _shot_fields(shot: dict, dur: float, level: str, style: dict, kb_dir: int, s
     return e, kb_dir
 
 
+FAST_MOTIONS = {"walk", "drone", "pan", "handheld", "timelapse", "push"}
+
+
+def _set_ramp(e: dict, shot: dict, kind: str, hit: float | None = None) -> bool:
+    """Give a video segment a speed ramp if the clip has enough footage for it."""
+    from . import retime
+    trial = {**e, "ramp": kind, "speed": 1.0}
+    if kind != "custom":
+        trial.pop("ramp_points", None)
+    if hit is not None:
+        trial["ramp_hit"] = round(hit, 3)
+    else:
+        trial.pop("ramp_hit", None)
+    need = retime.source_seconds(trial) * 1.08 + 0.3
+    if shot["t1"] - shot["t0"] < need:
+        return False
+    e.clear()
+    e.update(trial)
+    e["in"] = round(_best_window(shot, need), 3)
+    return True
+
+
+def _hit_beat(e: dict, beats: list[float]) -> float | None:
+    """The beat a ramp should slam into slow motion on: the first one 25-65 % into the shot."""
+    st, d = float(e["out_start"]), float(e["dur"])
+    for b in beats:
+        if st + 0.25 * d <= b <= st + 0.65 * d:
+            return b - st
+    return None
+
+
+def apply_speed(segs: list[dict], by_id: dict, grid: dict, style: dict) -> None:
+    """Speed effects for impact (retime.py): ramps on clips with movement (style velocity.use, kinds from
+    speed.ramps, the slam on a beat), speed-ups on moving clips in busy sections (speed.fast), and what
+    happens around the biggest drop (speed.drop: rush into it, impact out of it). Calm shots stay real time
+    or slow motion."""
+    sp = style.get("speed") or {}
+    smooth = sp.get("smooth", "flow")
+    kinds = [k for k in (sp.get("ramps") or ["velocity"]) if k != "impact"]
+    use = float((style.get("velocity") or {}).get("use", 0) or 0)
+    fast = float(sp.get("fast", 0) or 0)
+    fast_max = float(sp.get("fast_max", 2.5) or 2.5)
+    beats = [float(b) for b in grid.get("beats") or []]
+    n_ramp = n_fast = 0
+    for e in segs:
+        if e.get("kind") != "video":
+            continue
+        if smooth != "flow":
+            e["smooth"] = smooth
+        sh = by_id.get(e.get("shot_id"))
+        if not sh or e.get("panel") or float(e.get("speed", 1)) < 0.99:
+            continue
+        motion = (sh.get("ai") or {}).get("motion")
+        moving = e.get("moving") or motion in FAST_MOTIONS - {"timelapse"}
+        if (use > 0 and kinds and moving and e["level"] != "calm" and e["dur"] >= 0.9
+                and _stable_rand("vel", sh["id"], e["out_start"]) < use):
+            kind = kinds[int(_stable_rand("rampkind", sh["id"], e["out_start"]) * len(kinds)) % len(kinds)]
+            hit = _hit_beat(e, beats) if kind in ("velocity", "slam", "bullet") else None
+            if _set_ramp(e, sh, kind, hit):
+                e["track"] = False
+                n_ramp += 1
+                continue
+        if (fast > 0 and e["level"] != "calm" and (moving or motion in FAST_MOTIONS)
+                and _stable_rand("fast", sh["id"], e["out_start"]) < fast):
+            want = min(fast_max, 1.6 if e["level"] == "medium" else 2.2)
+            s = min(want, (sh["t1"] - sh["t0"]) / max(0.1, e["dur"]))
+            if s >= 1.3:
+                e["speed"] = round(s, 2)
+                e["in"] = round(_best_window(sh, e["dur"] * s), 3)
+                n_fast += 1
+    drop = str(sp.get("drop", "off") or "off")
+    if drop != "off" and grid.get("drops"):
+        d = float(grid["drops"][0])
+        for i, e in enumerate(segs):
+            sh = by_id.get(e.get("shot_id"))
+            if not sh or e.get("kind") != "video" or e.get("panel"):
+                continue
+            end = float(e["out_start"]) + float(e["dur"])
+            if drop in ("rush", "both") and abs(end - d) < 0.05 and e["dur"] >= 0.6:
+                n_ramp += _set_ramp(e, sh, "rush")
+            elif drop in ("impact", "both") and abs(float(e["out_start"]) - d) < 0.05 and e["dur"] >= 0.8:
+                n_ramp += _set_ramp(e, sh, "impact")
+    if n_ramp or n_fast:
+        log(f"speed: {n_ramp} ramp(s), {n_fast} speed-up(s)")
+
+
 def _entry_for(shot: dict, seg: dict, style: dict, kb_dir: int) -> tuple[dict, int]:
     e, kb_dir = _shot_fields(shot, seg["dur"], seg["level"], style, kb_dir)
     e.update({"out_start": seg["out_start"], "dur": seg["dur"], "level": seg["level"]})
@@ -412,14 +499,6 @@ def _entry_for(shot: dict, seg: dict, style: dict, kb_dir: int) -> tuple[dict, i
         if 0.02 <= area <= 0.45 and sb.get("source") == "ai":
             e.update({"layout": "popout", "popout_bg": pcfg.get("bg", "paper"),
                       "popout_variant": pcfg.get("variant", "auto")})
-    # velocity speed ramp: only on clips with real movement (on a still scene it looks like nothing)
-    use = float((style.get("velocity") or {}).get("use", 0) or 0)
-    if (use > 0 and e["kind"] == "video" and e.get("moving") and seg["level"] != "calm" and seg["dur"] >= 0.9
-            and _stable_rand("vel", shot["id"], seg["out_start"]) < use):
-        need = seg["dur"] * 1.45 + 0.25
-        if shot["t1"] - shot["t0"] >= need:
-            e.update({"ramp": "velocity", "speed": 1.0, "track": False,
-                      "in": round(_best_window(shot, need), 3)})
     return e, kb_dir
 
 

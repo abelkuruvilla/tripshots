@@ -10,7 +10,10 @@ ops:
   {"op": "text", "type": "hook", "text": "Old Faithful at dawn"}   set (or add) hook / location / cta text
   {"op": "remove_text", "type": "location"}
   {"op": "transition", "segment": 2, "to": "whip"}       out of slot 2 (null = hard cut)
-  {"op": "speed", "segment": 4, "speed": 0.5}
+  {"op": "speed", "segment": 4, "speed": 0.5}             constant speed: 0.5 slow motion, 2 = twice as fast
+  {"op": "ramp", "segment": 4, "ramp": "slam", "hit": 0.6} speed ramp (velocity, slam, bullet, rush, impact, surge),
+                                                         hit = seconds into the slot; "points": [[0,1],[0.4,0.3],[1,1]]
+                                                         for a custom curve; "ramp": null removes it
   {"op": "frame", "segment": 4, "subject_x": 0.3, "layout": "crop"}   reframe (0 = left, 1 = right)
   {"op": "set", "path": "motion.beat_punch", "value": 0.04}          anything else, by dotted path
 """
@@ -53,6 +56,13 @@ def _refit(seg: dict, plan: dict, style: dict) -> None:
     from .planner import _best_window
     sh = _shots(plan).get(seg.get("shot_id"))
     if sh and seg.get("kind") == "video" and not seg.get("panel"):
+        if seg.get("ramp"):
+            from .planner import _set_ramp
+            if _set_ramp(seg, sh, seg["ramp"], seg.get("ramp_hit")):
+                return
+            for k in ("ramp", "ramp_hit", "ramp_points"):
+                seg.pop(k, None)
+            seg["speed"] = 1.0
         speed = float(seg.get("speed", 1.0))
         if (sh["t1"] - sh["t0"]) < seg["dur"] * speed:
             speed = max(0.6, (sh["t1"] - sh["t0"]) / seg["dur"])
@@ -124,11 +134,52 @@ def apply(plan_path: Path, edits: list[dict]) -> dict:
                 segs[i]["trans_dur"] = 0.0
             done.append(f"slot {i + 1} out: {to or 'hard cut'}")
         elif op == "speed":
+            from .retime import SPEED_MAX, SPEED_MIN
             i = _slot(plan, ed["segment"])
-            segs[i]["speed"] = float(ed["speed"])
+            if segs[i].get("kind") != "video":
+                raise ReelError(f"slot {i + 1} isn't a video clip: speed only applies to video")
+            want = max(SPEED_MIN, min(SPEED_MAX, float(ed["speed"])))
+            for k in ("ramp", "ramp_hit", "ramp_points"):
+                segs[i].pop(k, None)
+            segs[i]["speed"] = want
             _refit(segs[i], plan, style)
-            segs[i]["speed"] = float(ed["speed"]) if segs[i].get("kind") == "video" else segs[i].get("speed")
-            done.append(f"slot {i + 1} speed {ed['speed']}")
+            got = segs[i]["speed"]
+            done.append(f"slot {i + 1} speed {got:g}x" + ("" if abs(got - want) < 0.01 else
+                                                         f" (asked {want:g}x; the clip is too short for more)"))
+        elif op == "ramp":
+            from .retime import KINDS
+            i = _slot(plan, ed["segment"])
+            seg = segs[i]
+            kind, pts = ed.get("ramp"), ed.get("points")
+            if seg.get("kind") != "video" or seg.get("panel"):
+                raise ReelError(f"slot {i + 1} isn't a single video clip: ramps only apply to video")
+            if not kind and not pts:
+                for k in ("ramp", "ramp_hit", "ramp_points"):
+                    seg.pop(k, None)
+                seg["speed"] = 1.0
+                _refit(seg, plan, style)
+                done.append(f"slot {i + 1} ramp removed")
+                continue
+            if kind and kind not in KINDS:
+                raise ReelError(f"unknown ramp {kind} ({', '.join(KINDS)}, or points)")
+            from .planner import _set_ramp
+            sh = shots.get(seg.get("shot_id"))
+            old = dict(seg)
+            if pts:
+                seg["ramp_points"] = [[float(u), float(v)] for u, v in pts]
+            else:
+                seg.pop("ramp_points", None)
+            hit = ed.get("hit")
+            if hit is not None and not 0 <= float(hit) <= seg["dur"]:
+                raise ReelError(f"hit must be between 0 and {seg['dur']} (seconds into slot {i + 1})")
+            if not sh or not _set_ramp(seg, sh, kind or "custom", None if hit is None else float(hit)):
+                seg.clear()
+                seg.update(old)
+                raise ReelError(f"slot {i + 1}'s clip is too short for a {kind or 'custom'} ramp; swap in a longer clip")
+            if pts:
+                seg["ramp_points"] = [[float(u), float(v)] for u, v in pts]
+            seg["track"] = False
+            done.append(f"slot {i + 1} {kind or 'custom'} ramp")
         elif op == "frame":
             i = _slot(plan, ed["segment"])
             for k in ("subject_x", "layout", "pan_from", "pan_to"):

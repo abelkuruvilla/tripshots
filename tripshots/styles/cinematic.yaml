@@ -32,3 +32,4 @@ motion:
 velocity: {use: 0.25}
 loop: true
 sound: {sfx: "on", ambience: "on", level_db: -3}
+speed: {ramps: [slam, bullet], fast: 0.0, drop: impact, smooth: flow}

@@ -458,6 +458,10 @@ class EditStyle(ModalScreen[dict | None]):
         ("Split screens / grids (0 never … 1 often)", ("panels", "use"), "num", None),
         ("Split screen behaviour", ("panels", "mode"), "sel", ["mixed", "reveal", "cycle"]),
         ("Speed ramps on moving clips (0-1)", ("velocity", "use"), "num", None),
+        ("Speed-ups in busy sections (0-1)", ("speed", "fast"), "num", None),
+        ("Fastest speed-up (x)", ("speed", "fast_max"), "num", None),
+        ("At the biggest drop", ("speed", "drop"), "sel", ["off", "rush", "impact", "both"]),
+        ("Smooth slow motion (clips under 50 fps)", ("speed", "smooth"), "sel", ["flow", "blend", "off"]),
         ("Bass-hit pulse (0-0.15)", ("motion", "pulse"), "num", None),
         ("Label on each shot", ("text", "labels", "mode"), "sel", ["off", "ai"]),
         ("Seamless loop ending", ("loop",), "bool", None),
@@ -598,10 +602,18 @@ class MakeTab(VerticalScroll):
             yield Select([("Split screens: style default", ""), ("Split screens: lots", "lots"),
                           ("Split screens: some", "some"), ("Split screens: off", "off")],
                          value="", id="split", allow_blank=False)
-            yield Select([("Speed ramps: style default", ""), ("Speed ramps: on", "on"), ("Speed ramps: off", "off")],
+            yield Select([("Speed ramps: style default", ""), ("Speed ramps: on", "on"),
+                          ("Speed ramps: velocity", "velocity"), ("Speed ramps: slam + bullet", "slam,bullet"),
+                          ("Speed ramps: rush + surge", "rush,surge"), ("Speed ramps: off", "off")],
                          value="", id="ramps", allow_blank=False)
             yield Select([("Shot labels: style default", ""), ("Shot labels: AI", "ai"), ("Shot labels: off", "off")],
                          value="", id="labels", allow_blank=False)
+        with Horizontal(classes="row"):
+            yield Select([("Speed-ups: style default", ""), ("Speed-ups: on", "on"), ("Speed-ups: off", "off")],
+                         value="", id="speed_up", allow_blank=False)
+            yield Select([("Drop: style default", ""), ("Drop: rush into it", "rush"),
+                          ("Drop: slow-mo impact", "impact"), ("Drop: both", "both"), ("Drop: no speed effect", "off")],
+                         value="", id="drop_speed", allow_blank=False)
         with Horizontal(classes="row"):
             yield Select([("Colour: style default", ""), ("Colour: AI picks the look", "auto"),
                           ("Colour: no grading", "none")] + [(f"Colour: {n}", n) for n in look_names()],
@@ -757,7 +769,8 @@ class MakeTab(VerticalScroll):
             if v:
                 args += [flag, v]
         for flag, wid in (("--text-preset", "preset"), ("--behind", "behind"), ("--split-screens", "split"),
-                          ("--speed-ramps", "ramps"), ("--labels", "labels"), ("--look", "look"),
+                          ("--speed-ramps", "ramps"), ("--speed-up", "speed_up"), ("--drop-speed", "drop_speed"),
+                          ("--labels", "labels"), ("--look", "look"),
                           ("--route-map", "route_map"), ("--variants", "variants"), ("--sfx", "sfx"),
                           ("--ambience", "ambience")):
             v = blank(q(wid).value)
@@ -945,7 +958,10 @@ class StylesTab(Horizontal):
             f"{mo.get('shake_on_drop')} · pulse {mo.get('pulse', 0)}\n"
             f"[b]Split screens[/b] {int(float((s.get('panels') or {}).get('use', 0)) * 100)}% · "
             f"{(s.get('panels') or {}).get('mode')} · {(s.get('panels') or {}).get('kinds')}\n"
-            f"[b]Speed ramps[/b] {int(float((s.get('velocity') or {}).get('use', 0)) * 100)}% of moving clips · "
+            f"[b]Speed[/b] ramps on {int(float((s.get('velocity') or {}).get('use', 0)) * 100)}% of moving clips "
+            f"({', '.join((s.get('speed') or {}).get('ramps') or ['velocity'])}) · speed-ups "
+            f"{int(float((s.get('speed') or {}).get('fast', 0) or 0) * 100)}% · drop "
+            f"{(s.get('speed') or {}).get('drop', 'off') or 'off'}\n"
             f"loop {s.get('loop', False)} · labels {(t.get('labels') or {}).get('mode', 'off')}\n"
             f"[b]Text[/b] {t.get('preset')} · hook {t['hook'].get('mode')} · location {t['location'].get('mode')} · "
             f"behind {t['location'].get('behind', 'preset default')} · cta {t.get('cta', {}).get('mode')}\n"

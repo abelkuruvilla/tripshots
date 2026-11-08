@@ -33,3 +33,4 @@ motion:
   shake_px: 20
   video_push: 0.06
 velocity: {use: 0.2}
+speed: {ramps: [velocity, rush, surge], fast: 0.35, fast_max: 2.5, drop: rush, smooth: flow}

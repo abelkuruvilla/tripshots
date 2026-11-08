@@ -32,8 +32,10 @@ changing lengths.
 | `shot_id` | Which shot (ids from `tripshots scan` or `shots_scored.json`). Change it to swap the shot |
 | `kind`, `src` | `video` / `photo` and the source file |
 | `dur`, `out_start` | Length and start in the reel (s) |
-| `in`, `speed` | Video: start time in the source (s) and speed (0.5 = slow motion; smooth only for 50 fps+ footage) |
-| `ramp` | `"velocity"`: rush in, slow motion on the hit, rush out |
+| `in`, `speed` | Video: start time in the source (s) and speed (0.5 = slow motion, 2 = twice as fast; 0.2–4) |
+| `ramp`, `ramp_hit` | Speed ramp instead of a constant speed: `velocity`, `slam`, `bullet`, `rush`, `impact`, `surge` ([Speed](look-and-motion.md#speed)); `ramp_hit` = seconds into the segment where it slams into slow motion (a beat) |
+| `ramp_points` | A custom curve with `"ramp": "custom"`: `[[0, 1], [0.4, 0.3], [1, 1.5]]` = (fraction of the segment, speed), eased between points |
+| `smooth` | Slow motion from clips under 50 fps: `flow` (default), `blend`, `off` |
 | `layout` | `crop` (landscape cropped at `subject_x`), `pan` (pan across a wide frame), `fill` (already vertical), `blur_fill` (whole frame over a blurred copy), `kenburns` (photos), `popout` (photo in a frame, subject steps out) |
 | `subject`, `subject_x` | Subject box `{x0, y0, x1, y1, cx, cy}` in 0..1 source coordinates; crop centre (0 = left, 1 = right) |
 | `pan_from`, `pan_to`, `pan_reverse` | Pan range across the source (0..1) and direction |

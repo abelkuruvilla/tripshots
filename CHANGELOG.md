@@ -5,6 +5,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Speed effects:** five new speed ramps next to `velocity`: `slam` (into slow motion on the beat), `bullet` (a slow-motion hold), `rush` (speeds up into the next cut), `surge` (takes off) and `impact` (out of slow motion after a drop), plus custom curves (`ramp_points`). Ramps now slam into slow motion on a beat. Speed-ups (1.6–2.2×) with motion blur on moving clips in busy sections, and a speed effect around the biggest drop (`speed.drop`). Slow motion from 24/30 fps clips gets optical-flow in-between frames instead of stutter or ghosting, and ramps use 60 fps clips' full frame rate. New style section `speed`; `make --speed-ramps on|off|KINDS --speed-up --drop-speed --slowmo-smooth`; Make tab menus; plan edit op `ramp` (MCP `edit_plan`); `make_reel` takes `speed_ramps`, `speed_up`, `drop_speed`. The storyboard shows each shot's speed, exports carry it, and the sound design puts a whoosh where a ramp hits.
+
 ### Fixed
 - HDR footage (iPhone HLG, HDR10) looked flat with Homebrew's standard `ffmpeg`, which no longer includes `zscale` ("this ffmpeg lacks zscale; colors may look flat"). TripShots now falls back to lookup tables measured from its own zscale + tonemap chain, applied with `lut3d` (in every ffmpeg), so the colours are the same either way. `doctor` shows which HDR route is used.
 - Gemini watching failed on every clip with `models/gemini-flash-latest is not found for API version v1` on newer google-genai versions. TripShots now uses the v1beta API (where the `-latest` aliases live), checks which models the key can use, switches to the next model at once on "not found", and stops Gemini for the run, with one log line, when no model or key works. The progress line now counts successes.

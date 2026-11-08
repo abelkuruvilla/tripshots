@@ -45,6 +45,8 @@ for t in 0.5 1.5 3 6; do ffmpeg -loglevel error -y -ss $t -i reels/<name>.mp4 -f
 ```
 Look at the frames. Is the text readable and not cut off, and is the colour natural (not grey or washed out)?
 
+If the log says "speed: N ramp(s)", pull a frame at each ramp's hit (`out_start + ramp_hit`): it should be in slow motion on the beat, with no smeared or doubled edges.
+
 If the log says "in-camera whip transition(s)", pull frames around that cut: it should land inside the blur of the swing, not on a sharp frame.
 
 Also look at `reels/<name>.sound.jpg` (amber bars = the clip's own sound used as ambience): effects should sit on cuts/drops/text pops (not on every cut), the impact on the drop should be the loudest event, and the log line "sound: ... master -14 LUFS" should be near -14. If the log says effects are synthesized stand-ins, run `tripshots sounds --fetch` once.

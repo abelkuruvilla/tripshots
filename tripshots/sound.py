@@ -5,7 +5,8 @@ has a visible cause, the music carries the reel, and effects punctuate it.
 
 Cues come from the plan and the rendered text, so they are frame exact:
   transition whip/zoom/spin      whoosh, loudest point on the cut (the motion's velocity peak)
-  speed ramp                     whoosh, loudest point where the clip slams into slow motion
+  speed ramp                     whoosh, loudest point where the clip slams into slow motion (or
+                                 into the cut, when it speeds up into one)
   freeze-frame on the drop       riser ending 120 ms before it, then one impact on the frame
   flash cut                      camera shutter          glitch cut / colour split   short glitch
   text popping in word by word   soft pops, pitch climbing across the line
@@ -513,8 +514,13 @@ def build_cues(plan: dict, text_events: list[dict] | None = None) -> list[dict]:
         if s.get("incam_out"):  # the camera's own swing: a real whoosh where the picture smears
             add(segs[i + 1]["out_start"], "whoosh", "in-camera whip pan", gain=-3, pri=3)
     for i, s in enumerate(segs):
-        if s.get("ramp") == "velocity":
-            add(s["out_start"] + 0.37 * s["dur"], "whoosh", "speed ramp")
+        if s.get("ramp") and not s.get("panel"):
+            from .retime import hit_time
+            h = hit_time(s)
+            if h is not None:  # the slam into slow motion
+                add(h, "whoosh", f"{s['ramp']} speed ramp")
+            elif s["ramp"] == "rush" and i + 1 < len(segs) and not s.get("trans_out"):
+                add(segs[i + 1]["out_start"], "whoosh", "speeds up into the cut", gain=-2)
         if s.get("rgb") and i > 0:
             add(s["out_start"], "glitch", "colour-split cut", gain=-3)
         if s.get("layout") == "popout":
@@ -765,7 +771,7 @@ def judge_clip_audio(x: np.ndarray) -> tuple[bool, str, dict]:
 
 def native_beds(plan: dict, mode: str = "auto") -> list[dict]:
     """Segments whose own clip sound is clean enough to be their ambience (the real waves, the real
-    market). Needs speed 1 and no velocity ramp; Gemini's audio label (watch.py) vetoes speech/music/noise."""
+    market). Needs speed 1 and no speed ramp; Gemini's audio label (watch.py) vetoes speech/music/noise."""
     if mode == "off":
         return []
     shots = {s["id"]: s for s in (read_json(Path(plan.get("work", ".")) / "shots_scored.json", []) or [])}

@@ -5,6 +5,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Learned styles copy the reference, not just its timing.** `learn` now records the references' light and colour (used to choose shots that look like them, plus the kind of light and people the AI sees), their shape (a widescreen reference gives a cinematic letterbox reel with text in the bars), their camera speed, and fixes the format and hook-text behaviour; the look is applied at full strength (`grade.match: full`, also for clones). The story engine's rhythm follows the style's pace (a 4-beats-per-shot reference holds shots twice as long). `tripshots learn -n NAME` without links re-learns an existing style.
+
 ### Added
 - **Story engine** ([docs](docs/storytelling.md)): every reel is planned as hook → setup → build → peak → release → ending instead of an even cut grid. Shot lengths vary on purpose (½ to 8 beats; cuts accelerate into the drop; the payoff is held), the best shots are cast into the hook, payoff and ending, shots with you are weighted up and one lands in the first 3 s, the opening settles from a push-in so something moves at once, and the ending is chosen to loop. `make --arc off` keeps the old grid.
 - **Formats:** `--format auto|montage|pov|list|series|reveal` (numbered place cards, "Day N of", a slow reveal), with the AI writing three hook candidates per format, scored on clarity, curiosity and emotion.

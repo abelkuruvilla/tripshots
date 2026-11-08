@@ -56,7 +56,16 @@ DEFAULT_STYLE: dict = {
         "landscape": "auto",            # auto | crop | pan | blur_fill
         "photo_motion": "kenburns",     # kenburns | static
         "photo_zoom": 1.12,
+        "pan_speed": 0.06,              # pans and drifts: at most this share of the picture's width per second
     },
+    # frame: the picture's shape inside the 9:16 reel. aspect 9:16 = full screen; 16:9 or 2.39:1 = a cinematic
+    # letterbox (the picture in a band, black above and below, text in the bars)
+    "frame": {"aspect": "9:16"},
+    # taste: what the edit should look for in your footage (learned from reference reels by `tripshots learn`).
+    # look: the references' light and colour (diversity.look vector); weight 0..1 how strongly shots that look
+    # like that are preferred; light: the kinds of light they show (golden_hour, sunset, fog, ...); people: how
+    # people appear (silhouette, back_to_camera, facing_camera, none).
+    "taste": {"look": None, "weight": 0.0, "light": [], "people": ""},
     # transitions: which ones per energy level, what share of cuts get one (the rest are hard
     # cuts on the beat), speed multiplier; "at: sections" forces one at every energy change/drop
     "transitions": {

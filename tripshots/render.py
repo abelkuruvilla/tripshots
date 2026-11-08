@@ -44,7 +44,7 @@ def _video_layout(e: dict, length: float, size: tuple[int, int] = (OUT_W, OUT_H)
         a = float(e.get("pan_from", 0.15)) * sw - OW / 2
         b = float(e.get("pan_to", 0.85)) * sw - OW / 2
         from .framing import PAN_SPEED
-        half = min(abs(b - a) / 2, PAN_SPEED * sw * length / 2)  # slow and deliberate, around the middle
+        half = min(abs(b - a) / 2, float(e.get("pan_speed", PAN_SPEED)) * sw * length / 2)  # slow, around the middle
         mid = (a + b) / 2
         a, b = mid - half, mid + half
         if e.get("pan_reverse"):
@@ -70,6 +70,10 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
     `rate` other than 30 renders at that frame rate (the retimer's real-time pass)."""
     speed = float(e.get("speed", 1.0))
     src_need = length * speed + 0.5
+    pad = []
+    if e.get("_band") and size == (OUT_W, OUT_H):  # cinematic letterbox: the picture in a band, black bars
+        size = (OUT_W, int(e["_band"]))
+        pad = [f"pad={OUT_W}:{OUT_H}:0:{(OUT_H - size[1]) // 2}:black"]
     if e.get("track") and e.get("layout") == "crop":
         from .framing import track_x
         try:
@@ -86,7 +90,7 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
         mid = _video_layout(e, length, size) + [f"tmix=frames={min(blur, 8)}", f"fps={rate}"]
     else:
         mid = [f"fps={rate}"] + _video_layout(e, length, size)
-    vf = ",".join(pre + mid + color_chain(seg_color(color, e))
+    vf = ",".join(pre + mid + color_chain(seg_color(color, e)) + pad
                   + ["tpad=stop_mode=clone:stop_duration=3", "setsar=1", "format=yuv420p"])
     base = ffmpeg_base()
     nf = max(1, int(round(length * rate)))
@@ -109,6 +113,10 @@ def _ease(x: float) -> float:
 def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path,
                      size: tuple[int, int] = (OUT_W, OUT_H)) -> None:
     """Smooth sub-pixel Ken Burns rendered in Python, piped to ffmpeg."""
+    pad = []
+    if e.get("_band") and size == (OUT_W, OUT_H):  # cinematic letterbox
+        size = (OUT_W, int(e["_band"]))
+        pad = [f"pad={OUT_W}:{OUT_H}:0:{(OUT_H - size[1]) // 2}:black"]
     OW, OH = size
     im = Image.open(e["still"]).convert("RGB")
     W, H = im.size
@@ -135,7 +143,7 @@ def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path
     if W / H > 2.2 and not e.get("focus") and mode in ("in", "out", "in_rot", "up", "down"):
         mode = "left" if sx > 0.5 else "right"  # a panorama with no one subject: travel across it instead
     from .framing import PAN_SPEED
-    max_travel = PAN_SPEED * W * length
+    max_travel = float(e.get("pan_speed", PAN_SPEED)) * W * length
     if sb:  # never zoom so far that the subject is cut off
         bw_px = max(1.0, (sb["x1"] - sb["x0"]) * W * 1.12)
         bh_px = max(1.0, (sb["y1"] - sb["y0"]) * H * 1.12)
@@ -183,14 +191,14 @@ def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path
         frames_kw.append((x0, y0, x0 + bw, y0 + bh))
         rots.append(rot)
     mover = None
-    if e.get("parallax") and size == (OUT_W, OUT_H):
+    if e.get("parallax") and (size == (OUT_W, OUT_H) or pad):
         from . import parallax
         d = parallax.depth(src, e.get("depth_key"))
         if parallax.worth_it(d):
             # drift the way the Ken Burns moves (or left to right), about 2.5 % of the frame for the nearest things
             way = -1.0 if mode in ("left", "out") else 1.0
             mover = parallax.Mover(src, d, 0.025 * OW, way)
-    vf = ",".join(color_chain(seg_color(color, e)) + ["setsar=1", "format=yuv420p"]) or "null"
+    vf = ",".join(color_chain(seg_color(color, e)) + pad + ["setsar=1", "format=yuv420p"]) or "null"
     cmd = ffmpeg_base() + ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OW}x{OH}", "-r", str(OUT_FPS),
                            "-i", "-", "-vf", vf] + _enc() + [str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -413,6 +421,16 @@ class TextTrack:
             self.cfg["hook"]["fast_in"] = True
         self.cfg["caption"] = legible("caption", {**CAPTION, **{k: v for k, v in (tcfg.get("caption") or {}).items()
                                                                if v is not None}})
+        band = int((plan.get("frame") or {}).get("band") or 0)
+        if 0 < band < OUT_H:  # letterbox: words live in the black bars, never over the picture
+            from . import typo
+            bar = (OUT_H - band) // 2
+            typo.BANDS["bar_top"] = (max(typo.SAFE["top"], bar - 400), bar - 30)
+            typo.BANDS["bar_bottom"] = (OUT_H - bar + 40, min(typo.SAFE["bottom"] + 40, OUT_H - bar + 420))
+            self.cfg["hook"]["position"] = "bar_top"
+            for k in ("label", "cta", "caption", "location"):
+                self.cfg[k]["position"] = "bar_bottom"
+            self.cfg["location"]["behind"] = "off"
         self.specs = sorted([o for o in plan.get("overlays") or []
                              if o["type"] in ("hook", "location", "cta", "label", "caption")], key=lambda o: o["start"])
         self.built: dict[int, object] = {}
@@ -502,6 +520,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
     if not segs:
         raise ReelError("plan has no segments")
     _prepare_transitions(plan)
+    band = int((plan.get("frame") or {}).get("band") or 0)
+    bar = (OUT_H - band) // 2 if 0 < band < OUT_H else 0
     fps = OUT_FPS
     start_f = [int(round(e["out_start"] * fps)) for e in segs]
     dur_f = [int(round(e["dur"] * fps)) for e in segs]
@@ -518,6 +538,9 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         n = dur_f[i] + lead_f[i] + tail_f[i]
         length = n / fps
         e2 = dict(e)
+        band = int((plan.get("frame") or {}).get("band") or 0)
+        if band and band < OUT_H and not e.get("panel"):
+            e2["_band"] = band
         if e["kind"] == "video":
             lead_speed = retime.speed_at(retime.seg_keys(e), 0.0) if e.get("ramp") else e.get("speed", 1.0)
             e2["in"] = max(0.0, e["in"] - lead_f[i] / fps * lead_speed)
@@ -633,6 +656,11 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                     if n >= total_f - loop_f:
                         q = (n - (total_f - loop_f) + 1) / loop_f
                         frame = cv2.addWeighted(frame, 1 - q * q, first_frame, q * q, 0)
+                if bar:  # motion and transitions move the whole frame: keep the letterbox bars clean
+                    if not frame.flags.writeable:
+                        frame = frame.copy()
+                    frame[:bar] = 0
+                    frame[OUT_H - bar:] = 0
                 if maps is not None:
                     frame = maps.draw(frame, n / fps)
                 frame = texts.draw(frame, n / fps, segs[i])

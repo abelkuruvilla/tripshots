@@ -86,6 +86,30 @@ def measure(path: Path, work: Path) -> dict:
         if f:
             frames.append(f)
     res["grade"] = _grade(frames)
+    # the picture's shape (a widescreen reel stays widescreen: a cinematic letterbox in the 9:16 frame)
+    vs = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), {})
+    w, h = int(vs.get("width") or 0), int(vs.get("height") or 0)
+    rot = abs(int(((vs.get("tags") or {}).get("rotate")) or 0))
+    if rot in (90, 270):
+        w, h = h, w
+    res["aspect"] = round(w / h, 3) if w and h else None
+    # light and colour of its shots, for choosing footage that looks like it
+    from .diversity import look
+    vecs = [look(cv2.cvtColor(im, cv2.COLOR_BGR2RGB)) for im in (cv2.imread(str(f)) for f in frames) if im is not None]
+    res["look"] = [round(float(x), 4) for x in np.mean(vecs, axis=0)] if vecs else None
+    # how the camera moves: how fast it pans, whether it pushes in
+    try:
+        from .clone import ref_motion
+        mdir = work / f"{path.stem}_motion"
+        mdir.mkdir(parents=True, exist_ok=True)
+        mv = ref_motion({"dir": str(mdir), "file": str(path), "shots": [
+            {"id": f"R{i + 1:02d}", "t0": a, "t1": b} for i, (a, b) in enumerate(zip(bounds[:-1], bounds[1:]))]})
+        dxs = [abs(v["dx"]) for v in mv.values()]
+        zs = [v["zoom"] for v in mv.values()]
+        res["camera"] = {"pan_speed": round(float(np.median(dxs)), 4) if dxs else None,
+                         "push": round(float(np.median(zs)), 4) if zs else None}
+    except Exception as e:
+        log(f"  camera motion not measured ({str(e)[:80]})")
     res["frames"] = [str(f) for f in frames]
     # extra frames near the start to read hook text
     res["early_frames"] = [str(f) for f in (_grab(path, t, fd / f"early{t:.1f}.jpg") for t in (0.3, 1.2, 2.2)) if f]
@@ -145,6 +169,12 @@ speed:
   fast_max: <1.3-3>
   drop: off|rush|impact|both   # rush = the shot before the drop speeds into it; impact = the drop shot starts in slow motion
 loop: true|false       # the ending flows back into the first shot
+taste:                 # what the footage should look like to fit this style (used to choose shots)
+  light: [golden_hour|sunset|blue_hour|midday|overcast|fog|night]   # the light most reference shots are in
+  people: none|silhouette|back_to_camera|facing_camera|crowd        # how people appear in them
+story:
+  format: montage|pov|list|series|reveal   # list = numbered places on screen; pov = "POV:" text; reveal = a tease then a payoff
+  hook_text: style     # keep this: the reference's own text decides whether a hook line appears
 motion:
   pulse: <0-0.15>      # bulge/"pop" distortion on bass hits
   beat_punch: <0-0.1>  # zoom bump on beats (0.04-0.08 typical for energetic edits)
@@ -215,6 +245,30 @@ def learn(refs: list[str], name: str, backend_name: str | None, cookies_browser:
                     style["cuts"]["beats_per_cut"]["medium"] = base["cuts"]["beats_per_cut"]["medium"]
         except Exception as e:
             log(f"AI style description failed ({e}); saving measured timing only")
+    # the references' shape, light and camera become the style's frame, taste and movement
+    ars = [m["aspect"] for m in measures if m.get("aspect")]
+    if ars and float(np.median(ars)) > 1.3:
+        a = float(np.median(ars))
+        style["frame"] = {"aspect": "2.39:1" if a > 2.1 else "16:9"}
+        log(f"the references are widescreen ({a:.2f}:1): reels in this style use a cinematic letterbox")
+    looks = [m["look"] for m in measures if m.get("look")]
+    taste = dict(style.get("taste") or {})
+    if looks:
+        taste["look"] = [round(float(x), 4) for x in np.mean(looks, axis=0)]
+        taste["weight"] = 1.0
+    style["taste"] = {"look": taste.get("look"), "weight": float(taste.get("weight", 0.0)),
+                      "light": [str(x) for x in (taste.get("light") or [])][:4],
+                      "people": str(taste.get("people") or "")}
+    cams = [m["camera"] for m in measures if m.get("camera") and m["camera"].get("pan_speed") is not None]
+    if cams:
+        ps = float(np.median([c["pan_speed"] for c in cams]))
+        style.setdefault("layout", {})["pan_speed"] = round(min(0.08, max(0.015, ps * 1.1)), 3)
+        push = float(np.median([c.get("push") or 0 for c in cams]))
+        style.setdefault("motion", {})["video_push"] = round(min(0.1, max(0.0, push * 0.6)), 3)
+    st = dict(style.get("story") or {})
+    st["format"] = st.get("format") if st.get("format") in ("montage", "pov", "list", "series", "reveal") else "montage"
+    st["hook_text"] = "style"
+    style["story"] = st
     # colour: the references' grade becomes a look with the same name
     try:
         from . import grade
@@ -224,7 +278,7 @@ def learn(refs: list[str], name: str, backend_name: str | None, cookies_browser:
             lk = grade.look_from_images(imgs, name, f"Colour of the reels the '{name}' style was learned from.")
             lk["refs"] = refs
             grade.save_look(lk, name)
-            style["grade"] = {"look": name, "strength": 0.75, "ai": True}
+            style["grade"] = {"look": name, "strength": 0.9, "ai": True, "match": "full"}
             log(f"look saved: {name} (colour grade of the references)")
     except Exception as e:
         log(f"could not measure the references' colour ({e})")

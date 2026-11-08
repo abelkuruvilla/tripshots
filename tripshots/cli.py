@@ -113,7 +113,17 @@ def cookie_args(a) -> dict:
 
 def cmd_learn(a):
     from .learn import learn
-    print(learn(a.refs, a.name, a.backend, a.cookies_from_browser, a.cookies))
+    refs = a.refs
+    if not refs:  # re-learn an existing style from the reels it was learned from (downloads are cached)
+        from .config import load_style
+        try:
+            refs = list(load_style(a.name).get("learned_from") or [])
+        except Exception:
+            refs = []
+        if not refs:
+            raise SystemExit(f"give the reference reels: tripshots learn <links or files> -n {a.name}")
+        print(f"re-learning '{a.name}' from {len(refs)} reference(s)")
+    print(learn(refs, a.name, a.backend, a.cookies_from_browser, a.cookies))
 
 
 def cmd_music(a):
@@ -578,7 +588,8 @@ def build_parser() -> argparse.ArgumentParser:
     ex.set_defaults(fn=cmd_export)
 
     lr = sub.add_parser("learn", help="learn a style from reference reels (URLs or files)")
-    lr.add_argument("refs", nargs="+")
+    lr.add_argument("refs", nargs="*", help="reel links or video files (none: re-learn the style named by -n from "
+                                            "the reels it was learned from)")
     lr.add_argument("-n", "--name", required=True)
     lr.add_argument("-b", "--backend")
     add_cookie_args(lr)

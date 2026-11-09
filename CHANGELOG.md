@@ -6,6 +6,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **"landmark lookup skipped (HTTP Error 502)":** the park/landmark lookup now retries a busy Overpass server and moves on to other public Overpass servers (`TRIPSHOTS_OVERPASS` puts your own first). When none answers, the town name is used for that run only and the place is looked up again next time instead of being kept.
+
+### Fixed
 - **Location titles said the county** ("Mariposa County") instead of what you filmed. They now name the famous spot or national park first ("Glacier Point, Yosemite National Park", "Yosemite National Park, California"), from OpenStreetMap, and fall back to the town, then the county. Earlier lookups are redone once.
 - **A location title could name a different shot:** when a title had to move off a split screen, it kept the split screen's place over the next shot (a desert county over El Capitan). It now names the shot it is over.
 - **Side-by-side columns with landscape clips:** `columns3` showed a tenth of each landscape clip. Landscape clips are now stacked top to bottom (`split3`).

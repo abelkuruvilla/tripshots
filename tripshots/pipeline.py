@@ -146,6 +146,8 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         style["loop"] = bool(ex["loop"])
     if text_preset:
         style["text"]["preset"] = text_preset
+    if ex.get("text_motion"):
+        style["text"]["motion"] = ex["text_motion"]
     if behind:
         style["text"]["location"]["behind"] = behind
     if min_score is not None:
@@ -347,6 +349,7 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         result["beat_check"] = check_beats(out, plan)
     except Exception as e:
         log(f"beat check skipped ({e})")
+    result.update(run_qa(out, plan))
     result["hook"] = next((o["text"] for o in plan["overlays"] if o["type"] == "hook"), None)
     if upload_copy and music:
         result["upload_video"] = str(export_no_audio(out))
@@ -385,8 +388,10 @@ def posting_note(plan: dict) -> str:
     return note
 
 
-def render_plan(plan_path: Path, out: Path | None, workers: int = 2) -> Path:
+def render_plan(plan_path: Path, out: Path | None, workers: int = 2, text_motion: str | None = None) -> Path:
     plan, work = load_plan(plan_path)
+    if text_motion:
+        plan.setdefault("text", {})["motion"] = text_motion
     out = (out or plan_path.with_name(plan_path.name.replace(".plan.json", ".mp4"))).resolve()
     render(plan, out, work, workers=workers)
     export_cover(plan, out, out.with_suffix(".cover.jpg"))
@@ -395,8 +400,23 @@ def render_plan(plan_path: Path, out: Path | None, workers: int = 2) -> Path:
         check_beats(out, plan)
     except Exception as e:
         log(f"beat check skipped ({e})")
+    run_qa(out, plan)
     log(f"done: {out}")
     return out
+
+
+def run_qa(video: Path, plan: dict) -> dict:
+    """qa.py after a render: never fails the render, returns {qa, qa_sheet} for the result."""
+    if str((plan.get("qa") if isinstance(plan.get("qa"), str) else "on")) == "off":
+        return {}
+    try:
+        from .qa import check
+        rep = check(Path(video), plan)
+        return {"qa": f"{rep['passed']}/{rep['total']} checks passed", "qa_sheet": rep.get("sheet"),
+                "qa_failed": [c["check"] for c in rep["checks"] if not c["ok"]]}
+    except Exception as e:
+        log(f"qa skipped ({e})")
+        return {}
 
 
 def load_plan(plan_path: Path) -> tuple[dict, Path]:
@@ -501,7 +521,8 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
           variants: int = 1, look: str | None = None, grade_strength: float | None = None,
           cookies: dict | None = None, keep_text: bool = False, dry_run: bool = False, workers: int = 2,
           source_opts: dict | None = None, upload_copy: bool | None = None, rescore: bool = False,
-          text_preset: str | None = None, hype: bool = False, sound: dict | None = None) -> dict:
+          text_preset: str | None = None, hype: bool = False, sound: dict | None = None,
+          text_motion: str | None = None) -> dict:
     from . import clone as cl
     from . import grade as grade_mod
     from .config import HOME
@@ -514,6 +535,8 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
         style.setdefault("motion", {}).update({"freeze": False, "rgb_split": 0.0})
     if text_preset:
         style["text"]["preset"] = text_preset
+    if text_motion:
+        style["text"]["motion"] = text_motion
     style.setdefault("sound", {}).update({k: v for k, v in (sound or {}).items() if v is not None})
     shots, backend, work = prepare_shots(inputs, backend_name, source_opts=source_opts, rescore=rescore)
     by_id = {s["id"]: s for s in shots}
@@ -610,6 +633,7 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
                 r["beat_check"] = check_beats(o, plan)
             except Exception as e:
                 log(f"beat check skipped ({e})")
+            r.update(run_qa(o, plan))
         results.append(r)
     res = results[0] if len(results) == 1 else {"variants": results}
     if len(results) > 1:

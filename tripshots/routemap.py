@@ -95,7 +95,12 @@ def _hf_env(node: str) -> dict:
     env = {**os.environ, "DO_NOT_TRACK": "1", "HYPERFRAMES_NO_UPDATE_CHECK": "1",
            "PATH": f"{Path(node).parent}:{os.environ.get('PATH', '')}"}
     if not env.get("HYPERFRAMES_BROWSER_PATH"):
-        for c in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",):
+        import glob
+        cands = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome"]
+        for pat in ("/opt/pw-browsers/chromium-*/chrome-linux/chrome",
+                    str(Path.home() / ".cache/ms-playwright/chromium-*/chrome-linux/chrome")):
+            cands += sorted(glob.glob(pat), reverse=True)
+        for c in cands:
             if Path(c).exists():
                 env["HYPERFRAMES_BROWSER_PATH"] = c
                 break
@@ -647,13 +652,24 @@ def _place(ov: dict) -> tuple[int, int]:
 
 def render_layer(ov: dict) -> Path:
     """Render one map overlay to transparent PNG frames (cached). Returns the frames folder."""
+    page = ov.get("html") or overlay_html(ov)[0]
+    return render_page(page, float(ov["duration"]), fonts=("Anton-Regular.ttf", "Montserrat.ttf"),
+                       label=f"the route map ({ov.get('mode')}, {float(ov['duration']):.1f}s)", cache=LAYER_CACHE,
+                       version=LAYER_VERSION)
+
+
+def render_page(page: str, duration: float, fonts=(), label: str = "a HyperFrames layer",
+                cache: Path | None = None, version: str = "", quiet: bool = False) -> Path:
+    """Render a HyperFrames page (index.html whose timeline is registered as window.__timelines) to
+    transparent PNG frames at OUT_FPS. Cached by content. gsap (+ MotionPathPlugin) is served from
+    assets/, the named bundled fonts from assets/fonts/. Returns the frames folder."""
     rt = ensure_runtime()
     node = _node()
-    page = ov.get("html") or overlay_html(ov)[0]
-    key = hashlib.sha1((LAYER_VERSION + page + str(OUT_FPS)).encode()).hexdigest()[:16]
-    proj = LAYER_CACHE / key
+    cache = cache or LAYER_CACHE
+    key = hashlib.sha1((version + page + str(OUT_FPS) + "|".join(fonts)).encode()).hexdigest()[:16]
+    proj = cache / key
     frames = proj / "frames"
-    want = int(round(float(ov["duration"]) * OUT_FPS))
+    want = int(round(float(duration) * OUT_FPS))
     if frames.exists() and len(list(frames.glob("*.png"))) >= want:
         return frames
     if proj.exists():
@@ -662,11 +678,12 @@ def render_layer(ov: dict) -> Path:
     nm = rt / "node_modules"
     shutil.copy(nm / "gsap" / "dist" / "gsap.min.js", proj / "assets")
     shutil.copy(nm / "gsap" / "dist" / "MotionPathPlugin.min.js", proj / "assets")
-    for f in ("Anton-Regular.ttf", "Montserrat.ttf"):
+    for f in fonts:
         shutil.copy(FONTS / f, proj / "assets" / "fonts")
     (proj / "index.html").write_text(page)
     cli = nm / "hyperframes" / "bin" / "hyperframes.mjs"
-    log(f"drawing the route map ({ov.get('mode')}, {ov['duration']:.1f}s) with HyperFrames...")
+    if not quiet:
+        log(f"drawing {label} with HyperFrames...")
     cmd = [node, str(cli), "render", str(proj), "--format", "png-sequence", "-o", str(frames), "--quiet",
            "-f", str(OUT_FPS)]
     for attempt in range(2):
@@ -677,10 +694,10 @@ def render_layer(ov: dict) -> Path:
         if len(got) >= want - 1:
             return frames
         (proj / f"render-{attempt}.log").write_text(re.sub(r"\x1b\[[0-9;]*m", "", p.stdout + p.stderr))
-        log(f"  map render attempt {attempt + 1} failed (exit {p.returncode}, {len(got)}/{want} frames)")
+        log(f"  {label}: render attempt {attempt + 1} failed (exit {p.returncode}, {len(got)}/{want} frames)")
         shutil.rmtree(frames, ignore_errors=True)
     errs = [l for l in (proj / "render-1.log").read_text().splitlines() if re.search(r"error|fail", l, re.I)]
-    raise ReelError("HyperFrames could not render the map: " + (" | ".join(errs[-4:]) or "see " + str(proj)))
+    raise ReelError(f"HyperFrames could not render {label}: " + (" | ".join(errs[-4:]) or "see " + str(proj)))
 
 
 class MapLayer:

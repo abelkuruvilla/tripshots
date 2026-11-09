@@ -39,6 +39,8 @@ Ways to get a new style:
 | `motion.freeze` / `rgb_split` | false / 0 | Freeze-frame on the biggest drop; share of hard cuts with a colour split |
 | `motion.pulse` | | Bulge on intense beats (e.g. 0.1) |
 | `grade.look` / `strength` / `ai` / `match` | `auto` / 0.75 / true / gentle | Colour look (`auto`, `none`, a preset, or your look), strength, AI colourist; `match: full` takes every shot fully into the look (learned styles, clones) |
+| `text.motion` | `auto` | How the words animate: `auto` (HyperFrames motion picked per preset when installed), `off`, `rise`, `focus`, `tracking`, `typewriter`, `slam`, `write`, `cinema` ([Motion text](look-and-motion.md#motion-text-hyperframes)) |
+| `direction` | "" | A few sentences on how the style is directed; the critic's AI review reads it with `tripshots/DIRECTOR.md`. `learn` writes one |
 | `frame.aspect` | `9:16` | The picture's shape: `9:16` full screen, `16:9` or `2.39:1` a cinematic letterbox with the text in the bars |
 | `taste.look` / `weight` / `light` / `people` | none / 0 / [] / "" | What shots should look like (set by `learn`): the references' light and colour vector, how strongly to prefer it, their kinds of light, how people appear |
 | `layout.pan_speed` | 0.06 | Pans and drifts: at most this share of the picture's width per second |

@@ -26,7 +26,7 @@ from .util import ReelError, read_json, write_json
 
 SLOT_KEYS = {"dur", "out_start", "idx", "level", "drop", "trans_out", "trans_dur", "trans_params", "incam_out",
              "incam_in", "hero"}
-TRANSITIONS = {None, "whip", "zoom_in", "zoom_out", "spin", "flash", "glitch", "blur", "dissolve", "dip"}
+TRANSITIONS = {None, "whip", "zoom_in", "zoom_out", "spin", "flash", "glitch", "blur", "dissolve", "dip", "leak"}
 
 
 def _content(seg: dict) -> dict:

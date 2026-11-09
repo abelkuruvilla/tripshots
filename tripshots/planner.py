@@ -409,6 +409,7 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         "music": {"path": music_path, "start": grid["music_start"], "fade_out": style["music"].get("fade_out", 0.8)},
         "transition_duration": float(style["transitions"].get("duration", 0.3)),
         "color": style["color"], "text": style["text"], "segments": out, "overlays": [],
+        **({"direction": style["direction"]} if style.get("direction") else {}),
         "beats": grid["beats"], "drops": grid["drops"],
         "motion": {**style.get("motion", {}), **({"hook_punch": True} if arc and st.get("hook_punch", True) else {})},
         "loop": bool(style.get("loop", False)) or (arc and bool(st.get("loop", True))),
@@ -699,7 +700,7 @@ def plan_panels(segs: list[dict], grid: dict, style: dict, avail: int) -> tuple[
 
 
 # --------------------------------------------------------------- transitions
-DEFAULT_PALETTE = {"calm": ["dissolve", "blur"], "medium": ["whip", "zoom_in", "blur"],
+DEFAULT_PALETTE = {"calm": ["dissolve", "leak", "blur"], "medium": ["whip", "zoom_in", "blur"],
                    "intense": ["flash", "zoom_in", "whip", "spin", "glitch"]}
 
 

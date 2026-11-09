@@ -189,6 +189,8 @@ text:
   cta: {{mode: off|ai}}   # closing "save this" style line
   labels: {{mode: off|ai}}  # a short label on each shot ("Golden hour", "Highway 1")
 caption: {{tone: "<few words>", hashtags: <5-20>}}
+direction: "<2-4 sentences: how these reels are directed (what opens them, how long shots are held, how the camera
+  moves, the light, where and how text appears, how they end), written as instructions to an editor>"
 
 Guidance: beats_per_cut should reproduce the measured beats-per-shot (round to 1/2/4/8). Look closely at the frames for transition evidence: motion-blur smears (whip), radial blur or extreme zoom (zoom_in), rotated frames (spin), white frames (flash), RGB fringing (glitch), double exposures (dissolve). Set density to roughly the share of cuts that are not plain hard cuts. Colour values are adjustments applied on top of normal phone footage to approximate the reference grade (measured grade: saturation ~0.35 and warmth ~0.0 is neutral). Reply with ONLY the YAML."""
 

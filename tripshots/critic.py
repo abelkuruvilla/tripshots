@@ -136,12 +136,27 @@ AI_PROMPT = """You are a senior short-form video editor reviewing a planned Inst
 slots in order, with their length). The viewer decides in about 1.5 seconds whether to stay.
 Plan: {summary}
 Other shots available (id: note): {cands}
+Direction for this reel (the house notes, then this style's own):
+{direction}
 Judge the hook (does slot 1 stop the scroll?), the story (is there a build and a payoff?), variety, and whether
 the best shots are used. Suggest at most 3 changes that would most improve retention, as operations:
   {{"op": "swap", "segment": N, "shot_id": "S…"}}  put another available shot in slot N
   {{"op": "exchange", "a": N, "b": M}}            swap two slots' shots
   {{"op": "text", "type": "hook", "text": "…"}}    a better hook line (max 7 words)
 Reply with JSON only: {{"score": 0-100, "verdict": "one sentence", "ops": [...]}} (ops may be empty)."""
+
+
+def direction(style_note: str | None = None) -> str:
+    """The director's notes (DIRECTOR.md, condensed to its rules) plus the style's own direction."""
+    try:
+        text = (Path(__file__).parent / "DIRECTOR.md").read_text()
+    except OSError:
+        text = ""
+    rules = [l[2:].strip() for l in text.splitlines() if l.startswith("- ")]
+    out = "\n".join(f"- {r}" for r in rules[:24])
+    if style_note:
+        out += f"\nStyle: {str(style_note).strip()}"
+    return out
 
 
 def ai_review(plan_path: Path, plan: dict, by_id: dict, backend) -> dict | None:
@@ -159,7 +174,8 @@ def ai_review(plan_path: Path, plan: dict, by_id: dict, backend) -> dict | None:
         summary += f"; hook text \"{hooks[0]}\""
     try:
         data = extract_json(backend.ask(AI_PROMPT.format(
-            summary=summary, cands="; ".join(f"{s['id']}: {s.get('ai', {}).get('note', '')}" for s in cands)),
+            summary=summary, cands="; ".join(f"{s['id']}: {s.get('ai', {}).get('note', '')}" for s in cands),
+            direction=direction(plan.get("direction"))),
             [sb], max_tokens=700))
         return data if isinstance(data, dict) else None
     except Exception as e:

@@ -422,6 +422,7 @@ class TextTrack:
         self.cfg["caption"] = legible("caption", {**CAPTION, **{k: v for k, v in (tcfg.get("caption") or {}).items()
                                                                if v is not None}})
         band = int((plan.get("frame") or {}).get("band") or 0)
+        self.letterbox = 0 < band < OUT_H
         if 0 < band < OUT_H:  # letterbox: words live in the black bars, never over the picture
             from . import typo
             bar = (OUT_H - band) // 2
@@ -434,6 +435,8 @@ class TextTrack:
         self.specs = sorted([o for o in plan.get("overlays") or []
                              if o["type"] in ("hook", "location", "cta", "label", "caption")], key=lambda o: o["start"])
         self.built: dict[int, object] = {}
+        self.fx: dict[int, object] = {}  # motion text drawn with HyperFrames (hfx.py)
+        self.tcfg = tcfg
         self.beats = beats
 
     def draw(self, frame, t: float, seg: dict):
@@ -461,9 +464,14 @@ class TextTrack:
                     cfg = self.cfg[o["type"] if o["type"] in ("cta", "label", "caption") else "hook"]
                     el = build_hook(o["text"], st, du, cfg, frame, self.beats, subj)
                 self.built[k] = el
+                if not self.native and not self.baked(k):
+                    from .hfx import animate, motion_for
+                    fx = animate(el, motion_for(o["type"], self.tcfg, o), o["type"])
+                    if fx is not None:
+                        self.fx[k] = fx
             if self.native and not self.baked(k):
                 continue
-            frame = el.draw(frame, t)
+            frame = (self.fx.get(k) or el).draw(frame, t)
         return frame
 
     def baked(self, k: int) -> bool:
@@ -676,6 +684,11 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         enc.wait()
     if enc.returncode != 0:
         raise ReelError(f"final encode failed: {errlog.read_text()[-1200:]}")
+    try:
+        from .qa import save_text_report
+        save_text_report(texts, out_path)
+    except Exception as e:
+        log(f"text report skipped ({e})")
     snd = plan.get("sound") or {}
     if snd and (str(snd.get("sfx", "off")) != "off" or str(snd.get("ambience", "off")) != "off"):
         from . import sound

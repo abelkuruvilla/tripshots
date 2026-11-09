@@ -6,7 +6,7 @@ Everything that moves on screen: transitions, beat-synced motion, text, framing,
 
 Every reel is composited frame by frame, so movement is tied to the music:
 
-* **Transitions at the cut:** `whip` (fast swipe with motion blur), `zoom_in`/`zoom_out` (punch through with radial blur), `spin`, `flash`, `glitch` (RGB split), `blur`, `dissolve` and `dip`. Each is centred on the beat. Which ones are used depends on the song's energy at that moment. Energy changes and drops always get one. Other cuts get one at the style's `density`; the rest are hard cuts on the beat, which is what keeps it punchy.
+* **Transitions at the cut:** `whip` (fast swipe with motion blur), `zoom_in`/`zoom_out` (punch through with radial blur), `spin`, `flash`, `glitch` (RGB split), `blur`, `dissolve`, `dip` and `leak` (warm film light washing across the frame while the shots dissolve under it; used between calm shots). Each is centred on the beat. Which ones are used depends on the song's energy at that moment. Energy changes and drops always get one. Other cuts get one at the style's `density`; the rest are hard cuts on the beat, which is what keeps it punchy.
 * **Beat punch:** a quick zoom bump on every beat in energetic sections. **Shake** hits on the drop.
 * **Photos:** stronger Ken Burns that varies per photo: zoom in or out, pans left, right or up, and a slow rotating zoom.
 * **Static video clips** get a slow push-in, so nothing sits dead still.
@@ -113,6 +113,28 @@ Text is animated per frame and timed to the music. Five presets pair fonts with 
 | `minimal` | Small tracked sans (Montserrat) whose letter-spacing opens up. One-line location with coordinates. |
 | `handwritten` | Marker and script fonts that scale in. |
 | `typewriter` | Monospace, typed letter by letter. |
+
+### Motion text (HyperFrames)
+
+With the HyperFrames runtime installed (`tripshots maps --setup`, Node.js 22+; the route map uses the same one), the
+hook, location, labels and closing line are animated in a real browser instead of frame by frame, which allows soft
+focus and blur. TripShots still decides what the words say, their font, size and position; only the animation
+changes. Captions keep the classic animation. Pick with `text.motion` in a style, `--text-motion` on `make`, `clone`
+and `render`, or `"motion"` on one overlay in the plan:
+
+| Motion | What it does | `auto` uses it for |
+|---|---|---|
+| `rise` | words rise into place out of a blur, one after another | editorial hooks, bold locations |
+| `focus` | each line resolves from a soft focus pull | minimal hooks |
+| `tracking` | letters close in from wide spacing out of a haze | minimal locations |
+| `typewriter` | typed letter by letter behind a blinking caret | typewriter |
+| `slam` | words drop in from large and land with a three-frame shake, on the beat | bold hooks and labels |
+| `write` | written on from left to right with a soft pen edge | handwritten |
+| `cinema` | the title fades up and drifts, the line under it tracks in | editorial locations |
+
+`off` keeps the classic animation. Without the runtime, `auto` quietly keeps it too. Each title is rendered once
+(about 10 s) and cached in `~/.tripshots/cache/text/`. The animations follow text primitives from the
+[HyperFrames registry](https://github.com/heygen-com/hyperframes) (Apache-2.0).
 
 * Text is placed automatically in the calmest band of the frame (sky, water), away from the subject, inside Instagram's safe zones. A soft shade is added behind it on bright skies.
 * Three kinds of text: the **hook** (first seconds, AI-written or `--hook`), the **location** (from GPS or `--location`, with a coordinates line; `location: {coords: false}` hides it), and an optional closing **CTA** (`cta: {mode: ai}`, e.g. "Save this for your next road trip").

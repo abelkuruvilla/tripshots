@@ -1,5 +1,6 @@
 name: beat-montage
 description: Fast, punchy cuts locked to the beat. Hard cuts, slightly vivid grade. The classic viral travel montage.
+direction: "Open on the most kinetic shot. Cut hard on the beat, shortest into the drop, and give the drop the single best shot held a little longer. Moves are quick but land on the subject. Text is a short punchy line that pops in on beats. End on a wide shot that loops."
 duration: {target: 14, min: 8, max: 20}
 cuts:
   beats_per_cut: {calm: 2, medium: 2, intense: 1}

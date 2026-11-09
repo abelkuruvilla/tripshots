@@ -83,6 +83,20 @@ only a shell can use it (every command prints JSON). Copy the folder into your a
 Working inside this repository with Claude Code, the `make-reel` skill in `.claude/skills/` and `CLAUDE.md` are
 loaded automatically.
 
+### Companion skills
+
+`tripshots skills` lists agent skills that work well next to TripShots, says which are installed and how to install
+them (`tripshots skills --install NAME` runs `npx skills add`):
+
+| Skill | What it adds for an agent | Licence |
+|---|---|---|
+| [HyperFrames](https://github.com/heygen-com/hyperframes) | HTML-to-video and ~450 registry blocks (titles, captions, transitions, maps). TripShots already renders its maps and motion text with it; the skill lets an agent build custom title or end cards | Apache-2.0 |
+| [Remotion](https://www.remotion.dev/docs/ai/skills) | React-based video, for an agent building its own intro or animations | free for individuals and small teams; companies need a licence |
+| [one-take](https://github.com/KaranO-Dev/one-take-skill) | promo videos on HyperFrames with a strict QA pass (TripShots' `qa` follows it) | MIT |
+| [Lemo-Opuscar](https://github.com/lemomo-ai/lemo-opuscar) | short films drawn in code in 43 styles, with a director's guide (TripShots' `DIRECTOR.md` follows its pattern) | MIT |
+
+TripShots never needs any of them to run.
+
 ## 3. `tripshots ask` (no agent)
 
 ```bash

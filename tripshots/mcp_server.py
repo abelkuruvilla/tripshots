@@ -280,7 +280,8 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
                     look: str | None = None, text_preset: str | None = None, variants: int = 1,
                     route_map: str | None = None, dry_run: bool = True, name: str | None = None,
                     upload_copy: bool = False, speed_ramps: str | None = None, speed_up: str | None = None,
-                    drop_speed: str | None = None, format: str | None = None) -> list:
+                    drop_speed: str | None = None, format: str | None = None,
+                    text_motion: str | None = None) -> list:
     """Plan (dry_run=true, default) or plan+render a reel.
 
     sources: selection ids from find_footage ("sel:xxxx") and/or folders/files.
@@ -290,6 +291,8 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
     look: colour look or "auto". route_map: intro | tracker | both | off.
     speed_ramps: on | off | which ramps, e.g. "velocity,slam" (velocity, slam, bullet, rush, surge).
     speed_up: on | off (fast-forward moving clips in busy sections). drop_speed: rush | impact | both | off.
+    text_motion: auto | off | rise | focus | tracking | typewriter | slam | write | cinema: how the words animate
+      (HyperFrames; auto picks one per text preset when the runtime is installed).
     format: auto | montage | pov | list (numbered places) | series ("Day N of") | reveal. Every reel is planned as a
       story (hook, build, payoff, looping end) and checked by the critic; the result's "score" and "critic" file
       say what it fixed and what is still weak.
@@ -300,7 +303,7 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
     for flag, v in (("-m", music), ("-s", style), ("-d", duration), ("--hook", hook), ("--location", location),
                     ("--look", look), ("--text-preset", text_preset), ("--route-map", route_map),
                     ("--speed-ramps", speed_ramps), ("--speed-up", speed_up), ("--drop-speed", drop_speed),
-                    ("--format", format)):
+                    ("--format", format), ("--text-motion", text_motion)):
         if v not in (None, ""):
             args += [flag, str(v)]
     if variants and variants > 1:
@@ -375,7 +378,7 @@ async def edit_plan(plan: str, edits: list[dict]) -> list:
     edits, applied in order:
       {"op":"swap","segment":3,"shot_id":"S012"}  {"op":"move","from":5,"to":1}  {"op":"exchange","a":2,"b":6}
       {"op":"text","type":"hook"|"location"|"cta","text":"..."}  {"op":"remove_text","type":"location"}
-      {"op":"transition","segment":2,"to":"whip"|"zoom_in"|"zoom_out"|"spin"|"flash"|"glitch"|"blur"|"dissolve"|"dip"|null}
+      {"op":"transition","segment":2,"to":"whip"|"zoom_in"|"zoom_out"|"spin"|"flash"|"glitch"|"blur"|"dissolve"|"dip"|"leak"|null}
       {"op":"speed","segment":4,"speed":0.5}  (0.5 slow motion, 2 = twice as fast)
       {"op":"ramp","segment":4,"ramp":"velocity"|"slam"|"bullet"|"rush"|"impact"|"surge"|null,"hit":0.6}
         (hit = seconds into the slot where it slams into slow motion; "points":[[0,1],[0.4,0.3],[1,1]] for a custom curve)
@@ -394,6 +397,22 @@ async def render_reel(plan: str, encoder: str | None = None) -> list:
     args = ["render", str(_plan(plan))] + (["--encoder", encoder] if encoder else [])
     st = await _run_job(args, "render", Path(plan).name, wait=20)
     return _finished(st)
+
+
+@mcp.tool()
+async def check_reel(video: str) -> list:
+    """Quality checks on a rendered reel (they also run after every render): size/fps/codecs, length, loudness
+    (-14 LUFS, true peak), black / frozen / silent stretches, text inside Instagram's safe area, text big enough
+    and on screen long enough to read. Returns the report and a contact sheet of 12 frames to look at."""
+    from .qa import check
+    v = Path(video).expanduser()
+    if v.suffix.lower() not in (".mp4", ".mov") or not v.is_file():
+        return [_txt(f"not a rendered reel: {video}")]
+    rep = await asyncio.to_thread(check, v)
+    out = [_txt(rep)]
+    if rep.get("sheet") and Path(rep["sheet"]).exists():
+        out.append(_img(Path(rep["sheet"])))
+    return out
 
 
 @mcp.tool()

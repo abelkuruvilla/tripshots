@@ -528,8 +528,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "(default auto: from your footage, the sound and your results)")
     m.add_argument("--arc", choices=["on", "off"], help="plan the reel as a story with a hook and a payoff (default on); "
                                                        "off = the older even cut grid")
-    m.add_argument("--captions", choices=["auto", "original", "english", "off"],
-                   help="lines of dialogue / lyrics on screen (auto: dialogue gets English subtitles, songs none)")
+    m.add_argument("--captions", metavar="auto|off|original|LANGUAGE",
+                   help="subtitles of the dialogue / song words: auto (dialogue: English, songs: none), off, "
+                        "original (as said, e.g. Malayalam script), or a language (english, malayalam, hindi, "
+                        "spanish... or its code); other languages are translated by the AI backend")
     m.add_argument("--critic", choices=["auto", "rules", "off"],
                    help="check the plan like an editor and fix weak spots (auto: rules + AI review)")
     m.add_argument("--parallax", choices=["auto", "on", "off"], help="photos move in depth (2.5D) instead of a flat zoom")

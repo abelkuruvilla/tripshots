@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Subtitles in any language:** `--captions` takes `off`, `original` (the words in their own script), or a language name or code (`english`, `malayalam`, `hindi`, `es`...); other languages are translated by the AI backend and cached. In the app: a **Subtitles** choice on the make tab.
+- **Fonts for other scripts** (`scripts.py`): Malayalam, Devanagari, Tamil, Telugu, Kannada, Bengali, Gujarati, Gurmukhi, Arabic, Hebrew, Thai, Greek and CJK text uses a font with those letters (your own in `~/.tripshots/fonts`, the computer's, or Noto Sans fetched once), shaped with Raqm.
+
+### Fixed
+- **The hook and subtitles drawn on top of each other:** the hook moves up when subtitles run under it, and any title that would cover another on screen at the same time moves to a free band.
+- A font given as a path kept its case (paths were lower-cased, which broke on case-sensitive disks).
+
 ### Fixed
 - **Gemini watch with new keys:** Google no longer serves `gemini-2.5-flash` to new users. The fallback is now `gemini-flash-lite-latest`, `-latest` aliases are no longer discarded because Google doesn't list them, and when every configured model fails the next available Flash model is tried before giving up.
 - **`--no-location` now means no place names anywhere:** no location title, no place names in the AI hook, and no numbered place list. Also on `clone` (drops the reference's place titles) and as `TRIPSHOTS_NO_LOCATION=1`; the app's clone tab has a **No place names** switch.

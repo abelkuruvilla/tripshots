@@ -49,7 +49,7 @@ usage: tripshots make [-h] [-m MUSIC]
                       [--speed-up {on,off}] [--drop-speed {rush,impact,both,off}]
                       [--slowmo-smooth {flow,blend,off}] [--labels {ai,off}]
                       [--format {auto,montage,pov,list,series,reveal}] [--arc {on,off}]
-                      [--captions {auto,original,english,off}] [--critic {auto,rules,off}]
+                      [--captions auto|off|original|LANGUAGE] [--critic {auto,rules,off}]
                       [--parallax {auto,on,off}] [--loop | --no-loop] [--min-score N]
                       [--look LOOK] [--grade-strength 0-1] [--variants N]
                       [--route-map {intro,tracker,both,off}] [--allow-similar] [--music-start SEC]
@@ -96,9 +96,11 @@ options:
                         slow reveal (default auto: from your footage, the sound and your results)
   --arc {on,off}        plan the reel as a story with a hook and a payoff (default on); off = the
                         older even cut grid
-  --captions {auto,original,english,off}
-                        lines of dialogue / lyrics on screen (auto: dialogue gets English
-                        subtitles, songs none)
+  --captions auto|off|original|LANGUAGE
+                        subtitles of the dialogue / song words: auto (dialogue: English, songs:
+                        none), off, original (as said, e.g. Malayalam script), or a language
+                        (english, malayalam, hindi, spanish... or its code); other languages are
+                        translated by the AI backend
   --critic {auto,rules,off}
                         check the plan like an editor and fix weak spots (auto: rules + AI review)
   --parallax {auto,on,off}

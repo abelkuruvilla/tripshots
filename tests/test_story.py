@@ -181,3 +181,53 @@ def test_photo_with_a_person_pushes_in_on_them():
                                 {"label": "half dome", "box": [0.2, 0.17, 0.6, 0.7]}]}}
     e, _ = _shot_fields(shot, 1.6, "calm", load_style("beat-montage"), 0)
     assert e["focus"] and abs(e["subject_x"] - 0.53) < 1e-6
+
+
+def test_caption_languages(monkeypatch):
+    w = {"kind": "dialogue", "language": "ml", "lines": [
+        {"start": 0.2, "end": 1.9, "text": "നമുക്ക് ഗ്രാമങ്ങളിൽ ചെന്ന്", "english": "Let us go into the villages"},
+        {"start": 2.3, "end": 4.0, "text": "രാപാർക്കാം", "english": "and spend the night"}]}
+    assert lyrics.caption_overlays(w, 10, "off") == []
+    assert [c["text"] for c in lyrics.caption_overlays(w, 10, "auto")][0] == "Let us go into the villages"
+    assert lyrics.caption_overlays(w, 10, "Malayalam")[1]["text"] == "രാപാർക്കാം"      # its own language
+    assert lyrics.caption_overlays(w, 10, "original")[0]["text"].startswith("നമുക്ക്")
+    assert lyrics.caption_overlays(w, 10, "english")[1]["text"] == "and spend the night"
+
+    class Backend:
+        def ask(self, prompt, images=None, max_tokens=0):
+            assert "Hindi" in prompt
+            return '{"lines": ["चलो गाँवों में चलें", "और रात बिताएँ"]}'
+    hi = lyrics.caption_overlays({**w, "lines": [dict(x) for x in w["lines"]]}, 10, "hindi", Backend())
+    assert [c["text"] for c in hi] == ["चलो गाँवों में चलें", "और रात बिताएँ"]
+    no_ai = lyrics.caption_overlays({**w, "lines": [dict(x) for x in w["lines"]]}, 10, "es", None)
+    assert no_ai[0]["text"] == "Let us go into the villages"                             # falls back to English
+    with pytest.raises(Exception):
+        lyrics.caption_mode("klingonese")
+
+
+def test_other_scripts_get_their_font_and_whole_word_animation(monkeypatch):
+    from tripshots import scripts, typo
+    assert scripts.script_of("Hello, Munnar!") is None and scripts.script_of("മൂന്നാർ") == "malayalam"
+    assert scripts.script_of("東京") == "cjk" and scripts.script_of("नमस्ते") == "devanagari"
+    monkeypatch.setattr(scripts, "font_for", lambda sc, weight=700: typo.FONT_DIR / "Montserrat.ttf")
+    cfg = typo.script_cfg("രാപാർക്കാം", {"font": "anton", "size": 100, "anim": "typewriter", "uppercase": True})
+    assert cfg["font"].endswith("Montserrat.ttf") and cfg["anim"] == "slide" and not cfg["uppercase"]
+    assert typo.script_cfg("plain words", {"font": "anton"}) == {"font": "anton"}
+
+
+def test_subtitles_never_cover_the_hook():
+    from tripshots.render import TextTrack
+    st = load_style("pov-hook")
+    plan = {"text": st["text"], "overlays": [
+        {"type": "hook", "text": "POV: they ask you to come away", "start": 0.1, "duration": 3.1},
+        {"type": "caption", "text": "Like it is said in Solomon's Song of Songs", "start": 0.2, "duration": 1.8},
+        {"type": "label", "text": "Cape Flattery", "start": 1.0, "duration": 1.5}]}
+    tt = TextTrack(plan, [], False)
+    frame = np.full((1920, 1080, 3), 100, np.uint8)
+    tt.draw(frame, 1.2, {"out_start": 0, "dur": 5})
+    boxes = [tt.built[k].box for k in sorted(tt.built)]
+    assert len(boxes) == 3
+    for i in range(3):
+        for j in range(i + 1, 3):
+            a, b = boxes[i], boxes[j]
+            assert not (a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]), (a, b)

@@ -57,9 +57,26 @@ When `GEMINI_API_KEY` is set, Gemini listens to the sound and returns every line
 translation and the punchline (cached per file; [optional offline transcription](#offline-transcription)). Then:
 
 - **Dialogue** (a film scene, a voice-over): one shot per line, cut in the pause after it; the payoff shot lands
-  on the punchline; English subtitles appear when the dialogue isn't English (`--captions original|english|off`).
+  on the punchline; English subtitles appear when the dialogue isn't English.
 - **Songs**: the beat rhythm stays, and the payoff lands on the hook line when it sits mid-reel. No lyrics on
   screen unless you ask (`--captions original`).
+
+**Subtitles** (`--captions`, app: **Subtitles**, style `story.captions`):
+
+| Value | On screen |
+|---|---|
+| `auto` | dialogue: English subtitles (its own words when it is English); songs: none |
+| `off` | no subtitles, ever (the edit still follows the words) |
+| `original` | the words as said, in their own script: Malayalam dialogue in Malayalam |
+| a language: `english`, `malayalam`, `hindi`, `tamil`, `spanish`... or its code (`en`, `ml`, `hi`, `es`) | subtitles in that language; anything other than the original or English is translated by your [AI backend](ai-backends.md) (no backend: English) |
+
+Text in another script is drawn with a font that has its letters, properly joined: from `~/.tripshots/fonts`
+(drop your own `.ttf` there), from your computer (macOS has Malayalam, Devanagari, Tamil, Arabic, CJK fonts),
+or Noto Sans for that script fetched once (SIL Open Font License). Such lines animate as whole words or lines,
+never letter by letter, which would break up joined letters.
+
+Subtitles never sit on top of other text: when they run under the hook, the hook moves up; any line that would
+cover another one on screen at the same time is moved to a free band.
 
 The hook line is written to set up the words, so the picture answers them.
 

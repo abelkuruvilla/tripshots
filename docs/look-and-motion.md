@@ -31,7 +31,7 @@ When you swung the camera fast on purpose (a whip pan), TripShots cuts **inside 
 
 ## Split screens, speed ramps and other trending cuts
 
-* **Split screens and grids:** `split2` (two stacked), `split3` (three strips), `grid4` (2×2) and `columns3` (three tall columns). In **reveal** mode the panels slide, wipe or pop in one per beat. In **cycle** mode, once all are on screen they keep cutting to new clips on each beat, like several videos playing side by side. Each panel is cropped around its own subject. Set `panels: {use: 0.4, mode: mixed}` in a style, or use `--split-screens lots|some|off`.
+* **Split screens and grids:** `split2` (two stacked), `split3` (three strips), `grid4` (2×2) and `columns3` (three tall columns, used only for upright clips: landscape clips are stacked top to bottom as `split3` instead, so you still see the subject). In **reveal** mode the panels slide, wipe or pop in one per beat. In **cycle** mode, once all are on screen they keep cutting to new clips on each beat, like several videos playing side by side. Each panel is cropped around its own subject. Set `panels: {use: 0.4, mode: mixed}` in a style, or use `--split-screens lots|some|off`.
 * **Speed ramps:** see [Speed](#speed) below.
 * **Bass-hit pulse:** a bulge/"pop" distortion on beats in intense sections (`motion: {pulse: 0.1}`).
 * **Labelled montage:** the AI writes a short label for each shot ("Golden hour", "Worth every mile"). `text: {labels: {mode: ai}}` or `--labels ai`.
@@ -137,6 +137,7 @@ and `render`, or `"motion"` on one overlay in the plan:
 [HyperFrames registry](https://github.com/heygen-com/hyperframes) (Apache-2.0).
 
 * Text is placed automatically in the calmest band of the frame (sky, water), away from the subject, inside Instagram's safe zones. A soft shade is added behind it on bright skies.
+* **Location titles name what people recognise:** a famous spot inside a park ("Glacier Point, Yosemite National Park"), else the national park or protected area ("Yosemite National Park, California"), else a famous spot nearby (one with a Wikipedia entry), else the town; a county only when there is nothing else. Parks and landmarks come from OpenStreetMap. A title always names the shot it is over. Wrong anyway? `--location "Name, Region"`, or `--no-location` for none.
 * Three kinds of text: the **hook** (first seconds, AI-written or `--hook`), the **location** (from GPS or `--location`, with a coordinates line; `location: {coords: false}` hides it), and an optional closing **CTA** (`cta: {mode: ai}`, e.g. "Save this for your next road trip").
 * Fonts are bundled under the SIL Open Font License / Apache 2.0 (`tripshots/fonts/`). Use your own with `text.hook.font: /path/to/font.ttf`.
 

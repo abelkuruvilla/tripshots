@@ -76,3 +76,34 @@ def test_location_title_names_the_shot_it_is_over():
     locs = [o["text"] for o in plan["overlays"] if o["type"] == "location"]
     assert "Monument Valley, Arizona" not in locs                      # never over somebody else's shot
     assert locs == ["Yosemite National Park, California"]
+
+
+def test_busy_overpass_falls_over_to_the_next_server_and_failures_are_not_kept(monkeypatch, tmp_path):
+    import urllib.error
+    calls = []
+
+    def urlopen(req, timeout=0):
+        url = req.full_url
+        calls.append(url)
+        if "nominatim" in url:
+            return _Resp(json.dumps({"address": COUNTY}).encode())
+        if "overpass-api.de" in url:
+            raise urllib.error.HTTPError(url, 502, "Bad Gateway", {}, None)
+        return _Resp(json.dumps({"elements": [PARK]}).encode())
+    monkeypatch.setattr(geo, "CACHE", tmp_path / "geo.json")
+    monkeypatch.setattr(geo, "_offline", False)
+    monkeypatch.setattr(geo, "_overpass_down", set())
+    monkeypatch.delenv("TRIPSHOTS_OFFLINE", raising=False)
+    monkeypatch.setattr(geo.time, "sleep", lambda s: None)
+    monkeypatch.setattr(geo.urllib.request, "urlopen", urlopen)
+    assert geo.place_name(37.728, -119.574) == "Yosemite National Park, California"
+    assert sum("overpass-api.de" in c for c in calls) == 2            # retried once, then the next server
+
+    def down(req, timeout=0):
+        if "nominatim" in req.full_url:
+            return _Resp(json.dumps({"address": {**COUNTY, "town": "Mariposa"}}).encode())
+        raise urllib.error.HTTPError(req.full_url, 504, "Gateway Timeout", {}, None)
+    monkeypatch.setattr(geo, "_overpass_down", set())
+    monkeypatch.setattr(geo.urllib.request, "urlopen", down)
+    assert geo.place_name(37.5, -119.9) == "Mariposa, California"
+    assert "v3:37.500,-119.900" not in json.loads((tmp_path / "geo.json").read_text())   # asked again next run

@@ -16,8 +16,13 @@ _last = 0.0
 _offline = False
 
 
-PLACE_VERSION = "v2"  # v2: national parks and landmarks before towns and counties
-OVERPASS = os.environ.get("TRIPSHOTS_OVERPASS", "https://overpass-api.de/api/interpreter")
+PLACE_VERSION = "v3"  # v2: national parks and landmarks before towns; v3: failed lookups aren't kept
+# public Overpass servers, tried in turn (the main one answers 502/504 when it is busy)
+OVERPASS = [u for u in [os.environ.get("TRIPSHOTS_OVERPASS"), "https://overpass-api.de/api/interpreter",
+                        "https://overpass.kumi.systems/api/interpreter",
+                        "https://overpass.private.coffee/api/interpreter",
+                        "https://maps.mail.ru/osm/tools/overpass/api/interpreter"] if u]
+_overpass_down: set = set()
 UA = {"User-Agent": "tripshots/0.1 (personal travel reels)"}
 
 
@@ -46,7 +51,8 @@ def place_name(lat: float, lon: float) -> str | None:
     region = addr.get("state") or addr.get("region") or addr.get("country")
     if addr.get("country_code") not in ("us", "ca", "au") and addr.get("country"):
         region = addr.get("country")
-    spot, park = _landmark(lat, lon)
+    found = _landmark(lat, lon)
+    spot, park = found if found else (None, None)
     if spot and park and spot != park and spot not in park:
         parts = [spot, park]
     elif park:
@@ -56,8 +62,9 @@ def place_name(lat: float, lon: float) -> str | None:
     else:
         parts = [local, region]
     name = ", ".join(x for x in dict.fromkeys(parts) if x) or None
-    cache[key] = name
-    write_json(CACHE, cache)
+    if found is not None:  # only a complete answer is kept: after a failed landmark lookup, ask again next time
+        cache[key] = name
+        write_json(CACHE, cache)
     return name
 
 
@@ -81,8 +88,35 @@ def _nominatim(lat: float, lon: float) -> dict | None:
 _PARK_RANK = {"national_park": 0, "protected_area": 1, "nature_reserve": 2, "park": 3}
 
 
-def _landmark(lat: float, lon: float) -> tuple[str | None, str | None]:
-    """(famous spot near the camera, park or protected area the camera is in) from OpenStreetMap."""
+def _overpass(q: str) -> list | None:
+    """Run an Overpass query: each server up to twice (busy servers answer 429/502/503/504), then the next."""
+    import urllib.error
+    last = None
+    servers = [u for u in OVERPASS if u not in _overpass_down]
+    if not servers:  # all failed earlier in this run: don't wait on them for every shot
+        return None
+    for url in servers:
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(url, data=urllib.parse.urlencode({"data": q}).encode(), headers=UA)
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return json.loads(r.read().decode()).get("elements", [])
+            except urllib.error.HTTPError as e:
+                last = e
+                if e.code not in (429, 502, 503, 504):
+                    break
+                time.sleep(2 + 3 * attempt)
+            except Exception as e:  # unreachable, timed out, not JSON
+                last = e
+                break
+        _overpass_down.add(url)  # skip it for the rest of this run
+    log(f"landmark lookup failed on every Overpass server ({str(last)[:80]}); using the town name this time")
+    return None
+
+
+def _landmark(lat: float, lon: float) -> tuple[str | None, str | None] | None:
+    """(famous spot near the camera, park or protected area the camera is in) from OpenStreetMap; None when
+    no Overpass server answered."""
     q = f"""[out:json][timeout:20];
 is_in({lat},{lon})->.a;
 (area.a["boundary"="national_park"]["name"];
@@ -95,13 +129,9 @@ is_in({lat},{lon})->.a;
  nwr(around:2500,{lat},{lon})["name"]["wikidata"]["natural"~"^(peak|arch|cliff|waterfall|rock|cape|glacier|volcano|beach|bay|spring|geyser)$"];
  nwr(around:700,{lat},{lon})["name"]["wikidata"]["waterway"="waterfall"];)->.s;
 .s out tags center;"""
-    try:
-        req = urllib.request.Request(OVERPASS, data=urllib.parse.urlencode({"data": q}).encode(), headers=UA)
-        with urllib.request.urlopen(req, timeout=25) as r:
-            els = json.loads(r.read().decode()).get("elements", [])
-    except Exception as e:
-        log(f"landmark lookup skipped ({str(e)[:80]}); using the town name")
-        return None, None
+    els = _overpass(q)
+    if els is None:
+        return None
     park, park_rank = None, 99
     spots = []
     for el in els:

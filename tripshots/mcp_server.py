@@ -281,13 +281,14 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
                     route_map: str | None = None, dry_run: bool = True, name: str | None = None,
                     upload_copy: bool = False, speed_ramps: str | None = None, speed_up: str | None = None,
                     drop_speed: str | None = None, format: str | None = None,
-                    text_motion: str | None = None) -> list:
+                    text_motion: str | None = None, no_location: bool = False) -> list:
     """Plan (dry_run=true, default) or plan+render a reel.
 
     sources: selection ids from find_footage ("sel:xxxx") and/or folders/files.
     music: an audio file path or an Instagram reel link (its sound is used). None = silent at 100 BPM.
     style: from list_styles_and_looks (default: the app's default). duration: seconds (default: the style's).
     hook: opening text, 7 words max (default: the AI writes one). location: "Place, Region" label.
+    no_location: true = no place names on screen at all (no title, none in the hook, no numbered place list).
     look: colour look or "auto". route_map: intro | tracker | both | off.
     speed_ramps: on | off | which ramps, e.g. "velocity,slam" (velocity, slam, bullet, rush, surge).
     speed_up: on | off (fast-forward moving clips in busy sections). drop_speed: rush | impact | both | off.
@@ -310,6 +311,8 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
         args += ["--variants", str(variants)]
     if upload_copy:
         args.append("--upload-copy")
+    if no_location:
+        args.append("--no-location")
     if dry_run:
         args.append("--dry-run")
     if name:

@@ -60,8 +60,10 @@ def test_resolve_picks_an_available_flash(monkeypatch):
     g = watch.Gemini.__new__(watch.Gemini)
     monkeypatch.setattr(g, "_available", lambda: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite",
                                                   "gemini-2.5-pro", "gemini-3-flash-preview"])
-    assert g._resolve(["gemini-flash-latest", "gemini-2.5-flash"]) == ["gemini-2.5-flash"]
-    assert g._resolve(["gemini-flash-latest"]) == ["gemini-2.5-flash"]   # plain > preview, newest version
+    # "-latest" aliases aren't listed by Google but work: they are kept, not swapped for a listed model
+    assert g._resolve(["gemini-flash-latest", "gemini-2.5-flash"]) == ["gemini-flash-latest", "gemini-2.5-flash"]
+    assert g._resolve(["gemini-1.5-flash"]) == ["gemini-2.5-flash"]   # plain > preview, newest version
+    assert g.reserve[:2] == ["gemini-flash-latest", "gemini-flash-lite-latest"]
     monkeypatch.setattr(g, "_available", lambda: None)                    # can't list: trust the settings
     assert g._resolve(["x", "y"]) == ["x", "y"]
 
@@ -131,3 +133,14 @@ def test_pacer_spaces_requests(monkeypatch):
         p.wait()
     assert slept == pytest.approx([5.0, 5.0, 5.0])                  # 12 a minute = one every 5 s
     assert watch._quota(Exception("503 UNAVAILABLE")) is None
+
+
+def test_retired_models_fall_through_to_flash_lite(tmp_path, monkeypatch):
+    """A new key: the configured models answer 404 ("no longer available to new users"); Flash-Lite works."""
+    monkeypatch.setattr(watch.time, "sleep", lambda s: None)
+    c = FakeClient(missing={"gemini-2.5-flash", "gemini-flash-latest"})
+    g = _gemini(c, ["gemini-2.5-flash"])
+    g.reserve = ["gemini-flash-latest", "gemini-flash-lite-latest"]
+    _, used = g.watch(tmp_path / "p.mp4", 5.0)
+    assert used == "gemini-flash-lite-latest"
+    assert c.calls == ["gemini-2.5-flash", "gemini-flash-latest", "gemini-flash-lite-latest"]

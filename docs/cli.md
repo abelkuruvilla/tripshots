@@ -129,7 +129,8 @@ options:
                         claude-cli | api | minimax | none (default: auto)
   --hook HOOK           on-screen hook text (overrides style/AI)
   --location LOCATION   location label text (overrides GPS lookup)
-  --no-location         no location label
+  --no-location         no place names on screen: no location title, none in the hook, no numbered
+                        place list
   --dry-run             write plan + storyboard only
   -j, --workers WORKERS
   --encoder {auto,hardware,software,videotoolbox,nvenc,qsv}
@@ -174,6 +175,7 @@ sources (folders are searched recursively, any number of them):
 ```text
 usage: tripshots clone [-h] [--variants N] [--look LOOK] [--grade-strength 0-1] [--keep-text]
                        [--hype] [--text-preset {bold,editorial,minimal,handwritten,typewriter}]
+                       [--no-location]
                        [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}]
                        [--upload-copy | --no-upload-copy] [-s STYLE] [-o OUT] [-b BACKEND]
                        [--dry-run] [-j WORKERS] [--cookies-from-browser BROWSER] [--cookies FILE]
@@ -196,6 +198,8 @@ options:
   --keep-text           copy the reference's text word for word
   --hype                add the style's freeze-frame / colour-split effects
   --text-preset {bold,editorial,minimal,handwritten,typewriter}
+  --no-location         no place names on screen (drops the reference's place titles instead of
+                        rewriting them)
   --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}
                         how the words animate (see make)
   --upload-copy, --no-upload-copy

@@ -148,6 +148,7 @@ sources: selection ids from find_footage ("sel:xxxx") and/or folders/files.
 music: an audio file path or an Instagram reel link (its sound is used). None = silent at 100 BPM.
 style: from list_styles_and_looks (default: the app's default). duration: seconds (default: the style's).
 hook: opening text, 7 words max (default: the AI writes one). location: "Place, Region" label.
+no_location: true = no place names on screen at all (no title, none in the hook, no numbered place list).
 look: colour look or "auto". route_map: intro | tracker | both | off.
 speed_ramps: on | off | which ramps, e.g. "velocity,slam" (velocity, slam, bullet, rush, surge).
 speed_up: on | off (fast-forward moving clips in busy sections). drop_speed: rush | impact | both | off.
@@ -180,6 +181,7 @@ Returns the plan path and the storyboard image to review (or a job id to poll).
 | `drop_speed` | string/null | null |
 | `format` | string/null | null |
 | `text_motion` | string/null | null |
+| `no_location` | boolean | false |
 
 ## reel_results
 

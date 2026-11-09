@@ -55,7 +55,7 @@ def cmd_clone(a):
                 variants=a.variants, look=a.look, grade_strength=a.grade_strength, cookies=cookie_args(a),
                 keep_text=a.keep_text, dry_run=a.dry_run, workers=a.workers, source_opts=source_opts(a),
                 upload_copy=a.upload_copy, rescore=a.rescore, text_preset=a.text_preset, hype=a.hype,
-                sound=sound_args(a), text_motion=a.text_motion)
+                sound=sound_args(a), text_motion=a.text_motion, no_location=a.no_location)
     print(json.dumps(res, indent=2))
 
 
@@ -560,7 +560,8 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("-b", "--backend", help="claude-cli | api | minimax | none (default: auto)")
     m.add_argument("--hook", help="on-screen hook text (overrides style/AI)")
     m.add_argument("--location", help="location label text (overrides GPS lookup)")
-    m.add_argument("--no-location", action="store_true", help="no location label")
+    m.add_argument("--no-location", action="store_true",
+                   help="no place names on screen: no location title, none in the hook, no numbered place list")
     m.add_argument("--dry-run", action="store_true", help="write plan + storyboard only")
     m.add_argument("-j", "--workers", type=int, default=2)
     add_source_args(m)
@@ -576,6 +577,8 @@ def build_parser() -> argparse.ArgumentParser:
     cl.add_argument("--keep-text", action="store_true", help="copy the reference's text word for word")
     cl.add_argument("--hype", action="store_true", help="add the style's freeze-frame / colour-split effects")
     cl.add_argument("--text-preset", choices=["bold", "editorial", "minimal", "handwritten", "typewriter"])
+    cl.add_argument("--no-location", action="store_true",
+                    help="no place names on screen (drops the reference's place titles instead of rewriting them)")
     cl.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema"], help="how the words animate (see make)")
     cl.add_argument("--upload-copy", action=argparse.BooleanOptionalAction, default=None,
                     help="also write an upload copy without the music (default: on for links)")

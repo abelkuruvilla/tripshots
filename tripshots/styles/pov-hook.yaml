@@ -1,6 +1,7 @@
 name: pov-hook
 description: Text-hook reel. Big POV-style headline in the first seconds over the best shot, then a medium-paced,
   beat-synced montage.
+direction: "The text is the hook: it must read in the first second over the most intriguing shot. Then a medium-paced montage that answers the line. People early. End with a payoff shot and, if fitting, a short closing line."
 duration: {target: 12, min: 7, max: 18}
 cuts:
   beats_per_cut: {calm: 4, medium: 2, intense: 2}

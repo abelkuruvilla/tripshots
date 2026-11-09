@@ -60,6 +60,7 @@ tripshots = "tripshots.cli:main"
 packages = ["tripshots", "tripshots.styles", "tripshots.fonts", "tripshots.schemas", "tripshots.data"]
 
 [tool.setuptools.package-data]
+"tripshots" = ["DIRECTOR.md"]
 "tripshots.styles" = ["*.yaml"]
 "tripshots.fonts" = ["*.ttf", "*.txt"]
 "tripshots.schemas" = ["*.json"]

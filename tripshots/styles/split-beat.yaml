@@ -1,5 +1,6 @@
 name: split-beat
 description: Trending multi-clip edit. Split screens and grids that fill in and keep cutting on the beat, velocity speed ramps, bass-hit pulses, a label on every shot, and a seamless loop.
+direction: "Energy and density: panels fill on the beat and keep cutting, speed ramps hit on bass, a short label names each place. Keep every panel readable (one subject each). The loop must be seamless."
 duration: {target: 15, min: 9, max: 22}
 cuts:
   beats_per_cut: {calm: 2, medium: 2, intense: 1}

@@ -52,6 +52,8 @@ Instead of folders you can pass a search result: `tripshots find --place Lisbon`
 | `NAME.storyboard.jpg` | Every shot in order with timing (in its graded colour), so you can review before posting |
 | `NAME.grade.jpg` | Before / after of the colour grade for each shot |
 | `NAME.plan.json` | The edit decision list. Change it and run `tripshots render` |
+| `NAME.qa.json`, `NAME.qa.jpg` | Quality checks on the finished file (format, length, loudness, black/frozen/silent stretches, text in the safe area and readable) and a contact sheet of 12 frames. See [Checks after every render](#checks-after-every-render) |
+| `NAME.text.json` | Every title as it was laid out: where, how big, for how long, how it animates |
 | `NAME.edl`, `NAME.storyboard.md` | The same edit for DaVinci Resolve / Premiere, and as a readable shot table (see [Finish in a real editor](#finish-in-a-real-editor)) |
 
 ## Styles that ship with it
@@ -92,6 +94,23 @@ A learned style copies more than timing:
 - **Format and text.** The format is fixed (no numbered place cards in a cinematic reel), and the references' own text decides whether a hook line appears.
 
 Styles learned before this version don't have these: re-learn one with `tripshots learn -n my-vibe` (no links: it uses the reels it was learned from, already downloaded). Instagram usually needs your browser login for downloads, which is what `--cookies-from-browser` is for. You can also pass local `.mp4` files you saved.
+
+## Checks after every render
+
+After each render TripShots checks the file the way an editor would before posting, and logs what failed:
+
+| Check | Passes when |
+|---|---|
+| format | 1080×1920, about 30 fps, H.264 video and AAC sound |
+| length | 3 to 90 seconds (longer reels are shown less) |
+| loudness | about -14 LUFS (-16 to -12) with true peaks at or under -1 dBTP |
+| black, frozen, silence | no black picture over 0.4 s, no frozen picture over 1.2 s (the plan's freeze frame excepted), no silent gap over 1 s under music |
+| text_safe | every title clear of Instagram's buttons, name and caption |
+| text_size | hook at least about 88 px tall at 1080 wide, labels 64, captions 54 |
+| text_time | each line on screen for at least its words at 3.5 a second, plus half a second |
+
+The results are in `NAME.qa.json`; `NAME.qa.jpg` shows 12 frames with their times. Run them again on any video with
+`tripshots qa NAME.mp4` (MCP `check_reel`). The set of checks follows the [one-take](https://github.com/KaranO-Dev/one-take-skill) skill's QA pass.
 
 ## Edit by hand (or with Claude)
 

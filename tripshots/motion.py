@@ -205,7 +205,36 @@ def t_glitch(a, b, p, seed: int = 0, **_):
     return out
 
 
+_leak_cache: dict = {}
+
+
+def t_leak(a, b, p, warmth: float = 1.0, **_):
+    """Film light leak: warm, soft light washes across the frame (screen blend) while the shots dissolve
+    under it, brightest at the cut. After the organic light-leak overlay in the HyperFrames registry."""
+    h, w = a.shape[:2]
+    k = 1 - abs(2 * p - 1)  # 0 -> 1 at the cut -> 0
+    key = (h, w)
+    if key not in _leak_cache:  # one field per frame size, at low resolution
+        sh, sw = max(8, h // 8), max(8, w // 8)
+        yy, xx = np.mgrid[0:sh, 0:sw].astype(np.float32)
+        _leak_cache[key] = (xx / sw, yy / sh, (sh, sw))
+    xx, yy, (sh, sw) = _leak_cache[key]
+    c = -0.35 + 1.7 * ease_in_out(p)  # the bands drift across, leaning like light through a lens gap
+    d1 = (xx + 0.35 * yy) - c
+    d2 = (xx * 0.8 - 0.25 * yy) - (c - 0.28)
+    band = np.exp(-(d1 / 0.2) ** 2) + 0.6 * np.exp(-(d2 / 0.12) ** 2)
+    glow = np.exp(-((xx - c) ** 2 + (yy - 0.25) ** 2) / 0.18) * 0.7
+    inten = np.clip((band + glow) * (0.2 + 0.75 * k), 0, 1.0)
+    col = np.stack([0.20 + 0.15 * (1 - yy), 0.55 + 0.15 * yy, np.full_like(yy, 1.0)], -1)  # BGR: amber -> rose
+    col[..., 0] *= 1.0 / max(0.5, warmth)
+    light = cv2.resize((inten[..., None] * col).astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+    base = blend(a, b, ease_in_out(p)).astype(np.float32) / 255.0
+    out = 1 - (1 - base) * (1 - np.clip(light, 0, 1))  # screen
+    return (np.clip(out, 0, 1) * 255 + 0.5).astype(np.uint8)
+
+
 TRANSITIONS = {
+    "leak": t_leak,
     "cut": t_cut, "dissolve": t_dissolve, "fade": t_dissolve, "dip": t_dip, "blur": t_blur,
     "whip": t_whip, "zoom_in": t_zoom_in, "zoom_out": t_zoom_out, "spin": t_spin,
     "flash": t_flash, "glitch": t_glitch,
@@ -219,7 +248,7 @@ LEGACY = {"fadeblack": "dip", "fadewhite": "flash", "slideleft": "whip", "slider
 
 # how long each transition likes to be (seconds); scaled by the style's duration setting
 NATURAL = {"cut": 0.0, "dissolve": 0.5, "fade": 0.5, "dip": 0.5, "blur": 0.45, "whip": 0.3,
-           "zoom_in": 0.36, "zoom_out": 0.4, "spin": 0.42, "flash": 0.24, "glitch": 0.2}
+           "zoom_in": 0.36, "zoom_out": 0.4, "spin": 0.42, "flash": 0.24, "glitch": 0.2, "leak": 0.7}
 
 
 def normalize(name: str | None) -> str | None:

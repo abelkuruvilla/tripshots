@@ -95,6 +95,12 @@ It fixes what it can (the hook punch, the hook's timing, a shot of you moved ear
 loop). With an AI backend it also looks at the storyboard and may apply up to three swaps or a better hook line.
 `--critic rules` skips the AI review, `--critic off` skips it all.
 
+The AI review judges the plan against **director's notes**: the house rules in
+[`tripshots/DIRECTOR.md`](../tripshots/DIRECTOR.md) (story, rhythm, camera, light, text, sound, a self-check) plus the
+style's own `direction`, a few sentences on how that style is directed. The built-in styles have one, and `learn`
+writes one from the reference reels. The pattern of shared notes plus a short note per style comes from the
+[Lemo-Opuscar](https://github.com/lemomo-ai/lemo-opuscar) skill.
+
 ## Variants test ideas
 
 `make --variants 3`: the second variant changes the format (a montage becomes a reveal, a list a montage), the

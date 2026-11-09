@@ -10,6 +10,8 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`make`](#make) | build a reel from folders/files of photos and clips |
 | [`clone`](#clone) | remake a reel you like shot for shot with your own footage |
 | [`render`](#render) | re-render an (edited) plan.json |
+| [`qa`](#qa) | check a rendered reel: format, length, loudness, black/frozen/silent stretches, text in the safe area, readable text (runs after every render) |
+| [`skills`](#skills) | agent skills that work next to TripShots (HyperFrames, Remotion, one-take, Lemo-Opuscar): what they add, whether installed, how to install |
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
 | [`music`](#music) | download the sound of an Instagram reel (or any yt-dlp link) |
@@ -41,13 +43,15 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 ```text
 usage: tripshots make [-h] [-m MUSIC]
                       [--text-preset {bold,editorial,minimal,handwritten,typewriter}]
-                      [--behind {auto,on,off}] [--split-screens {lots,some,off}]
-                      [--speed-ramps on|off|KINDS] [--speed-up {on,off}]
-                      [--drop-speed {rush,impact,both,off}] [--slowmo-smooth {flow,blend,off}]
-                      [--labels {ai,off}] [--format {auto,montage,pov,list,series,reveal}]
-                      [--arc {on,off}] [--captions {auto,original,english,off}]
-                      [--critic {auto,rules,off}] [--parallax {auto,on,off}] [--loop | --no-loop]
-                      [--min-score N] [--look LOOK] [--grade-strength 0-1] [--variants N]
+                      [--behind {auto,on,off}]
+                      [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}]
+                      [--split-screens {lots,some,off}] [--speed-ramps on|off|KINDS]
+                      [--speed-up {on,off}] [--drop-speed {rush,impact,both,off}]
+                      [--slowmo-smooth {flow,blend,off}] [--labels {ai,off}]
+                      [--format {auto,montage,pov,list,series,reveal}] [--arc {on,off}]
+                      [--captions {auto,original,english,off}] [--critic {auto,rules,off}]
+                      [--parallax {auto,on,off}] [--loop | --no-loop] [--min-score N]
+                      [--look LOOK] [--grade-strength 0-1] [--variants N]
                       [--route-map {intro,tracker,both,off}] [--allow-similar] [--music-start SEC]
                       [--upload-copy | --no-upload-copy] [--cookies-from-browser BROWSER]
                       [--cookies FILE] [--sfx {on,off}] [--ambience {on,off}]
@@ -71,6 +75,9 @@ options:
                         text look (overrides the style)
   --behind {auto,on,off}
                         location title behind the skyline
+  --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}
+                        how the words animate (HyperFrames; auto picks one per text preset, off =
+                        classic)
   --split-screens {lots,some,off}
                         split-screen / grid moments
   --speed-ramps on|off|KINDS
@@ -167,6 +174,7 @@ sources (folders are searched recursively, any number of them):
 ```text
 usage: tripshots clone [-h] [--variants N] [--look LOOK] [--grade-strength 0-1] [--keep-text]
                        [--hype] [--text-preset {bold,editorial,minimal,handwritten,typewriter}]
+                       [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}]
                        [--upload-copy | --no-upload-copy] [-s STYLE] [-o OUT] [-b BACKEND]
                        [--dry-run] [-j WORKERS] [--cookies-from-browser BROWSER] [--cookies FILE]
                        [--sfx {on,off}] [--ambience {on,off}] [--clip-sound {auto,on,off}]
@@ -188,6 +196,8 @@ options:
   --keep-text           copy the reference's text word for word
   --hype                add the style's freeze-frame / colour-split effects
   --text-preset {bold,editorial,minimal,handwritten,typewriter}
+  --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}
+                        how the words animate (see make)
   --upload-copy, --no-upload-copy
                         also write an upload copy without the music (default: on for links)
   -s, --style STYLE     style for motion/text look (default beat-montage)
@@ -236,6 +246,7 @@ sources (folders are searched recursively, any number of them):
 
 ```text
 usage: tripshots render [-h] [-o OUT] [-j WORKERS]
+                        [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}]
                         [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
                         plan
 
@@ -246,10 +257,34 @@ options:
   -h, --help            show this help message and exit
   -o, --out OUT
   -j, --workers WORKERS
+  --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}
+                        override how the words animate
   --encoder {auto,hardware,software,videotoolbox,nvenc,qsv}
                         video encoder: auto (default: the Mac's / GPU's hardware encoder when it
                         works, else libx264), hardware, software (libx264, slowest, smallest
                         files), or a specific one
+```
+
+## qa
+
+```text
+usage: tripshots qa [-h] video
+
+positional arguments:
+  video
+
+options:
+  -h, --help  show this help message and exit
+```
+
+## skills
+
+```text
+usage: tripshots skills [-h] [--install NAME]
+
+options:
+  -h, --help      show this help message and exit
+  --install NAME  run the skills installer for one of them
 ```
 
 ## export

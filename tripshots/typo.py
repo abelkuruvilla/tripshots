@@ -187,6 +187,8 @@ class TextElement:
     exit: float = 0.28
     beats: list = field(default_factory=list)
     masker: object = None    # callable(frame) -> foreground mask, for sprites drawn behind
+    lines: list = field(default_factory=list)  # [{text, x, y, font, size, tracking}] as laid out (hfx.py)
+    kind: str = ""
 
     # ---------------------------------------------------------- animation
     def _sprite_state(self, s: Sprite, t: float):
@@ -411,6 +413,8 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
         widths.append(lw)
         x = SAFE["left"] + 20 + (max_w - lw) / 2
         y = top + li * lh
+        el.lines.append({"text": " ".join(words), "x": x, "y": y, "font": cfg.get("font"), "size": size,
+                         "tracking": 0.0, "h": lh})
         if anim in ("pop", "scale"):
             for w in words:
                 items.append((w, x, y, li))
@@ -489,19 +493,24 @@ def build_location(main: str, sub: str | None, coords: str | None, start: float,
             size = int(size * 0.9)
             big = font(cfg.get("font", "bebas"), size)
         lines.append((main_u, big, 0.0))
+        names = [(cfg.get("font", "bebas"), size)]
         if sub:
             sf = font(cfg.get("sub_font", "montserrat"), int(cfg.get("sub_size", 30)))
             lines.append((sub.upper(), sf, int(cfg.get("sub_size", 30)) * 0.35))
+            names.append((cfg.get("sub_font", "montserrat"), int(cfg.get("sub_size", 30))))
         if coords:
             mf = font(cfg.get("mono_font", "spacemono"), int(cfg.get("mono_size", 24)))
             lines.append((coords, mf, 2.0))
+            names.append((cfg.get("mono_font", "spacemono"), int(cfg.get("mono_size", 24))))
     else:  # one compact line: "MAIN · SUB" + coords under it
         lf = font(cfg.get("font", "montserrat"), int(cfg.get("size", 34)))
         label = main.upper() + (f"  ·  {sub.upper()}" if sub else "")
         lines.append((label, lf, int(cfg.get("size", 34)) * 0.18))
+        names = [(cfg.get("font", "montserrat"), int(cfg.get("size", 34)))]
         if coords:
             mf = font(cfg.get("mono_font", "spacemono"), int(cfg.get("mono_size", 22)))
             lines.append((coords, mf, 1.5))
+            names.append((cfg.get("mono_font", "spacemono"), int(cfg.get("mono_size", 22))))
     pos = cfg.get("position", "auto")
     if pos in ("lower_left", "upper_left"):
         pos = "lower" if pos == "lower_left" else "upper"
@@ -520,6 +529,9 @@ def build_location(main: str, sub: str | None, coords: str | None, start: float,
         w = (sum(f.getlength(c) for c in txt) + tr * (len(txt) - 1)) if tr else f.getlength(txt)
         widths.append(w)
         x = SAFE["left"] + 10 if left_align else (OUT_W - w) / 2
+        el.lines.append({"text": txt, "x": x, "y": y, "font": names[li][0], "size": names[li][1],
+                         "tracking": float(tr), "h": lh, "role": ("main", "sub", "mono")[min(li, 2)]
+                         if layout == "title" else ("main" if li == 0 else "mono")})
         if anim in ("typewriter", "tracking"):
             cx = x
             for ci, c in enumerate(txt):

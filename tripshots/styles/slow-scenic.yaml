@@ -1,5 +1,6 @@
 name: slow-scenic
 description: Calm, breathing nature reel. Few long shots, gentle pans and slow-mo, natural colours, cuts every bar.
+direction: "Let nature lead: few long shots, gentle pans in the direction the landscape leads, natural colours. Cut every bar, not every beat. No flashy transitions; dissolves or soft light between places. Little or no text. End on the widest, calmest view."
 duration: {target: 18, min: 10, max: 30}
 cuts:
   beats_per_cut: {calm: 8, medium: 4, intense: 4}
@@ -10,7 +11,7 @@ shots: {min_score: 7, ordering: chronological, max_per_source: 2, slowmo: true}
 layout: {landscape: pan, photo_motion: kenburns, photo_zoom: 1.12}
 transitions:
   palette:
-    calm: [dissolve]
+    calm: [dissolve, leak]
     medium: [dissolve, blur]
     intense: [blur, zoom_in]
   density: 0.7

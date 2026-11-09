@@ -1,5 +1,6 @@
 name: cinematic
 description: Slow, moody, filmic. Long shots, slow-motion, soft crossfades, warm teal-orange-ish grade, vignette.
+direction: "Open on a person or a light-filled detail, not a landscape. Hold shots, let them breathe in slow motion; cuts follow phrases, not every beat. The camera pushes or drifts slowly toward the subject. One warm, moody look across every shot. Few words, small and elegant, in calm moments. End on a wide, quiet shot fading into the loop."
 duration: {target: 20, min: 12, max: 30}
 cuts:
   beats_per_cut: {calm: 8, medium: 4, intense: 4}
@@ -10,7 +11,7 @@ shots: {min_score: 7, ordering: energy, max_per_source: 2, slowmo: true}
 layout: {landscape: pan, photo_motion: kenburns, photo_zoom: 1.14}
 transitions:
   palette:
-    calm: [dissolve, dip]
+    calm: [dissolve, leak, dip]
     medium: [blur, dissolve]
     intense: [zoom_in, flash, blur]
   density: 0.85

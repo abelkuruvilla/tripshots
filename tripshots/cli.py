@@ -43,7 +43,7 @@ def cmd_make(a):
                extras={"split": a.split_screens, "ramps": a.speed_ramps, "labels": a.labels, "loop": a.loop,
                        "speed_up": a.speed_up, "drop_speed": a.drop_speed, "smooth": a.slowmo_smooth,
                        "format": a.format, "arc": a.arc, "captions": a.captions, "critic": a.critic,
-                       "parallax": a.parallax,
+                       "parallax": a.parallax, "text_motion": a.text_motion,
                        "name": a._label},
                look=a.look, grade_strength=a.grade_strength, route_map=a.route_map, sound=sound_args(a))
     print(json.dumps(res, indent=2))
@@ -55,16 +55,17 @@ def cmd_clone(a):
                 variants=a.variants, look=a.look, grade_strength=a.grade_strength, cookies=cookie_args(a),
                 keep_text=a.keep_text, dry_run=a.dry_run, workers=a.workers, source_opts=source_opts(a),
                 upload_copy=a.upload_copy, rescore=a.rescore, text_preset=a.text_preset, hype=a.hype,
-                sound=sound_args(a))
+                sound=sound_args(a), text_motion=a.text_motion)
     print(json.dumps(res, indent=2))
 
 
 def cmd_render(a):
     from .pipeline import render_plan
-    out = render_plan(Path(a.plan), Path(a.out) if a.out else None, workers=a.workers)
+    out = render_plan(Path(a.plan), Path(a.out) if a.out else None, workers=a.workers, text_motion=a.text_motion)
     res = {"video": str(out), "plan": str(Path(a.plan).resolve())}
     for key, ext in (("cover", ".cover.jpg"), ("storyboard", ".storyboard.jpg"), ("caption", ".caption.txt"),
-                     ("grade", ".grade.jpg"), ("upload_video", ".noaudio.mp4"), ("upload_video", ".nomusic.mp4")):
+                     ("grade", ".grade.jpg"), ("upload_video", ".noaudio.mp4"), ("upload_video", ".nomusic.mp4"),
+                     ("qa", ".qa.json"), ("qa_sheet", ".qa.jpg")):
         f = out.with_name(out.stem + ext)
         if f.exists():
             res[key] = str(f)
@@ -222,6 +223,19 @@ def cmd_library(a):
         print(f"deleted {lib.LIB_DIR}")
         return
     print(json.dumps(lib.stats(), indent=2))
+
+
+def cmd_qa(a):
+    from .qa import check
+    rep = check(Path(a.video))
+    print(json.dumps(rep, indent=2, ensure_ascii=False))
+
+
+def cmd_skills(a):
+    from . import companions
+    if a.install:
+        raise SystemExit(companions.install(a.install))
+    print(json.dumps(companions.status(), indent=2))
 
 
 def cmd_styles(a):
@@ -497,6 +511,8 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--text-preset", choices=["bold", "editorial", "minimal", "handwritten", "typewriter"],
                    help="text look (overrides the style)")
     m.add_argument("--behind", choices=["auto", "on", "off"], help="location title behind the skyline")
+    m.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema"],
+                   help="how the words animate (HyperFrames; auto picks one per text preset, off = classic)")
     m.add_argument("--split-screens", choices=["lots", "some", "off"], help="split-screen / grid moments")
     m.add_argument("--speed-ramps", metavar="on|off|KINDS",
                    help="speed ramps on moving clips: on, off, or which ones, e.g. velocity,slam "
@@ -560,6 +576,7 @@ def build_parser() -> argparse.ArgumentParser:
     cl.add_argument("--keep-text", action="store_true", help="copy the reference's text word for word")
     cl.add_argument("--hype", action="store_true", help="add the style's freeze-frame / colour-split effects")
     cl.add_argument("--text-preset", choices=["bold", "editorial", "minimal", "handwritten", "typewriter"])
+    cl.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema"], help="how the words animate (see make)")
     cl.add_argument("--upload-copy", action=argparse.BooleanOptionalAction, default=None,
                     help="also write an upload copy without the music (default: on for links)")
     cl.add_argument("-s", "--style", help="style for motion/text look (default beat-montage)")
@@ -577,8 +594,19 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("plan")
     r.add_argument("-o", "--out")
     r.add_argument("-j", "--workers", type=int, default=2)
+    r.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema"], help="override how the words animate")
     add_encoder_arg(r)
     r.set_defaults(fn=cmd_render)
+
+    q = sub.add_parser("qa", help="check a rendered reel: format, length, loudness, black/frozen/silent "
+                                  "stretches, text in the safe area, readable text (runs after every render)")
+    q.add_argument("video")
+    q.set_defaults(fn=cmd_qa)
+
+    sk = sub.add_parser("skills", help="agent skills that work next to TripShots (HyperFrames, Remotion, "
+                                       "one-take, Lemo-Opuscar): what they add, whether installed, how to install")
+    sk.add_argument("--install", metavar="NAME", help="run the skills installer for one of them")
+    sk.set_defaults(fn=cmd_skills)
 
     ex = sub.add_parser("export", help="hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md")
     ex.add_argument("plan")

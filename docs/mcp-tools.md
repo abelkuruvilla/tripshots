@@ -151,6 +151,8 @@ hook: opening text, 7 words max (default: the AI writes one). location: "Place, 
 look: colour look or "auto". route_map: intro | tracker | both | off.
 speed_ramps: on | off | which ramps, e.g. "velocity,slam" (velocity, slam, bullet, rush, surge).
 speed_up: on | off (fast-forward moving clips in busy sections). drop_speed: rush | impact | both | off.
+text_motion: auto | off | rise | focus | tracking | typewriter | slam | write | cinema: how the words animate
+  (HyperFrames; auto picks one per text preset when the runtime is installed).
 format: auto | montage | pov | list (numbered places) | series ("Day N of") | reveal. Every reel is planned as a
   story (hook, build, payoff, looping end) and checked by the critic; the result's "score" and "critic" file
   say what it fixed and what is still weak.
@@ -177,6 +179,7 @@ Returns the plan path and the storyboard image to review (or a job id to poll).
 | `speed_up` | string/null | null |
 | `drop_speed` | string/null | null |
 | `format` | string/null | null |
+| `text_motion` | string/null | null |
 
 ## reel_results
 
@@ -236,7 +239,7 @@ Change a planned reel without breaking the beat grid. Slots are numbered from 1 
 edits, applied in order:
   {"op":"swap","segment":3,"shot_id":"S012"}  {"op":"move","from":5,"to":1}  {"op":"exchange","a":2,"b":6}
   {"op":"text","type":"hook"|"location"|"cta","text":"..."}  {"op":"remove_text","type":"location"}
-  {"op":"transition","segment":2,"to":"whip"|"zoom_in"|"zoom_out"|"spin"|"flash"|"glitch"|"blur"|"dissolve"|"dip"|null}
+  {"op":"transition","segment":2,"to":"whip"|"zoom_in"|"zoom_out"|"spin"|"flash"|"glitch"|"blur"|"dissolve"|"dip"|"leak"|null}
   {"op":"speed","segment":4,"speed":0.5}  (0.5 slow motion, 2 = twice as fast)
   {"op":"ramp","segment":4,"ramp":"velocity"|"slam"|"bullet"|"rush"|"impact"|"surge"|null,"hit":0.6}
     (hit = seconds into the slot where it slams into slow motion; "points":[[0,1],[0.4,0.3],[1,1]] for a custom curve)
@@ -258,6 +261,16 @@ returns a job id; poll job_status.
 |---|---|---|
 | `plan` | string | **required** |
 | `encoder` | string/null | null |
+
+## check_reel
+
+Quality checks on a rendered reel (they also run after every render): size/fps/codecs, length, loudness
+(-14 LUFS, true peak), black / frozen / silent stretches, text inside Instagram's safe area, text big enough
+and on screen long enough to read. Returns the report and a contact sheet of 12 frames to look at.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `video` | string | **required** |
 
 ## export_edit
 

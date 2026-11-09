@@ -5,6 +5,13 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Motion text with HyperFrames.** With the HyperFrames runtime installed, hooks, location titles, labels and closing lines animate in a browser: `rise` (out of a blur), `focus`, `tracking`, `typewriter` (with a caret), `slam` (lands with a shake), `write` (pen reveal) and `cinema`. `text.motion` / `--text-motion` (auto picks one per text preset; off keeps the classic animation). TripShots still lays the words out; only the animation changes.
+- **`leak` transition:** warm film light washing across a dissolve, used between calm shots (cinematic, slow-scenic and the default calm palette).
+- **Checks after every render** (`qa.py`, `tripshots qa`, MCP `check_reel`): format, length, loudness and true peak, black/frozen/silent stretches, text inside the safe area, readable size and time on screen; `NAME.qa.json` and a contact sheet `NAME.qa.jpg`. Every render also writes `NAME.text.json`.
+- **Director's notes:** `tripshots/DIRECTOR.md` plus a per-style `direction`, read by the critic's AI review; built-in styles have one and `learn` writes one.
+- **`tripshots skills`:** companion agent skills (HyperFrames, Remotion, one-take, Lemo-Opuscar), what each adds, whether installed, and `--install`.
+
 ### Changed
 - **Learned styles copy the reference, not just its timing.** `learn` now records the references' light and colour (used to choose shots that look like them, plus the kind of light and people the AI sees), their shape (a widescreen reference gives a cinematic letterbox reel with text in the bars), their camera speed, and fixes the format and hook-text behaviour; the look is applied at full strength (`grade.match: full`, also for clones). The story engine's rhythm follows the style's pace (a 4-beats-per-shot reference holds shots twice as long). `tripshots learn -n NAME` without links re-learns an existing style.
 

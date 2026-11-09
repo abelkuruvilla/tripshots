@@ -69,7 +69,7 @@ DEFAULT_STYLE: dict = {
     # transitions: which ones per energy level, what share of cuts get one (the rest are hard
     # cuts on the beat), speed multiplier; "at: sections" forces one at every energy change/drop
     "transitions": {
-        "palette": {"calm": ["dissolve", "blur"], "medium": ["whip", "zoom_in", "blur"],
+        "palette": {"calm": ["dissolve", "leak", "blur"], "medium": ["whip", "zoom_in", "blur"],
                     "intense": ["flash", "zoom_in", "whip", "spin", "glitch"]},
         "density": 0.5, "speed": 1.0, "at": "sections",
     },
@@ -101,8 +101,12 @@ DEFAULT_STYLE: dict = {
     "route_map": {"mode": "off", "theme": "auto", "title": "", "max_stops": 7},
     # text.preset: bold | editorial | minimal | handwritten | typewriter (fonts + animations that
     # belong together; see typo.py). Any hook/location/cta key below overrides the preset.
+    # text.motion: auto (with the HyperFrames runtime, words animate in a browser: rise out of a blur,
+    # focus pull, tracking, write-on, slam; picked per preset, see hfx.py) | off | rise | focus |
+    # tracking | typewriter | slam | write | cinema
     "text": {
         "preset": "bold",
+        "motion": "auto",
         "font": None,
         "hook": {"mode": "off", "text": None, "start": 0.2, "duration": 2.8, "position": "auto"},
         "location": {"mode": "first", "position": "auto", "duration": 2.8, "coords": True},
@@ -130,6 +134,9 @@ DEFAULT_STYLE: dict = {
     # parallax: photos move in depth (2.5D) instead of a flat zoom: auto | on | off.
     # match_cuts: order and cut moving shots so their motion carries across the cut.
     # critic: check the plan like an editor and fix what it can: auto (rules + AI when available) | rules | off.
+    # direction: a few sentences on how this style is directed (story, rhythm, camera, light, text); the critic's
+    # AI review reads it with tripshots/DIRECTOR.md. `learn` writes one from the reference reels.
+    "direction": "",
     "story": {"arc": "on", "format": "auto", "hook_text": "on", "hook_punch": True, "people_first": True,
               "loop": True, "captions": "auto", "parallax": "auto", "match_cuts": True, "critic": "auto"},
     # photo in a frame with the subject stepping out of it (needs rembg for the cut-out)

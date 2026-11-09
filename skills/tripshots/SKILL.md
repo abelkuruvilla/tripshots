@@ -63,7 +63,8 @@ scene, people, place, trip, focus, colours, near-duplicates). Search it with MCP
 
 ## 4. Render and hand over
 `tripshots render <plan.json>` (MCP `render_reel`, then poll `job_status`: a few minutes). Give the user the mp4 path,
-the cover and the caption. If the music is a commercial song, make the reel with `--upload-copy` (MCP `make_reel` upload_copy=true; automatic for
+the cover and the caption. Read the quality checks first (`qa` in the result, `NAME.qa.json`; MCP `check_reel`):
+fix what failed (text outside the safe area, too short to read, loudness) before handing over. If the music is a commercial song, make the reel with `--upload-copy` (MCP `make_reel` upload_copy=true; automatic for
 reel links): they post the `.nomusic.mp4` and add the same sound inside Instagram.
 Offer one concrete follow-up ("a 15 s version", "open on the waterfall").
 

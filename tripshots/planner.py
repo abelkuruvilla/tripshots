@@ -383,6 +383,11 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
                 shot = mine[0] if mine else full[i % max(1, len(full))]
                 e, kb_dir = _entry_for(shot, seg, style, kb_dir)
             else:
+                wide = sum(1 for s in mine[:3] if _is_wide(s))
+                if seg["panel"] == "columns3" and wide >= 2:
+                    # tall thin columns would show a tenth of a landscape clip: stack them as rows instead
+                    seg = {**seg, "panel": "split3"}
+                    log("split screen: landscape clips, so stacked top to bottom instead of side by side")
                 e, kb_dir = _panel_entry(seg, mine, grid, style, kb_dir)
                 if seg.get("role"):
                     e["role"] = seg["role"]
@@ -642,6 +647,13 @@ def _spread_sources(shots: list[dict]) -> list[dict]:
     return out
 
 
+def _is_wide(shot: dict) -> bool:
+    w, h = float(shot.get("w") or 0), float(shot.get("h") or 0)
+    if int(shot.get("rotation") or 0) % 180 == 90:
+        w, h = h, w
+    return w > h * 1.05
+
+
 def panel_shot_count(seg: dict) -> int:
     n = len(layout_rects(seg["panel"]))
     return n * 2 if seg.get("pmode") == "cycle" else n
@@ -820,13 +832,17 @@ def add_location_overlays(plan: dict, shots_by_id: dict, places: dict[str, str],
         return
     last = None
     for i, seg in enumerate(segs):
-        name = places.get(seg["shot_id"])
+        name = places.get(seg.get("shot_id"))
         if not name or name == last:
             continue
         prev_end = max([o["start"] + o["duration"] for o in plan["overlays"]] or [0.0])
         st, du, at = slot(max(seg["out_start"], prev_end + 0.25 if prev_end else 0.0), i)
         if st > plan["duration"] - 1.5 or du < 0.8:
             break
+        if at is not seg:  # the title moved (off a split screen, after other text): name the shot it is over
+            name = places.get(at.get("shot_id"))
+            if not name or name == last:
+                continue
         plan["overlays"].append({"type": "location", "text": name, "start": round(st, 3), "gps": gps_of(at),
                                  "duration": round(du, 3)})
         last = name

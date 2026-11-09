@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Location titles said the county** ("Mariposa County") instead of what you filmed. They now name the famous spot or national park first ("Glacier Point, Yosemite National Park", "Yosemite National Park, California"), from OpenStreetMap, and fall back to the town, then the county. Earlier lookups are redone once.
+- **A location title could name a different shot:** when a title had to move off a split screen, it kept the split screen's place over the next shot (a desert county over El Capitan). It now names the shot it is over.
+- **Side-by-side columns with landscape clips:** `columns3` showed a tenth of each landscape clip. Landscape clips are now stacked top to bottom (`split3`).
+
 ### Added
 - **Subtitles in any language:** `--captions` takes `off`, `original` (the words in their own script), or a language name or code (`english`, `malayalam`, `hindi`, `es`...); other languages are translated by the AI backend and cached. In the app: a **Subtitles** choice on the make tab.
 - **Fonts for other scripts** (`scripts.py`): Malayalam, Devanagari, Tamil, Telugu, Kannada, Bengali, Gujarati, Gurmukhi, Arabic, Hebrew, Thai, Greek and CJK text uses a font with those letters (your own in `~/.tripshots/fonts`, the computer's, or Noto Sans fetched once), shaped with Raqm.

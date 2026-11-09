@@ -434,6 +434,12 @@ class TextTrack:
             self.cfg["location"]["behind"] = "off"
         self.specs = sorted([o for o in plan.get("overlays") or []
                              if o["type"] in ("hook", "location", "cta", "label", "caption")], key=lambda o: o["start"])
+        caps = [o for o in self.specs if o["type"] == "caption"]
+        for h in (o for o in self.specs if o["type"] == "hook"):
+            h0, h1 = float(h["start"]), float(h["start"]) + float(h["duration"])
+            if any(float(c["start"]) < h1 and float(c["start"]) + float(c["duration"]) > h0 for c in caps) \
+                    and self.cfg["hook"].get("position", "auto") in ("auto", "center", "lower") and not self.letterbox:
+                self.cfg["hook"]["position"] = "upper"  # subtitles sit low: the hook goes up, out of their way
         self.built: dict[int, object] = {}
         self.fx: dict[int, object] = {}  # motion text drawn with HyperFrames (hfx.py)
         self.tcfg = tcfg
@@ -459,12 +465,17 @@ class TextTrack:
                         el = build_location_behind(main, sub, coords, st, min(du, seg_left),
                                                    self.cfg["location"], frame)
                     if el is None:
-                        el = build_location(main, sub, coords, st, du, self.cfg["location"], frame, subj)
+                        el = self._clear_of_others(k, lambda pos: build_location(
+                            main, sub, coords, st, du, {**self.cfg["location"], **({"position": pos} if pos else {})},
+                            frame, subj), self.cfg["location"].get("position"))
                 else:
                     cfg = self.cfg[o["type"] if o["type"] in ("cta", "label", "caption") else "hook"]
-                    el = build_hook(o["text"], st, du, cfg, frame, self.beats, subj)
+                    el = self._clear_of_others(k, lambda pos: build_hook(
+                        o["text"], st, du, {**cfg, **({"position": pos} if pos else {})}, frame, self.beats, subj),
+                        cfg.get("position"))
                 self.built[k] = el
-                if not self.native and not self.baked(k):
+                from .scripts import script_of
+                if not self.native and not self.baked(k) and not script_of(o.get("text") or ""):
                     from .hfx import animate, motion_for
                     fx = animate(el, motion_for(o["type"], self.tcfg, o), o["type"])
                     if fx is not None:
@@ -473,6 +484,32 @@ class TextTrack:
                 continue
             frame = (self.fx.get(k) or el).draw(frame, t)
         return frame
+
+    def _clear_of_others(self, k: int, build, preferred: str | None):
+        """Build text element k where it doesn't cover another line on screen at the same time (the hook and a
+        subtitle, two labels): first where its style wants it, then in the other bands."""
+        o = self.specs[k]
+        a0, a1 = float(o["start"]), float(o["start"]) + float(o["duration"])
+        others = [self.built[j] for j, oj in enumerate(self.specs) if j != k and j in self.built
+                  and self.built[j] is not None and float(oj["start"]) < a1 and float(oj["start"]) + float(oj["duration"]) > a0
+                  and not self.baked(j)]
+
+        def clash(el) -> bool:
+            x0, y0, x1, y1 = el.box
+            return any(x0 < b[2] + 10 and b[0] < x1 + 10 and y0 < b[3] + 24 and b[1] < y1 + 24
+                       for b in (e.box for e in others))
+        el = build(None)
+        if not others or not clash(el):
+            return el
+        from .typo import BANDS
+        bars = [b for b in ("bar_top", "bar_bottom") if b in BANDS] if self.letterbox else []
+        order = bars + [b for b in ("lower", "upper", "center") if b != preferred] if o["type"] == "caption" \
+            else bars + [b for b in ("upper", "lower", "center") if b != preferred]
+        for pos in order:
+            alt = build(pos)
+            if not clash(alt):
+                return alt
+        return el
 
     def baked(self, k: int) -> bool:
         """Is overlay k part of the picture (not native text)? Titles behind the skyline are."""

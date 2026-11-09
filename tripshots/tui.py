@@ -460,7 +460,8 @@ class EditStyle(ModalScreen[dict | None]):
         ("Speed ramps on moving clips (0-1)", ("velocity", "use"), "num", None),
         ("Story arc (hook, build, payoff)", ("story", "arc"), "sel", ["on", "off"]),
         ("Reel format", ("story", "format"), "sel", ["auto", "montage", "pov", "list", "series", "reveal"]),
-        ("Dialogue / lyric captions", ("story", "captions"), "sel", ["auto", "english", "original", "off"]),
+        ("Dialogue / lyric subtitles", ("story", "captions"), "sel", ["auto", "off", "original", "english",
+                                                                       "malayalam", "hindi", "tamil", "spanish"]),
         ("Photos move in depth (parallax)", ("story", "parallax"), "sel", ["auto", "on", "off"]),
         ("Speed-ups in busy sections (0-1)", ("speed", "fast"), "num", None),
         ("Fastest speed-up (x)", ("speed", "fast_max"), "num", None),
@@ -618,6 +619,11 @@ class MakeTab(VerticalScroll):
             yield Select([("Format: auto", ""), ("Format: montage", "montage"), ("Format: POV", "pov"),
                           ("Format: numbered places", "list"), ("Format: Day N series", "series"),
                           ("Format: slow reveal", "reveal")], value="", id="format", allow_blank=False)
+            yield Select([("Subtitles: style default", ""), ("Subtitles: off", "off"),
+                          ("Subtitles: original language", "original"), ("Subtitles: English", "english"),
+                          ("Subtitles: Malayalam", "malayalam"), ("Subtitles: Hindi", "hindi"),
+                          ("Subtitles: Tamil", "tamil"), ("Subtitles: Spanish", "spanish")],
+                         value="", id="captions", allow_blank=False)
             yield Select([("Drop: style default", ""), ("Drop: rush into it", "rush"),
                           ("Drop: slow-mo impact", "impact"), ("Drop: both", "both"), ("Drop: no speed effect", "off")],
                          value="", id="drop_speed", allow_blank=False)
@@ -777,7 +783,7 @@ class MakeTab(VerticalScroll):
                 args += [flag, v]
         for flag, wid in (("--text-preset", "preset"), ("--behind", "behind"), ("--split-screens", "split"),
                           ("--speed-ramps", "ramps"), ("--speed-up", "speed_up"), ("--drop-speed", "drop_speed"),
-                          ("--format", "format"),
+                          ("--format", "format"), ("--captions", "captions"),
                           ("--labels", "labels"), ("--look", "look"),
                           ("--route-map", "route_map"), ("--variants", "variants"), ("--sfx", "sfx"),
                           ("--ambience", "ambience")):

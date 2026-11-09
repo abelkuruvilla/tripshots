@@ -91,7 +91,9 @@ _font_cache: dict = {}
 
 
 def font(name: str | None, size: int) -> ImageFont.FreeTypeFont:
-    name = (name or "montserrat").lower()
+    name = name or "montserrat"
+    if name.lower() in FONTS:  # bundled names are case-insensitive; a path keeps its case
+        name = name.lower()
     key = (name, size)
     if key in _font_cache:
         return _font_cache[key]
@@ -384,8 +386,26 @@ def _beat_steps(start: float, n: int, beats: list[float], duration: float) -> li
     return [i * step for i in range(n)]
 
 
+def script_cfg(text: str, cfg: dict) -> dict:
+    """Text in another script (Malayalam, Hindi, Arabic, Japanese...): a font that has its letters, no
+    letter-by-letter animation (it would break up joined letters), whole lines for right-to-left text."""
+    from .scripts import font_for, script_of
+    sc = script_of(text)
+    if not sc:
+        return cfg
+    path = font_for(sc)
+    if path is None:
+        return cfg
+    out = {**cfg, "font": str(path), "uppercase": False, "size": int(int(cfg.get("size", 100)) * 0.9),
+           "script": sc}
+    if out.get("anim") in ("typewriter", "tracking") or sc in ("arabic", "hebrew"):
+        out["anim"] = "slide"
+    return out
+
+
 def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.ndarray | None,
                beats: list[float], subject: dict | None = None) -> TextElement:
+    cfg = script_cfg(text, cfg)
     if cfg.get("uppercase"):
         text = text.upper()
     size = int(cfg.get("size", 100))
@@ -480,6 +500,13 @@ def legible(kind: str, cfg: dict) -> dict:
 
 def build_location(main: str, sub: str | None, coords: str | None, start: float, duration: float,
                    cfg: dict, frame: np.ndarray | None, subject: dict | None = None) -> TextElement:
+    from .scripts import font_for, script_of
+    for key, txt in (("font", main), ("sub_font", sub)):
+        sc = script_of(txt or "")
+        if sc and font_for(sc):  # a place name in its own script (മൂന്നാർ, 東京)
+            cfg = {**cfg, key: str(font_for(sc))}
+            if cfg.get("anim") in ("typewriter", "tracking") or sc in ("arabic", "hebrew"):
+                cfg["anim"] = "slide"
     layout = cfg.get("layout", "title")
     anim = cfg.get("anim", "slide")
     el = TextElement(start, duration, anim)

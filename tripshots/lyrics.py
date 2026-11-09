@@ -122,7 +122,7 @@ def words(audio: str | Path | None, duration: float | None = None, refresh: bool
     if not refresh:
         got = read_json(c)
         if got:
-            return got
+            return {**got, "_cache": str(c)}
     raw = _gemini(path)
     src = "gemini"
     if raw is None:
@@ -132,6 +132,7 @@ def words(audio: str | Path | None, duration: float | None = None, refresh: bool
     out = {**_clean(raw, duration), "source": src}
     CACHE.mkdir(parents=True, exist_ok=True)
     write_json(c, out)
+    out["_cache"] = str(c)
     if out["lines"]:
         log(f"words: {out['kind']} in '{out['language'] or '?'}', {len(out['lines'])} line(s)"
             + (f", punchline at {out['punch_t']:.1f}s" if out.get("punch_t") is not None else ""))
@@ -149,18 +150,105 @@ def window(w: dict | None, start: float, length: float) -> dict | None:
     return {**w, "lines": lines, "punch_t": punch_t}
 
 
-def caption_overlays(w: dict | None, total: float, mode: str = "auto") -> list[dict]:
-    """On-screen lines. auto: dialogue gets English subtitles (its own words when it is English); songs none."""
+LANGUAGES = {  # name -> ISO 639-1, for --captions LANGUAGE
+    "english": "en", "malayalam": "ml", "hindi": "hi", "tamil": "ta", "telugu": "te", "kannada": "kn",
+    "bengali": "bn", "bangla": "bn", "marathi": "mr", "gujarati": "gu", "punjabi": "pa", "urdu": "ur",
+    "arabic": "ar", "spanish": "es", "french": "fr", "german": "de", "italian": "it", "portuguese": "pt",
+    "dutch": "nl", "russian": "ru", "japanese": "ja", "korean": "ko", "chinese": "zh", "thai": "th",
+    "indonesian": "id", "turkish": "tr", "greek": "el", "hebrew": "he", "vietnamese": "vi", "polish": "pl",
+}
+NAMES = {v: k.title() for k, v in LANGUAGES.items()}
+
+
+def caption_mode(mode: str | None) -> str:
+    """auto | off | original | an ISO code ("en", "ml", ...). Accepts names: english, Malayalam, hindi..."""
+    m = str(mode or "auto").strip().lower()
+    if m in ("auto", "off", "original"):
+        return m
+    if m in ("none", "no", "false", "0"):
+        return "off"
+    if m in LANGUAGES:
+        return LANGUAGES[m]
+    if m in NAMES or (len(m) in (2, 3) and m.isalpha()):
+        return m
+    from .util import ReelError
+    raise ReelError(f"captions: unknown language {mode!r}; use auto, off, original, or a language such as "
+                    f"english, malayalam, hindi, spanish (or its code: en, ml, hi, es)")
+
+
+def translate(w: dict, lang: str, backend=None) -> list[str] | None:
+    """The lines in another language (cached in the words cache): the AI backend translates them."""
+    key = f"tr_{lang}"
+    if all(key in ln for ln in w["lines"]):
+        return [ln[key] for ln in w["lines"]]
+    if backend is None:
+        return None
+    from .ai import extract_json
+    src = [ln["text"] for ln in w["lines"]]
+    name = NAMES.get(lang, lang)
+    prompt = (f"Translate these {len(src)} lines of a film dialogue or song (language '{w.get('language') or '?'}') "
+              f"into {name}, as short natural subtitles in {name}'s own script. Keep the meaning and the tone, "
+              f"one subtitle per line, same order. English glosses for reference: "
+              f"{json_dumps([ln.get('english') for ln in w['lines']])}\nLines: {json_dumps(src)}\n"
+              f'Reply with JSON only: {{"lines": ["...", ...]}} ({len(src)} items).')
+    try:
+        out = extract_json(backend.ask(prompt, max_tokens=1500))
+        got = [str(x).strip()[:160] for x in (out or {}).get("lines") or []]
+    except Exception as e:
+        log(f"captions: translation to {name} failed ({str(e)[:100]})")
+        return None
+    if len(got) != len(src) or not all(got):
+        log(f"captions: translation to {name} came back incomplete; not used")
+        return None
+    for ln, t in zip(w["lines"], got):
+        ln[key] = t
+    if w.get("_cache"):
+        try:
+            full = read_json(w["_cache"]) or {}
+            new = {ln["text"]: t for ln, t in zip(w["lines"], got)}
+            for x in full.get("lines") or []:
+                if x["text"] in new:
+                    x[key] = new[x["text"]]
+            write_json(Path(w["_cache"]), full)
+        except Exception:
+            pass
+    return got
+
+
+def json_dumps(x) -> str:
+    import json
+    return json.dumps(x, ensure_ascii=False)
+
+
+def caption_overlays(w: dict | None, total: float, mode: str = "auto", backend=None) -> list[dict]:
+    """On-screen lines of the dialogue or song.
+    auto: dialogue gets English subtitles (its own words when it is English); songs none.
+    off: none. original: the words as said, in their own script (Malayalam in Malayalam).
+    a language (code or name: en, english, ml, malayalam, hi, ...): subtitles in that language; the AI backend
+    translates when it isn't the original or English (no backend: English)."""
+    mode = caption_mode(mode)
     if not w or not w.get("lines") or mode == "off":
         return []
     if mode == "auto" and w.get("kind") != "dialogue":
         return []
-    use_english = mode == "english" or (mode == "auto" and (w.get("language") or "en")[:2] != "en")
+    own = (w.get("language") or "en")[:2].lower()
+    if mode == "auto":
+        mode = "original" if own == "en" else "en"
+    if mode == own:
+        mode = "original"
+    if mode == "original":
+        texts = [ln["text"] for ln in w["lines"]]
+    elif mode == "en":
+        texts = [ln.get("english") or ln["text"] for ln in w["lines"]]
+    else:
+        texts = translate(w, mode, backend)
+        if texts is None:
+            log(f"captions: no AI backend to translate into {NAMES.get(mode, mode)}; showing English instead")
+            texts = [ln.get("english") or ln["text"] for ln in w["lines"]]
     out = []
-    for ln in w["lines"]:
+    for ln, txt in zip(w["lines"], texts):
         a, b = max(0.0, ln["start"]), min(total - 0.05, ln["end"] + 0.25)
         if b - a < 0.4:
             continue
-        txt = ln["english"] if use_english else ln["text"]
         out.append({"type": "caption", "text": txt, "start": round(a, 3), "duration": round(b - a, 3)})
     return out

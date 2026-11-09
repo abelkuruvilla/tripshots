@@ -138,6 +138,9 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
     for k in ("format", "arc", "captions", "critic", "parallax"):
         if ex.get(k):
             stc[k] = ex[k]
+    if stc.get("captions"):
+        from .lyrics import caption_mode
+        stc["captions"] = caption_mode(stc["captions"])  # a bad language fails here, not after the analysis
     if ex.get("variant"):
         style["shots"]["variant"] = int(ex["variant"])
     if ex.get("avoid_hooks"):
@@ -258,7 +261,7 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         from . import formats, lyrics
         formats.apply(plan, st.get("format", "montage"), by_id, places_all, copy,
                       plan["segments"][0]["out_start"] + plan["segments"][0]["dur"])
-        caps = lyrics.caption_overlays(words_rel, plan["duration"], str(st.get("captions", "auto")))
+        caps = lyrics.caption_overlays(words_rel, plan["duration"], str(st.get("captions", "auto")), backend)
         if caps:
             plan["overlays"] += caps
             log(f"captions: {len(caps)} line(s) of the {words_rel.get('kind')}")

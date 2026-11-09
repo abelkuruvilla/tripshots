@@ -154,7 +154,7 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         style["shots"]["min_score"] = float(min_score) + 2  # planner allows min_score - 2 when footage is thin
     if allow_similar:
         style["shots"]["allow_similar"] = True
-    if no_location:
+    if no_location or os.environ.get("TRIPSHOTS_NO_LOCATION") == "1":
         style["text"]["location"]["mode"] = "off"
     music, mmeta = resolve_music(music, cookies)  # download first: fails fast on a bad link
     if music_start is not None:
@@ -179,7 +179,8 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
             from . import lyrics
             words = lyrics.words(music, mus.get("duration") if mus else None)
             style["_words"] = words
-        if style["text"]["location"].get("mode") != "off" or str(st.get("format")) in ("auto", "list"):
+        # no location titles = no place names anywhere: not in the hook, not as numbered list labels
+        if style["text"]["location"].get("mode") != "off":
             seen: dict = {}
             for s in sorted(shots, key=lambda s: -float(s.get("ai", {}).get("score", 5)))[:60]:
                 if s.get("gps"):
@@ -522,7 +523,7 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
           cookies: dict | None = None, keep_text: bool = False, dry_run: bool = False, workers: int = 2,
           source_opts: dict | None = None, upload_copy: bool | None = None, rescore: bool = False,
           text_preset: str | None = None, hype: bool = False, sound: dict | None = None,
-          text_motion: str | None = None) -> dict:
+          text_motion: str | None = None, no_location: bool = False) -> dict:
     from . import clone as cl
     from . import grade as grade_mod
     from .config import HOME
@@ -545,9 +546,10 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
         raise ReelError("the reference has fewer than 2 shots: nothing to clone (is it one continuous clip?)")
     slots = cl.describe_reference(refd, backend)["shots"]
     # the user's places, for rewriting place names in the text (one lookup per area, cached)
+    no_location = no_location or os.environ.get("TRIPSHOTS_NO_LOCATION") == "1"
     places, seen = {}, {}
     for s in sorted(shots, key=lambda s: -float(s.get("ai", {}).get("score", 5)))[:60]:
-        if s.get("gps"):
+        if s.get("gps") and not no_location:
             k = (round(s["gps"][0], 2), round(s["gps"][1], 2))
             if k not in seen:
                 seen[k] = place_name(*s["gps"])
@@ -597,6 +599,8 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
         o = _variant_path(out, v, variants)
         plan = cl.build_clone_plan(refd, slots, match, texts, shots, style, variant=v, keep_text=keep_text,
                                    groups=groups, fallback=fallback, motion=motion)
+        if no_location:
+            plan["overlays"] = [x for x in plan["overlays"] if x["type"] != "location"]
         plan["work"] = str(work)
         plan["sound"] = style.get("sound") or {}
         plan["music"]["label"] = "the original reel's sound" if is_link else Path(ref).stem

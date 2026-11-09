@@ -16,7 +16,8 @@ Settings tab writes it too). A `.env` in the current folder is read first. Real 
 | `MINIMAX_API_KEY`, `MINIMAX_BASE_URL` | | For the `minimax` backend |
 | `GEMINI_API_KEY` | | Optional Gemini video watching |
 | `TRIPSHOTS_WATCH` | `auto` | `auto` (on when a key is set), `gemini`, `off` |
-| `TRIPSHOTS_GEMINI_MODEL`, `TRIPSHOTS_GEMINI_FALLBACK` | `gemini-flash-latest`, `gemini-2.5-flash` | Gemini models |
+| `TRIPSHOTS_GEMINI_MODEL`, `TRIPSHOTS_GEMINI_FALLBACK` | `gemini-flash-latest`, `gemini-flash-lite-latest` | Gemini models (when neither works for your key, the next available Flash model is tried) |
+| `TRIPSHOTS_NO_LOCATION` | unset | `1` = never put place names on screen (same as `--no-location` on every `make` and `clone`) |
 | `TRIPSHOTS_GEMINI_RPM` | 10 | Gemini requests a minute. TripShots slows down further when Gemini reports a lower limit; raise it on a paid key |
 | `TRIPSHOTS_FOOTAGE` | the app's recent folders | Folders `find`, `trips`, `ask` and agents search (separated by `:`; `;` on Windows) |
 | `TRIPSHOTS_MUSIC` | | Folders with music that `ask` and agents can choose from |

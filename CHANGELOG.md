@@ -5,6 +5,10 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Gemini watch with new keys:** Google no longer serves `gemini-2.5-flash` to new users. The fallback is now `gemini-flash-lite-latest`, `-latest` aliases are no longer discarded because Google doesn't list them, and when every configured model fails the next available Flash model is tried before giving up.
+- **`--no-location` now means no place names anywhere:** no location title, no place names in the AI hook, and no numbered place list. Also on `clone` (drops the reference's place titles) and as `TRIPSHOTS_NO_LOCATION=1`; the app's clone tab has a **No place names** switch.
+
 ### Added
 - **Motion text with HyperFrames.** With the HyperFrames runtime installed, hooks, location titles, labels and closing lines animate in a browser: `rise` (out of a blur), `focus`, `tracking`, `typewriter` (with a caret), `slam` (lands with a shake), `write` (pen reveal) and `cinema`. `text.motion` / `--text-motion` (auto picks one per text preset; off keeps the classic animation). TripShots still lays the words out; only the animation changes.
 - **`leak` transition:** warm film light washing across a dissolve, used between calm shots (cinematic, slow-scenic and the default calm palette).

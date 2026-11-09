@@ -1219,6 +1219,8 @@ class CloneTab(VerticalScroll):
             yield Label("Keep the reel's text word for word")
             yield Switch(id="cl_hype")
             yield Label("Add freeze-frame + glitch")
+            yield Switch(id="cl_no_location")
+            yield Label("No place names")
         with Horizontal(classes="actions"):
             yield Button("Preview clone", id="cl_preview")
             yield Button("Clone reel", id="cl_go", variant="primary")
@@ -1271,6 +1273,8 @@ class CloneTab(VerticalScroll):
                 args.append("--keep-text")
             if self.query_one("#cl_hype", Switch).value:
                 args.append("--hype")
+            if self.query_one("#cl_no_location", Switch).value:
+                args.append("--no-location")
             browser = os.environ.get("TRIPSHOTS_COOKIES_BROWSER")
             if browser and ref.startswith("http"):
                 args += ["--cookies-from-browser", browser]

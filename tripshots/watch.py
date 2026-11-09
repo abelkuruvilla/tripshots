@@ -31,7 +31,10 @@ from .util import ffmpeg_base, log, read_json, write_json
 PROMPT_VERSION = 1
 WATCH_DIR = lib.LIB_DIR / "watch"
 DEFAULT_MODEL = os.environ.get("TRIPSHOTS_GEMINI_MODEL", "gemini-flash-latest")
-FALLBACK_MODEL = os.environ.get("TRIPSHOTS_GEMINI_FALLBACK", "gemini-2.5-flash")
+# Flash-Lite: its own (larger) free quota, and an alias that follows Google's current Lite model
+FALLBACK_MODEL = os.environ.get("TRIPSHOTS_GEMINI_FALLBACK", "gemini-flash-lite-latest")
+# tried in order when the configured ones don't work for a key (retired models answer 404 for new keys)
+RESERVE_MODELS = ("gemini-flash-latest", "gemini-flash-lite-latest")
 # requests a minute TripShots allows itself (Gemini's free tier allows about 10 for Flash); it slows down further
 # when Gemini says the limit is lower, and speeds back up after a run of successes
 RPM = float(os.environ.get("TRIPSHOTS_GEMINI_RPM") or 10)
@@ -283,6 +286,7 @@ class Gemini:
         from google.genai import types
         # v1beta has the "-latest" aliases and JSON-schema output; newer SDKs may default to v1
         self.client = genai.Client(api_key=api_key(), http_options=types.HttpOptions(api_version="v1beta"))
+        self.reserve: list[str] = []
         self.models = self._resolve([m for m in dict.fromkeys([model, fallback]) if m])
         self._busy_until = 0.0
         self._lock = threading.Lock()
@@ -303,9 +307,14 @@ class Gemini:
 
     def _resolve(self, wanted: list[str]) -> list[str]:
         have = self._available()
+        extra = [m for m in RESERVE_MODELS if m not in wanted]
         if have is None:
+            self.reserve = extra
             return wanted
-        ok = [m for m in wanted if m in have]
+        # "-latest" names are aliases: Google doesn't list them, but they work (and follow the current model)
+        ok = [m for m in wanted if m in have or m.endswith("-latest")]
+        flash = sorted((n for n in have if "flash" in n and n not in wanted), key=_flash_rank, reverse=True)
+        self.reserve = extra + [n for n in flash if n not in extra][:3]
         if not ok:
             flash = sorted((n for n in have if "flash" in n), key=_flash_rank, reverse=True)
             if not flash:
@@ -321,6 +330,13 @@ class Gemini:
         with self._lock:
             if model in self.models:
                 self.models.remove(model)
+                tried = getattr(self, "_tried", set())
+                tried.add(model)
+                self._tried = tried
+                if not self.models:  # before giving up, the next model this key may still have
+                    nxt = next((m for m in getattr(self, "reserve", []) if m not in tried), None)
+                    if nxt:
+                        self.models.append(nxt)
                 log(f"watch: {model} can't be used ({why[:90]})" +
                     (f"; switching to {self.models[0]}" if self.models else ""))
         if not self.models:

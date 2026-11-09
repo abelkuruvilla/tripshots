@@ -25,7 +25,7 @@ The default AI looks at stills. With a free [Gemini API key](https://aistudio.go
 * **shake, tilt, bad exposure**, and whether the clip's own sound is ambience, speech or music (used for the clip-sound bed);
 * **in-camera whip pans** you shot on purpose.
 
-Results are cached per file, so a clip is only watched once. At the start TripShots checks which models your key can use; if the configured one isn't available it uses the best available Flash model and says so, and if Gemini can't be used at all (key refused, no model) it stops after the first try and the clips are analysed locally. `--watch auto` (default: on when a key is set), `--watch gemini` (required), `--watch off`. Model: `TRIPSHOTS_GEMINI_MODEL` (default `gemini-flash-latest`, falls back to `gemini-2.5-flash` when busy). Your Claude / MiniMax backend still makes the creative calls; Gemini's score is blended in at 40%.
+Results are cached per file, so a clip is only watched once. At the start TripShots checks which models your key can use; if the configured one isn't available it uses the best available Flash model and says so, and if Gemini can't be used at all (key refused, no model) it stops after the first try and the clips are analysed locally. `--watch auto` (default: on when a key is set), `--watch gemini` (required), `--watch off`. Model: `TRIPSHOTS_GEMINI_MODEL` (default `gemini-flash-latest`, falls back to `gemini-flash-lite-latest` when busy or out of quota; Flash-Lite has a larger free daily quota). Retired models such as `gemini-2.5-flash` answer "not found" for new keys; TripShots then moves on to the next model your key can use. Your Claude / MiniMax backend still makes the creative calls; Gemini's score is blended in at 40%.
 
 
 ---

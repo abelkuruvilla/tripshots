@@ -93,6 +93,17 @@ A learned style copies more than timing:
 - **Pace and movement.** Shots are held as long as the references hold theirs, and pans move as slowly as the references' camera (`layout.pan_speed`).
 - **Format and text.** The format is fixed (no numbered place cards in a cinematic reel), and the references' own text decides whether a hook line appears.
 
+- **How it holds attention** (the style's `attention` profile). Different reels earn attention differently, so nothing here is a fixed recipe; it is measured from your examples:
+  - *rhythm over time*: where the reference cuts fast and where it holds, in each eighth of its length. Your reel follows the same shape on its own song's beats;
+  - *the opening*: how long the first shot is held and what it shows (a person, a wide view, a detail, movement);
+  - *the payoff*: where the long hold sits;
+  - *the shot mix*: the share of wide views, people and details;
+  - *speed, reveal, loop*: slow motion or speed changes, whether the best view is held back, whether the end flows into the start.
+
+  The check before rendering judges the reel against this profile: a calm style may hold its shots, a fast one may not drag.
+
+**Several examples per style.** A style is what its examples have in common, so 2–3 similar reels give a steadier profile than one. Add more any time: `tripshots learn <new links> -n my-vibe --add`, or in the app's **Styles** tab **Add example reels…**. The tab shows each learned style's examples and its attention profile in one line, and **Re-learn** rebuilds it from the saved examples (nothing is downloaded again). Keep different kinds of reels in different styles.
+
 Styles learned before this version don't have these: re-learn one with `tripshots learn -n my-vibe` (no links: it uses the reels it was learned from, already downloaded). Instagram usually needs your browser login for downloads, which is what `--cookies-from-browser` is for. You can also pass local `.mp4` files you saved.
 
 ## Checks after every render

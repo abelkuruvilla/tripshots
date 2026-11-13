@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Attention profile per learned style.** `learn` measures how each reference holds attention (rhythm over its length, opening hold and shot, where the payoff is held, shot mix, speed, reveal, loop) and saves it as the style's `attention`. The story rhythm follows that curve on the song's beats, casting opens the way the references open and keeps their shot mix, and the critic judges pace against the style's own references instead of one general rule.
+- **More examples per style:** `tripshots learn <links> -n NAME --add`; the app's Styles tab shows a learned style's examples and profile, with **Add example reels…** and **Re-learn**.
+- **Critic:** a hook that names a landmark shown only later is caught, and the reel opens on that shot instead.
+
 ### Fixed
 - **"landmark lookup skipped (HTTP Error 502)":** the park/landmark lookup now retries a busy Overpass server and moves on to other public Overpass servers (`TRIPSHOTS_OVERPASS` puts your own first). When none answers, the town name is used for that run only and the place is looked up again next time instead of being kept.
 

@@ -311,7 +311,8 @@ options:
 ## learn
 
 ```text
-usage: tripshots learn [-h] -n NAME [-b BACKEND] [--cookies-from-browser BROWSER] [--cookies FILE]
+usage: tripshots learn [-h] -n NAME [--add] [-b BACKEND] [--cookies-from-browser BROWSER]
+                       [--cookies FILE]
                        [refs ...]
 
 positional arguments:
@@ -321,6 +322,8 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   -n, --name NAME
+  --add                 add these reels to the ones the style already learns from (a style is what
+                        its examples have in common)
   -b, --backend BACKEND
 
 instagram login (most reels need it):

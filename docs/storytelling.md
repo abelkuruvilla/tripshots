@@ -108,6 +108,10 @@ Before rendering, every plan is checked like an editor would (`NAME.critic.json`
 | At most half the shots static | 10 |
 | The ending loops (or closes with a line) | 15 |
 
+With a learned style, the rhythm check compares the reel with the style's own references (a cut about as often as
+theirs) instead of asking for varied lengths. One more check: the hook must not name a landmark that is only shown
+later (10); the fix opens on the shot it names.
+
 It fixes what it can (the hook punch, the hook's timing, a shot of you moved early, repeats swapped apart, the
 loop). With an AI backend it also looks at the storyboard and may apply up to three swaps or a better hook line.
 `--critic rules` skips the AI review, `--critic off` skips it all.

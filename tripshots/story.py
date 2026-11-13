@@ -121,6 +121,10 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
             n = 1.0
         return n
 
+    att = style.get("attention") or {}
+    if att.get("curve") and att.get("shot_sec"):
+        return _curve_rhythm(att, clock, bl, end_i, energy, th, drops, mid, words, variant)
+
     lengths: list[tuple[float, str]] = []   # (beats, role)
     # hook: one shot, about 1-2 s, then the setup
     # pace: a style learned from slow, cinematic references holds every shot longer (its beats per cut)
@@ -186,6 +190,91 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
         end_n = max(end_n - (pos - rel_end), fit(2, 1.0, 3.0))
     lengths.append((end_n, "ending"))
     return _to_segments(lengths, clock, energy, th, drops, peak_i)
+
+
+def _snap(sec: float, bl: float) -> float:
+    """A length in seconds as beats: whole beats, or half beats for short shots; never under about 0.3 s."""
+    n = sec / bl
+    n = round(n * 2) / 2 if n < 1.25 else float(round(n))  # half beats only for the shortest shots
+    n = max(0.5, n)
+    while n * bl < 0.3:
+        n += 0.5
+    return n
+
+
+def _curve_rhythm(att: dict, clock: _BeatClock, bl: float, end_i: float, energy, th, drops, mid, words,
+                  variant: int = 0) -> dict:
+    """Shot slots that follow a learned style's own rhythm (style `attention`, measured by `learn`): the
+    reference's shot length at each point of its length, its opening hold and where it holds its payoff, on
+    this song's beats. A fast montage stays fast where the reference was fast; a slow reel keeps its holds."""
+    curve = [float(x) for x in att["curve"]]
+    med = float(att["shot_sec"])
+    total_b = float(end_i)
+
+    def want(pos_b: float) -> float:
+        u = min(0.999, max(0.0, pos_b / total_b))
+        x = u * len(curve) - 0.5  # bin centres, linear in between
+        i = int(max(0, min(len(curve) - 2, x // 1)))
+        f = min(1.0, max(0.0, x - i))
+        return med * (curve[i] * (1 - f) + curve[i + 1] * f)
+
+    # where the payoff is held: the reference's place, moved to a drop of this song when one is near
+    peak_u = att.get("peak_at")
+    peak_i = None
+    if words and words.get("punch_t") is not None and 0.2 * clock.t(end_i) <= words["punch_t"] <= 0.9 * clock.t(end_i):
+        peak_i = clock.index_at(words["punch_t"])
+    elif peak_u is not None and 0.15 <= float(peak_u) <= 0.82:
+        peak_i = float(round(peak_u * total_b))
+        near = [clock.index_at(d) for d in drops if abs(clock.index_at(d) - peak_i) <= 0.15 * total_b]
+        if near:
+            peak_i = float(min(near, key=lambda x: abs(x - peak_i)))
+    elif mid:
+        peak_i = clock.index_at(mid[0])
+    open_n = _snap(float((att.get("open") or {}).get("hold") or want(0.0)), bl)
+    lengths: list[list] = [[open_n, "hook"]]
+    pos = open_n
+    while pos < total_b - 0.01:
+        n = _snap(want(pos) * (1.0 + 0.12 * (_rand("curve", variant, len(lengths)) - 0.5) * (1 if variant else 0)), bl)
+        if n >= 1 and abs((pos + n) - round(pos + n)) > 0.01:  # after a half-beat shot: back onto the beat
+            n = n + 0.5 if want(pos) >= n * bl else max(0.5, n - 0.5)
+        if peak_i is not None and pos < peak_i < pos + n and (peak_i - pos) * bl >= 0.35:
+            n = peak_i - pos  # a cut lands on the payoff's beat
+        if total_b - (pos + n) < 0.5 * n:  # no stub at the end: the last shot takes what is left
+            n = total_b - pos
+        lengths.append([n, "release"])
+        pos += n
+    if len(lengths) > 1 and lengths[-1][0] * bl < 0.6 and len(lengths) > 2:
+        lengths[-2][0] += lengths[-1][0]
+        lengths.pop()
+    # roles, for casting: hook, the payoff, the run into it, the ending
+    starts, x = [], 0.0
+    for n, _ in lengths:
+        starts.append(x)
+        x += n
+    k_peak = None
+    if peak_i is not None and len(lengths) > 3:
+        near = [k for k in range(1, len(lengths) - 1) if peak_i - 1.01 <= starts[k] <= peak_i + 0.15 * total_b]
+        k_peak = (max(near, key=lambda k: (lengths[k][0], -abs(starts[k] - peak_i))) if near else
+                  min(range(1, len(lengths) - 1), key=lambda k: abs(starts[k] - peak_i)))
+    elif len(lengths) > 3:  # no marked payoff: the longest shot of the second half
+        cand = [k for k in range(1, len(lengths) - 1) if starts[k] >= 0.4 * total_b] or list(range(1, len(lengths) - 1))
+        k_peak = max(cand, key=lambda k: lengths[k][0])
+    # the payoff is a held shot: at least a typical shot of this style and 0.8 s (it takes the next slot if not)
+    while k_peak is not None and k_peak < len(lengths) - 2 and lengths[k_peak][0] * bl < max(0.8, med):
+        lengths[k_peak][0] += lengths[k_peak + 1][0]
+        del lengths[k_peak + 1]
+        del starts[k_peak + 1]
+    for k in range(1, len(lengths)):
+        if k == len(lengths) - 1:
+            lengths[k][1] = "ending"
+        elif k_peak is None:
+            lengths[k][1] = "setup" if starts[k] < 0.5 * total_b else "release"
+        elif k == k_peak:
+            lengths[k][1] = "peak"
+        elif k < k_peak:
+            lengths[k][1] = "build" if k >= k_peak - 3 and k > 1 else "setup"
+    return _to_segments([(n, r) for n, r in lengths], clock, energy, th, drops,
+                        peak_i if peak_i is not None else starts[k_peak] if k_peak else 0.0)
 
 
 def _to_segments(lengths, clock: _BeatClock, energy, th, drops, peak_i) -> dict:
@@ -317,6 +406,22 @@ def role_score(s: dict, role: str, ctx: dict) -> float:
     return v
 
 
+DETAIL_SCENES = {"detail", "food", "plants", "wildlife", "portrait"}
+
+
+def shot_kind(s: dict) -> str:
+    """wide | people | detail: the size of what a shot shows (for a learned style's shot mix)."""
+    ai = s.get("ai") or {}
+    if has_people(s):
+        return "people"
+    return "detail" if ai.get("scene") in DETAIL_SCENES else "wide"
+
+
+def _moving(s: dict) -> bool:
+    m = s.get("metrics") or {}
+    return s.get("kind") == "video" and (m.get("pan", 0) > 0.004 or m.get("activity", 0) > 0.015)
+
+
 def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, groups: dict | None = None,
          tease: bool = False, places: dict | None = None, fmt: str = "montage") -> list[dict]:
     """Put each chosen shot where it serves the story: the hook, the payoff, the ending first, then the rest."""
@@ -327,6 +432,22 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
     ctx = {"people_weight": 1.6 if st.get("people_first", True) else 0.5, "tease": tease, "looks": {}}
     from .planner import taste_scores
     taste = taste_scores(chosen, style)  # a learned style's light, colour and people
+
+    att = style.get("attention") or {}
+    open_kind = (att.get("open") or {}).get("shot")
+    mix = att.get("mix") or {}
+    counts = {"wide": 0, "people": 0, "detail": 0}
+
+    def open_bonus(s):  # open the way the references open (on a person, a wide view, a detail, movement)
+        return 1.5 if open_kind and (shot_kind(s) == {"person": "people"}.get(open_kind, open_kind)
+                                     or (open_kind == "action" and _moving(s))) else 0.0
+
+    def mix_bonus(s):  # keep wide views, people and details in the references' proportions
+        if not mix:
+            return 0.0
+        k = shot_kind(s)
+        n = sum(counts.values()) + 1
+        return 1.2 * (float(mix.get(k, 0)) - counts[k] / n)
 
     def used_pen(s):  # thin footage repeats shots in the pool: never the same one twice while others remain
         return -50.0 if any(o is not None and o["id"] == s["id"] for o in order) else 0.0
@@ -341,7 +462,7 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
         pool.remove(pick)
     roles = [s.get("role", "release") for s in segs]
     if "hook" in roles:
-        take(roles.index("hook"), "hook")
+        take(roles.index("hook"), "hook", open_bonus if open_kind else None)
     if "peak" in roles:
         take(roles.index("peak"), "peak")
     if "ending" in roles and len(segs) > 2:
@@ -386,8 +507,9 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
                     pen -= 3.0
                 return pen + (_rand("mix", variant, s["id"], i) - 0.5) * (1.2 if variant else 0.3)
             ranked = sorted(pool, key=lambda s: role_score(s, role, ctx) + 0.5 * taste.get(s["id"], 0.0) + adj(s)
-                            + used_pen(s), reverse=True)
+                            + used_pen(s) + mix_bonus(s), reverse=True)
             order[i] = ranked[0]
+            counts[shot_kind(ranked[0])] += 1
             pool.remove(ranked[0])
     # footage thinner than the slots: repeat the best (planner merged most of these away)
     best = sorted(chosen, key=_q, reverse=True)

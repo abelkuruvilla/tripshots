@@ -61,7 +61,8 @@ def measure(path: Path, work: Path) -> dict:
            "shot_len_median": round(float(np.median(lens)), 2) if len(lens) else None,
            "shot_len_p25": round(float(np.percentile(lens, 25)), 2) if len(lens) else None,
            "shot_len_p75": round(float(np.percentile(lens, 75)), 2) if len(lens) else None,
-           "first_shot": round(float(lens[0]), 2) if len(lens) else None}
+           "first_shot": round(float(lens[0]), 2) if len(lens) else None,
+           "shot_lens": [round(float(x), 3) for x in lens]}
     has_audio = any(s.get("codec_type") == "audio" for s in info.get("streams", []))
     if has_audio and cuts:
         wav = work / f"{path.stem}.wav"
@@ -110,10 +111,96 @@ def measure(path: Path, work: Path) -> dict:
                          "push": round(float(np.median(zs)), 4) if zs else None}
     except Exception as e:
         log(f"  camera motion not measured ({str(e)[:80]})")
+    # does the end flow back into the start (a loop)? compare the first and the last picture
+    try:
+        a, b = _grab(path, 0.1, fd / "first.jpg"), _grab(path, max(0.0, dur - 0.15), fd / "last.jpg")
+        ia, ib = (cv2.imread(str(a)) if a else None), (cv2.imread(str(b)) if b else None)
+        if ia is not None and ib is not None:
+            va, vb = look(cv2.cvtColor(ia, cv2.COLOR_BGR2RGB)), look(cv2.cvtColor(ib, cv2.COLOR_BGR2RGB))
+            res["loop_likeness"] = round(float(np.dot(va, vb) / (np.linalg.norm(va) * np.linalg.norm(vb) + 1e-9)), 3)
+    except Exception:
+        pass
     res["frames"] = [str(f) for f in frames]
     # extra frames near the start to read hook text
     res["early_frames"] = [str(f) for f in (_grab(path, t, fd / f"early{t:.1f}.jpg") for t in (0.3, 1.2, 2.2)) if f]
     return res
+
+
+CURVE_BINS = 8
+
+
+def attention_profile(measures: list[dict]) -> dict:
+    """How the references hold attention over their length, measured from their cuts:
+      curve     relative shot length (x the median shot) in each eighth of the reel: where it cuts fast, where it holds
+      shot_sec  the median shot length; shot_mean: length / number of shots (what the critic compares)
+      open      {hold: how long the first shot is held}
+      peak_at   where the longest hold after the opening starts (share of the reel): the payoff
+      variety   longest / shortest typical shot (p90 / p10): 1 = a metronome
+      loop      the last picture looks like the first
+    Several references are averaged, so a style is what they have in common."""
+    curves, holds, peaks, varis, meds, loops, means = [], [], [], [], [], [], []
+    for m in measures:
+        lens = [float(x) for x in m.get("shot_lens") or []]
+        dur = float(m.get("duration") or 0)
+        if len(lens) < 3 or dur <= 0:
+            continue
+        med = float(np.median(lens))
+        starts = np.concatenate([[0.0], np.cumsum(lens)[:-1]])
+        bins = [[] for _ in range(CURVE_BINS)]
+        for st, ln in zip(starts, lens):  # a shot counts in every eighth it covers
+            b0, b1 = int(st / dur * CURVE_BINS), int(min(dur - 1e-6, st + ln - 1e-6) / dur * CURVE_BINS)
+            for b in range(max(0, b0), min(CURVE_BINS - 1, b1) + 1):
+                bins[b].append(ln / med)
+        curve = [float(np.median(b)) if b else 1.0 for b in bins]
+        curves.append(curve)
+        meds.append(med)
+        means.append(dur / len(lens))
+        holds.append(lens[0])
+        inner = [(ln, st) for st, ln in zip(starts[1:], lens[1:]) if 0.2 * dur <= st <= 0.8 * dur]
+        if inner:
+            ln, st = max(inner)
+            if ln >= 1.3 * med:
+                peaks.append(st / dur)
+        varis.append(float(np.percentile(lens, 90) / max(0.05, np.percentile(lens, 10))))
+        if m.get("loop_likeness") is not None:
+            loops.append(m["loop_likeness"])
+    if not curves:
+        return {}
+    curve = np.clip(np.median(np.array(curves), axis=0), 0.3, 4.0)
+    out = {"curve": [round(float(x), 2) for x in curve], "shot_sec": round(float(np.median(meds)), 2),
+           "shot_mean": round(float(np.median(means)), 2),
+           "open": {"hold": round(float(np.median(holds)), 2)},
+           "variety": round(float(np.median(varis)), 2), "refs": len(curves)}
+    if peaks:
+        out["peak_at"] = round(float(np.median(peaks)), 2)
+    if loops:
+        out["loop"] = bool(float(np.median(loops)) > 0.97)
+    return out
+
+
+def describe_profile(a: dict) -> str:
+    """One readable line: 'opens on a person held 1.2s · shots about 0.9s, fastest in the middle · payoff at 62% ...'"""
+    if not a or not a.get("curve"):
+        return "no attention profile (learned before this was measured: re-learn the style)"
+    c = a["curve"]
+    q = [float(np.mean(c[i:i + 2])) for i in range(0, len(c) - 1, 2)]
+    names = ("in the first quarter", "in the second quarter", "in the third quarter", "at the end")
+    fast, slow = names[int(np.argmin(q))], names[int(np.argmax(q))]
+    op = a.get("open") or {}
+    parts = [f"opens on {op.get('shot') or 'a shot'} held {op.get('hold', 0):.1f}s",
+             f"shots about {a.get('shot_sec', 0):.1f}s" + (f", fastest {fast}, longest holds {slow}"
+                                                           if max(q) / max(0.01, min(q)) > 1.25 else ", even pace")]
+    if a.get("peak_at") is not None:
+        parts.append(f"payoff held from {int(a['peak_at'] * 100)}%")
+    if a.get("mix"):
+        parts.append("mix " + ", ".join(f"{k} {int(float(v) * 100)}%" for k, v in a["mix"].items() if float(v) > 0.04))
+    if a.get("speed") and a["speed"] != "normal":
+        parts.append(f"speed: {a['speed']}")
+    if a.get("reveal"):
+        parts.append("builds to a reveal")
+    if a.get("loop"):
+        parts.append("loops")
+    return " · ".join(parts)
 
 
 def sheet(frames: list[str], out: Path, cols: int = 6) -> Path:
@@ -189,6 +276,11 @@ text:
   cta: {{mode: off|ai}}   # closing "save this" style line
   labels: {{mode: off|ai}}  # a short label on each shot ("Golden hour", "Highway 1")
 caption: {{tone: "<few words>", hashtags: <5-20>}}
+attention:             # how these reels catch and keep the eye (look at the frames in order)
+  open_shot: person|wide|detail|action   # what the very first shot shows
+  mix: {{wide: <0-1>, people: <0-1>, detail: <0-1>}}   # share of shots: wide views, shots with people, close details (sum 1)
+  speed: normal|slow|fast|ramps   # slow = mostly slow motion; fast = sped-up/hyperlapse; ramps = speed changes inside shots
+  reveal: true|false   # true if it holds back its best view and reveals it late
 direction: "<2-4 sentences: how these reels are directed (what opens them, how long shots are held, how the camera
   moves, the light, where and how text appears, how they end), written as instructions to an editor>"
 
@@ -267,7 +359,34 @@ def learn(refs: list[str], name: str, backend_name: str | None, cookies_browser:
         style.setdefault("layout", {})["pan_speed"] = round(min(0.08, max(0.015, ps * 1.1)), 3)
         push = float(np.median([c.get("push") or 0 for c in cams]))
         style.setdefault("motion", {})["video_push"] = round(min(0.1, max(0.0, push * 0.6)), 3)
+    # how the references hold attention: their own rhythm over time, opening, payoff, shot mix
+    prof = attention_profile(measures)
+    seen = style.get("attention") if isinstance(style.get("attention"), dict) else {}
+    if prof:
+        if seen.get("open_shot") in ("person", "wide", "detail", "action"):
+            prof["open"]["shot"] = seen["open_shot"]
+        mix = seen.get("mix") if isinstance(seen.get("mix"), dict) else {}
+        try:
+            mix = {k: max(0.0, float(mix.get(k) or 0)) for k in ("wide", "people", "detail")}
+            tot = sum(mix.values())
+            if tot > 0:
+                prof["mix"] = {k: round(v / tot, 2) for k, v in mix.items()}
+        except (TypeError, ValueError):
+            pass
+        if seen.get("speed") in ("normal", "slow", "fast", "ramps"):
+            prof["speed"] = seen["speed"]
+        prof["reveal"] = bool(seen.get("reveal"))
+        style["attention"] = prof
+        if prof.get("loop") is not None:
+            style["loop"] = bool(prof["loop"])
+        if prof.get("speed") == "slow":
+            style.setdefault("shots", {})["slowmo"] = True
+        log("attention profile: " + describe_profile(prof))
+    else:
+        style.pop("attention", None)
     st = dict(style.get("story") or {})
+    if prof.get("reveal") and st.get("format") in (None, "montage"):
+        st["format"] = "reveal"
     st["format"] = st.get("format") if st.get("format") in ("montage", "pov", "list", "series", "reveal") else "montage"
     st["hook_text"] = "style"
     style["story"] = st

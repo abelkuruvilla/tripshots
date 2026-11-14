@@ -68,6 +68,29 @@ def place_name(lat: float, lon: float) -> str | None:
     return name
 
 
+def region(lat: float, lon: float, coarse: bool = False) -> str | None:
+    """The state (US, Canada, Australia) or the country a point is in: "California", "Iceland". Cached.
+    coarse: one lookup per ~10 km cell (enough to group a trip's footage; a border can be off)."""
+    wide = f"region:{lat:.1f},{lon:.1f}"
+    key = wide if coarse else f"region:{lat:.2f},{lon:.2f}"
+    cache = read_json(CACHE, {}) or {}
+    if key in cache:
+        return cache[key]
+    if _offline or os.environ.get("TRIPSHOTS_OFFLINE") == "1":
+        return cache.get(wide)
+    addr = _nominatim(lat, lon)
+    if addr is None:
+        return None
+    name = addr.get("state") or addr.get("region") or addr.get("country")
+    if addr.get("country_code") not in ("us", "ca", "au") and addr.get("country"):
+        name = addr.get("country")
+    cache = read_json(CACHE, {}) or {}
+    cache[key] = name
+    cache.setdefault(wide, name)
+    write_json(CACHE, cache)
+    return name
+
+
 def _nominatim(lat: float, lon: float) -> dict | None:
     global _last, _offline
     wait = 1.1 - (time.time() - _last)  # Nominatim policy: max 1 request/second

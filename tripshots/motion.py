@@ -306,7 +306,7 @@ def shot_motion(t_abs: float, seg: dict, beats: list[float], cfg: dict) -> tuple
 
     # hook punch: the opening shot starts pushed in and settles within 0.45 s, so something moves on the
     # very first frames even when the shot itself is calm (the scroll decision takes about 1.4 s)
-    if cfg.get("hook_punch") and seg.get("role") == "hook" and start < 0.05 and local < 0.45:
+    if cfg.get("hook_punch") and seg.get("role") == "hook" and not seg.get("hold") and start < 0.05 and local < 0.45:
         q = _clip(local / 0.45)
         scale *= 1 + 0.12 * (1 - q) ** 3
 

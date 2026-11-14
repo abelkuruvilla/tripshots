@@ -25,6 +25,8 @@ Ways to get a new style:
 | `shots.min_score` | 6 | Lowest AI score (1–10) normally used |
 | `shots.ordering` | `energy` | `energy` (strong shots on strong beats), `chronological`, `score` |
 | `shots.max_per_source` | 3 | Most shots from one clip |
+| `shots.place_variety` | 1.0 | Spread the reel over the trip's places: shots from a place already used are marked down. 0 = any place as often as it scores |
+| `shots.fresh` | 1.0 | How strongly shots that earlier reels already showed are marked down (a series from one trip doesn't repeat itself). 0 = ignore earlier reels; same as `make --fresh off` |
 | `shots.slowmo` | true | Play 48 fps+ footage at half speed in calm parts |
 | `layout.landscape` | `auto` | `auto`, `crop`, `pan`, `blur_fill` for landscape footage |
 | `layout.photo_motion` / `photo_zoom` | `kenburns` / 1.12 | Photo movement and zoom |
@@ -42,8 +44,12 @@ Ways to get a new style:
 | `text.motion` | `auto` | How the words animate: `auto` (HyperFrames motion picked per preset when installed), `off`, `rise`, `focus`, `tracking`, `typewriter`, `slam`, `write`, `cinema` ([Motion text](look-and-motion.md#motion-text-hyperframes)) |
 | `attention` | {} | Written by `learn`: how the references hold attention. `curve` (relative shot length in each eighth of the reel; the rhythm follows it), `shot_sec`, `shot_mean`, `open` {hold, shot}, `peak_at`, `variety`, `mix` {wide, people, detail}, `speed`, `reveal`, `loop`. Empty = the built-in story rhythm |
 | `direction` | "" | A few sentences on how the style is directed; the critic's AI review reads it with `tripshots/DIRECTOR.md`. `learn` writes one |
-| `frame.aspect` | `9:16` | The picture's shape: `9:16` full screen, `16:9` or `2.39:1` a cinematic letterbox with the text in the bars |
+| `frame.aspect` | `9:16` | The references' picture shape: `9:16` upright, `16:9` or `2.39:1` wide, `1:1`, `4:5` |
+| `frame.output` | `auto` | The file's shape. `auto`: the picture always fills the file, with no black bars: a horizontal 1920×1080 file when the picture is wide (wider than 6:5), an upright 1080×1920 one otherwise (a square or 4:5 reference is made full-screen upright); `horizontal`: always 1920×1080; `vertical`: always upright, the picture keeps its `frame.aspect` in a band with the text in the bars |
 | `taste.look` / `weight` / `light` / `people` | none / 0 / [] / "" | What shots should look like (set by `learn`): the references' light and colour vector, how strongly to prefer it, their kinds of light, how people appear |
+| `taste.footage` | "" | What the references are made of: `video` marks photos down, `photo` the reverse (set by `learn`) |
+| `recipes` | [] | Written by `learn`: one recipe per reference reel, kept whole: `structure` (`hold_burst`, `flash_intro`, `steady`, `montage`), `turn`, `shots` (its shot lengths), `frame`, `open`, `text` {`kind`: `lyrics`, `tease`, `title`, `labels`, `subtitles`, `none`; `lines`, `position`, `look`, `width`, `size`, `color`, `per_word`}, `why`, and `unread: true` while the AI has not looked at that reference yet (run `tripshots learn -n NAME` again) |
+| `story.recipe` | `auto` | Which recipe a reel follows: `auto` (the reference whose sound is used, else the best fit for the song), `off` (the averaged `attention` profile), or a number / id (`1`, `r3`). Same as `make --recipe` |
 | `layout.pan_speed` | 0.06 | Pans and drifts: at most this share of the picture's width per second |
 | `color.*` | | Used when `grade.look` is `none`: `saturation`, `contrast`, `brightness`, `gamma`, `warmth`, `vignette`, `sharpen`, `lut` (your own `.cube`) |
 | `text.preset` | `bold` | `bold`, `editorial`, `minimal`, `handwritten`, `typewriter` |

@@ -645,9 +645,10 @@ def overlay_html(ov: dict) -> tuple[str, tuple]:
 
 
 def _place(ov: dict) -> tuple[int, int]:
+    from .config import CANVAS
     if ov.get("mode") == "tracker":
-        return 14, 200
-    return (1080 - INTRO_SIZE[0]) // 2, 1060 - INTRO_SIZE[1] // 2
+        return 14, 200 if not CANVAS.horizontal else 90
+    return (CANVAS.w - INTRO_SIZE[0]) // 2, int(CANVAS.h * 0.552) - INTRO_SIZE[1] // 2
 
 
 def render_layer(ov: dict) -> Path:

@@ -213,6 +213,10 @@ def _norm_time(s):
     if not s:
         return None
     s = str(s).strip()
+    if ";" in s:  # some drones write "UTC;local time" in one tag: the camera's own clock is the second
+        parts = [x for x in (_norm_time(x) for x in s.split(";") if x.strip()) if x]
+        good = [x for x in parts if len(x) == 19 and x[4] == "-" and x[10] == "T"]
+        return (good or parts or [None])[-1]
     for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S.%fZ",
                 "%Y-%m-%dT%H:%M:%SZ", "%Y:%m:%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
         try:

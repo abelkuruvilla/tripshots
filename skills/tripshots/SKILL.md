@@ -72,7 +72,7 @@ Offer one concrete follow-up ("a 15 s version", "open on the waterfall").
 When the user wants to finish or post in Edits, or wants Instagram's licensed song: `tripshots edits package <plan>`
 (MCP `edits_package`). It renders the picture with grade, motion, transitions, maps and skyline titles baked in, and
 writes clips per shot, texts, `sound-effects.wav`, the song and `manifest.json`. If Edits' own MCP tools are connected
-too, read the manifest, check the Edits tools you actually have, and build: new 9:16 project; clips at their `start`
+too, read the manifest, check the Edits tools you actually have, and build: new project in the manifest's size (9:16, or 16:9 for a horizontal reel); clips at their `start`
 (or `picture.mp4` at 0); each text as Edits text at its start/duration; `sound-effects.wav` at 0; the song from Edits'
 library at `music.song_start`. Use the `staged` copy (Edits only opens files in its sandbox). Check preview frames
 against the storyboard. Don't export or post unless asked. Otherwise `tripshots edits push` (needs a confirmed mapping,

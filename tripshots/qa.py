@@ -20,11 +20,12 @@ import re
 import subprocess
 from pathlib import Path
 
-from .config import OUT_FPS, OUT_H, OUT_W
+from .config import CANVAS, OUT_FPS
 from .util import ffprobe, log, parse_rate, read_json, write_json
 
 MAX_LEN = 90.0
 WORDS_PER_S = 3.5
+STYLED_MIN = 44  # px: the floor for a line with its own lettering (overlay `style`)
 
 
 def _detect(path: Path, vf: str | None, af: str | None, pattern: str) -> list[tuple[float, float]]:
@@ -57,15 +58,17 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
     def add(key, ok, value, want, why):
         res.append({"check": key, "ok": bool(ok), "value": value, "want": want, "why": why})
 
+    from .framing import use_plan
+    use_plan(plan)  # the frame the plan was made for: an upright reel or a horizontal one
     info = ffprobe(video)
     vs = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), {})
     aus = next((s for s in info.get("streams", []) if s.get("codec_type") == "audio"), None)
     fps = parse_rate(vs.get("avg_frame_rate") or vs.get("r_frame_rate"))
     dur = float(info.get("format", {}).get("duration") or 0)
-    fmt_ok = vs.get("width") == OUT_W and vs.get("height") == OUT_H and abs(fps - OUT_FPS) < 0.6 \
+    fmt_ok = vs.get("width") == CANVAS.w and vs.get("height") == CANVAS.h and abs(fps - OUT_FPS) < 0.6 \
         and vs.get("codec_name") == "h264" and (aus is None or aus.get("codec_name") == "aac")
     add("format", fmt_ok, f"{vs.get('width')}x{vs.get('height')} {fps:.2f} fps {vs.get('codec_name')}"
-        f"{'/' + aus.get('codec_name') if aus else ' (no sound)'}", f"{OUT_W}x{OUT_H} {OUT_FPS} fps h264/aac",
+        f"{'/' + aus.get('codec_name') if aus else ' (no sound)'}", f"{CANVAS.w}x{CANVAS.h} {OUT_FPS} fps h264/aac",
         "the size and codecs Instagram expects")
     add("length", 3.0 <= dur <= MAX_LEN, round(dur, 2), f"3-{MAX_LEN:.0f} s", "reels over 90 s are shown less")
     if aus is not None:
@@ -107,11 +110,16 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
                   or t["box"][0] < SAFE["left"] - 40 or t["box"][2] > SAFE["right"] + 40]
         add("text_safe", not out_of, [f"{t['kind']}: {t['text'][:30]}" for t in out_of][:6],
             "inside the safe area", "Instagram's buttons, name and caption cover the edges of the screen")
+        # a line set like its reference (small quiet type held for seconds) only has to stay readable
         small = [t for t in texts if t.get("size") and t["kind"] in MIN_SIZE
-                 and t["size"] < 0.9 * MIN_SIZE[t["kind"]]]
+                 and t["size"] < (STYLED_MIN if t.get("styled") else 0.9 * MIN_SIZE[t["kind"]]) * CANVAS.text]
         add("text_size", not small, [f"{t['kind']} {t['size']}px: {t['text'][:30]}" for t in small][:6],
-            "hook ≥ 88 px, labels ≥ 64, captions ≥ 54 (at 1080 wide)", "small words don't read on a phone")
-        short = [t for t in texts if t["duration"] < len(t["text"].split()) / WORDS_PER_S + 0.5]
+            "hook ≥ 88 px, labels ≥ 64, captions ≥ 54 (at 1080 wide)" + (
+                f", x{CANVAS.text:g} on a horizontal reel" if CANVAS.horizontal else ""),
+            "small words don't read on a phone")
+        # words shown as they are sung are heard as well as read: they keep the song's time
+        short = [t for t in texts if not t.get("sung")
+                 and t["duration"] < len(t["text"].split()) / WORDS_PER_S + 0.5]
         add("text_time", not short, [f"{t['kind']} {t['duration']:.1f}s: {t['text'][:30]}" for t in short][:6],
             f"{WORDS_PER_S:g} words a second + 0.5 s", "people need time to read a line before it goes")
     passed = sum(1 for r in res if r["ok"])
@@ -136,13 +144,14 @@ def contact_sheet(video: Path, out: Path, dur: float, n: int = 12) -> Path:
         cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
         ok, fr = cap.read()
         if not ok:
-            fr = np.zeros((OUT_H, OUT_W, 3), np.uint8)
-        c = cv2.resize(fr, (270, 480))
+            fr = np.zeros((CANVAS.h, CANVAS.w, 3), np.uint8)
+        c = cv2.resize(fr, (270, 480) if fr.shape[0] >= fr.shape[1] else (480, 270))
         cv2.rectangle(c, (0, 0), (74, 26), (0, 0, 0), -1)
         cv2.putText(c, f"{t:4.1f}s", (5, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
         cells.append(c)
     cap.release()
-    rows = [np.hstack(cells[r * 6:(r + 1) * 6]) for r in range(n // 6)]
+    per = 6 if cells[0].shape[0] >= cells[0].shape[1] else 4
+    rows = [np.hstack(cells[r * per:(r + 1) * per]) for r in range(n // per)]
     cv2.imwrite(str(out), np.vstack(rows), [cv2.IMWRITE_JPEG_QUALITY, 85])
     return out
 
@@ -161,7 +170,9 @@ def text_report(track) -> list[dict]:
                     "start": round(float(o["start"]), 3), "duration": round(float(o["duration"]), 3),
                     "box": box, "size": size, "motion": getattr(track.fx.get(k), "motion", None)
                     if hasattr(track, "fx") else None, "behind": track.baked(k),
-                    "bar": bool(getattr(track, "letterbox", False))})
+                    "bar": bool(getattr(track, "letterbox", False)),
+                    **({"styled": True} if isinstance(o.get("style"), dict) else {}),
+                    **({"sung": True} if o.get("recipe") == "lyric" else {})})
     return out
 
 

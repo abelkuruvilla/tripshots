@@ -46,7 +46,7 @@ Instead of folders you can pass a search result: `tripshots find --place Lisbon`
 
 | File | What it is |
 |---|---|
-| `NAME.mp4` | The reel: 1080×1920, 30 fps, H.264 + AAC, ready to upload |
+| `NAME.mp4` | The reel: 1080×1920 (or 1920×1080 for a [horizontal reel](#horizontal-reels)), 30 fps, H.264 + AAC, ready to upload |
 | `NAME.cover.jpg` | Cover frame (from the hook shot) |
 | `NAME.caption.txt` | AI caption + hashtags (only when an AI backend is used) |
 | `NAME.storyboard.jpg` | Every shot in order with timing (in its graded colour), so you can review before posting |
@@ -68,6 +68,22 @@ Instead of folders you can pass a search result: `tripshots find --place Lisbon`
 
 Make your own with `tripshots learn` (below) or by copying one: see [Styles](styles.md).
 
+## Horizontal reels
+
+Instagram plays horizontal video too, so a wide picture gets a wide file instead of black bars in an upright one:
+
+```bash
+tripshots make ~/Trips/Iceland -m song.mp3 --orientation horizontal
+```
+
+| `--orientation` | What you get |
+|---|---|
+| `auto` (default) | 1080×1920 upright. 1920×1080 horizontal when the style or the recipe you follow is wide (`frame.aspect` 4:3, 16:9, 2.39:1), or when every shot is landscape and most of them can't be cropped upright |
+| `horizontal` | Always 1920×1080: the picture fills the frame, upright clips are cropped around their subject |
+| `vertical` | Always 1080×1920: a wide picture sits in a band with the words in the bars (the old letterbox) |
+
+The text is laid out for the wide frame and set larger, because a phone held upright shows a horizontal video small. Split screens and pop-out frames are upright layouts and are left out. A style can fix the shape with `frame: {output: horizontal}`.
+
 ## Versions to test (`--variants`)
 
 ```bash
@@ -75,6 +91,14 @@ tripshots make ~/Trips/Iceland -m song.mp3 --variants 3
 ```
 
 This makes three versions: each opens on a different strong shot, orders the middle differently, varies the transitions, and gets a hook from a different angle. `NAME.variants.jpg` shows them side by side with their hooks. It's made for Instagram's **trial reels** (shown to non-followers first): post two or three and keep the winner. Analysis, AI verdicts and grading are cached, so extra versions only cost render time.
+
+## Several reels from one trip
+
+Just make them one after another. Each rendered reel is remembered, and the next one is cut from other shots: it
+opens on a different shot and leaves out what the earlier reels showed (unless the footage is nearly used up, when
+the best shots come back). With a learned style, give each reel a different example to follow (`-m <reel link>` or
+`--recipe N`), so the series also differs in shape: one opens on a long shot, one names every place, one is cut to
+the lyrics. `--fresh off` makes a reel as if it were the first. More: [A series from one trip](storytelling.md#a-series-from-one-trip).
 
 ## Learn a style from reels you like
 
@@ -88,10 +112,11 @@ tripshots make ~/Trips/Iceland -m track.mp3 --style my-vibe
 
 A learned style copies more than timing:
 - **Taste.** The references' light and colour (and the kind of light and of people the AI sees in them: golden backlight, people seen from behind) steer which of your shots are chosen, so a moody golden-hour reference doesn't get your bright blue-sky postcards.
-- **Shape.** A widescreen reference makes a widescreen reel: a cinematic letterbox in the 9:16 frame, with the text in the black bars (`frame: {aspect: 16:9}`).
+- **Shape.** A widescreen reference makes a [horizontal reel](#horizontal-reels): a 1920×1080 file the picture fills (`frame: {aspect: 16:9}`).
 - **Look.** The references' grade is applied at full strength (`grade: {match: full}`): every shot is taken into the mood, not just tinted.
 - **Pace and movement.** Shots are held as long as the references hold theirs, and pans move as slowly as the references' camera (`layout.pan_speed`).
 - **Format and text.** The format is fixed (no numbered place cards in a cinematic reel), and the references' own text decides whether a hook line appears.
+- **Taste is a nudge, not a filter.** What looks like the examples is preferred *among your own shots*, by a bounded amount: a clearly better shot still wins, and a reel is still spread over the places of the trip.
 
 - **How it holds attention** (the style's `attention` profile). Different reels earn attention differently, so nothing here is a fixed recipe; it is measured from your examples:
   - *rhythm over time*: where the reference cuts fast and where it holds, in each eighth of its length. Your reel follows the same shape on its own song's beats;
@@ -101,6 +126,13 @@ A learned style copies more than timing:
   - *speed, reveal, loop*: slow motion or speed changes, whether the best view is held back, whether the end flows into the start.
 
   The check before rendering judges the reel against this profile: a calm style may hold its shots, a fast one may not drag.
+
+- **One recipe per example** (the style's `recipes`). Averages lose the trick that made each reel catching, so every example is also kept whole: how it is cut (a long opening shot and then a burst of short ones; flashes and then steady shots; even shots; a montage), its own shot lengths, its picture shape, and what its words do (the song's lyrics one word at a time; a tease line and then the payoff; one title for the whole reel; a title per shot; none), with their lettering, colour and place. Each reel you make follows **one** recipe:
+  - with the sound of one of the examples (`-m <that reel's link>`), that example's recipe, cut for cut: the music starts at 0:00 and the cuts sit where the original's do;
+  - with any other song, the recipe that fits the song best (its length, tempo, and whether it has words);
+  - `--recipe 3` asks for the third example's, `--recipe off` for the style's average. `learn` prints the list, and so does the app's **Styles** tab.
+
+  A recipe that opens on a long hold needs one continuous, moving clip of that length. If your footage has none, the best clip is slowed to cover it and the log says so.
 
 **Several examples per style.** A style is what its examples have in common, so 2–3 similar reels give a steadier profile than one. Add more any time: `tripshots learn <new links> -n my-vibe --add`, or in the app's **Styles** tab **Add example reels…**. The tab shows each learned style's examples and its attention profile in one line, and **Re-learn** rebuilds it from the saved examples (nothing is downloaded again). Keep different kinds of reels in different styles.
 
@@ -112,7 +144,7 @@ After each render TripShots checks the file the way an editor would before posti
 
 | Check | Passes when |
 |---|---|
-| format | 1080×1920, about 30 fps, H.264 video and AAC sound |
+| format | 1080×1920 (1920×1080 for a horizontal reel), about 30 fps, H.264 video and AAC sound |
 | length | 3 to 90 seconds (longer reels are shown less) |
 | loudness | about -14 LUFS (-16 to -12) with true peaks at or under -1 dBTP |
 | black, frozen, silence | no black picture over 0.4 s, no frozen picture over 1.2 s (the plan's freeze frame excepted), no silent gap over 1 s under music |

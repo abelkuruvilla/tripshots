@@ -246,8 +246,10 @@ def caption_overlays(w: dict | None, total: float, mode: str = "auto", backend=N
             log(f"captions: no AI backend to translate into {NAMES.get(mode, mode)}; showing English instead")
             texts = [ln.get("english") or ln["text"] for ln in w["lines"]]
     out = []
-    for ln, txt in zip(w["lines"], texts):
-        a, b = max(0.0, ln["start"]), min(total - 0.05, ln["end"] + 0.25)
+    starts = [float(ln["start"]) for ln in w["lines"]][1:] + [total]
+    for ln, txt, nxt in zip(w["lines"], texts, starts):
+        # a line lingers a moment after it is said, but never under the next one (two at once would be moved apart)
+        a, b = max(0.0, ln["start"]), min(total - 0.05, ln["end"] + 0.25, max(float(ln["end"]), nxt - 0.03))
         if b - a < 0.4:
             continue
         out.append({"type": "caption", "text": txt, "start": round(a, 3), "duration": round(b - a, 3)})

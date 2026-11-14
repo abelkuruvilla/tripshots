@@ -905,10 +905,12 @@ def mix_into(video: Path, plan: dict, text_events: list[dict] | None, work: Path
         run(ffmpeg_base() + ["-i", str(video), "-i", str(meas_wav), "-map", "0:v", "-map", "1:a", "-c:v", "copy",
                              "-af", ln + f",aresample={SR}", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
                              "-shortest", str(tmp)])
-        tp = loudness(tmp).get("TP", -99)
-        if tp <= -1.0 or attempt:
+        got = loudness(tmp)
+        tp, li = got.get("TP", -99), got.get("I", -14.0)
+        if attempt or (tp <= -1.0 and li >= -15.0):
             break
-        trim = -(tp + 1.3)
+        # AAC overs: trim once. A peaky song the limiter held down came out quiet: lift it into the headroom left
+        trim = -(tp + 1.3) if tp > -1.0 else min(-14.0 - li, -1.5 - tp)
     tmp.replace(video)
     meas_wav.unlink(missing_ok=True)
     final = loudness(video)

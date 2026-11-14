@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 
 from . import retime
-from .config import OUT_FPS, OUT_H, OUT_W
+from .config import CANVAS, OUT_FPS
 from .fx import color_chain, hdr_chain, seg_color
 from .util import ReelError, ffmpeg_base, hwaccel_args, log, short_hash
 
@@ -27,14 +27,14 @@ def _frames(sec: float) -> int:
     return max(1, int(round(sec * OUT_FPS)))
 
 
-def _video_layout(e: dict, length: float, size: tuple[int, int] = (OUT_W, OUT_H)) -> list[str]:
-    OW, OH = size
+def _video_layout(e: dict, length: float, size: tuple[int, int] | None = None) -> list[str]:
+    OW, OH = size or CANVAS.size
     w, h = e["src_w"], e["src_h"]
     lay = e["layout"]
     if lay == "blur_fill":
         return [f"split[a][b];[a]scale={OW}:{OH}:force_original_aspect_ratio=increase,crop={OW}:{OH},"
                 f"boxblur=40:2,eq=brightness=-0.08[bg];[b]scale={OW}:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2"]
-    # scale to cover the 9:16 frame
+    # scale to cover the frame
     scale = f"scale=-2:{OH}:flags=lanczos" if w / h > OW / OH else f"scale={OW}:-2:flags=lanczos"
     sw = (w * OH / h) if w / h > OW / OH else OW
     excess = max(0.0, sw - OW)
@@ -61,19 +61,25 @@ def _video_layout(e: dict, length: float, size: tuple[int, int] = (OUT_W, OUT_H)
         cx = float(e.get("subject_x", 0.5)) * sw
         x = max(0.0, min(excess, cx - OW / 2))
         return [scale, f"crop={OW}:{OH}:{x:.0f}:(ih-{OH})/2"]
+    sh = h * OW / w
+    if excess <= 4 and sh - OH > 4 and (e.get("subject") or {}).get("cy") is not None:
+        # an upright clip in a wide frame: the window sits on the subject, not on the middle of the picture
+        y = max(0.0, min(sh - OH, float(e["subject"]["cy"]) * sh - OH / 2))
+        return [scale, f"crop={OW}:{OH}:0:{y:.0f}"]
     return [scale, f"crop={OW}:{OH}"]
 
 
 def render_video_seg(e: dict, length: float, color: dict, out: Path,
-                     size: tuple[int, int] = (OUT_W, OUT_H), rate: float = OUT_FPS) -> None:
+                     size: tuple[int, int] | None = None, rate: float = OUT_FPS) -> None:
     """One video shot at its (constant) speed. Speed-ups average the frames they skip (motion blur);
     `rate` other than 30 renders at that frame rate (the retimer's real-time pass)."""
     speed = float(e.get("speed", 1.0))
     src_need = length * speed + 0.5
     pad = []
-    if e.get("_band") and size == (OUT_W, OUT_H):  # cinematic letterbox: the picture in a band, black bars
-        size = (OUT_W, int(e["_band"]))
-        pad = [f"pad={OUT_W}:{OUT_H}:0:{(OUT_H - size[1]) // 2}:black"]
+    size = size or CANVAS.size
+    if e.get("_band") and size == CANVAS.size:  # cinematic letterbox: the picture in a band, black bars
+        size = (CANVAS.w, int(e["_band"]))
+        pad = [f"pad={CANVAS.w}:{CANVAS.h}:0:{(CANVAS.h - size[1]) // 2}:black"]
     if e.get("track") and e.get("layout") == "crop":
         from .framing import track_x
         try:
@@ -111,16 +117,17 @@ def _ease(x: float) -> float:
 
 
 def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path,
-                     size: tuple[int, int] = (OUT_W, OUT_H)) -> None:
+                     size: tuple[int, int] | None = None) -> None:
     """Smooth sub-pixel Ken Burns rendered in Python, piped to ffmpeg."""
     pad = []
-    if e.get("_band") and size == (OUT_W, OUT_H):  # cinematic letterbox
-        size = (OUT_W, int(e["_band"]))
-        pad = [f"pad={OUT_W}:{OUT_H}:0:{(OUT_H - size[1]) // 2}:black"]
+    size = size or CANVAS.size
+    if e.get("_band") and size == CANVAS.size:  # cinematic letterbox
+        size = (CANVAS.w, int(e["_band"]))
+        pad = [f"pad={CANVAS.w}:{CANVAS.h}:0:{(CANVAS.h - size[1]) // 2}:black"]
     OW, OH = size
     im = Image.open(e["still"]).convert("RGB")
     W, H = im.size
-    # pre-scale (high quality) so the 9:16 cover area is ~1.1x output: per-frame warps then
+    # pre-scale (high quality) so the cover area is ~1.1x output: per-frame warps then
     # stay close to 1:1, which keeps them sharp, alias-free and fast
     target_h = OH * 1.1 if W / H > OW / OH else (OW * 1.1) * H / W
     if H > target_h * 1.02:
@@ -191,7 +198,7 @@ def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path
         frames_kw.append((x0, y0, x0 + bw, y0 + bh))
         rots.append(rot)
     mover = None
-    if e.get("parallax") and (size == (OUT_W, OUT_H) or pad):
+    if e.get("parallax") and (size == CANVAS.size or pad):
         from . import parallax
         d = parallax.depth(src, e.get("depth_key"))
         if parallax.worth_it(d):
@@ -265,7 +272,7 @@ def render_popout_seg(e: dict, length: float, color: dict, out: Path) -> bool:
     if frames is None:
         return False
     vf = ",".join(color_chain({**seg_color(color, e), **({"lut": None, "vignette": False} if e.get("lut") else {})}) + ["setsar=1", "format=yuv420p"]) or "null"
-    cmd = ffmpeg_base() + ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OUT_W}x{OUT_H}", "-r", str(OUT_FPS),
+    cmd = ffmpeg_base() + ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CANVAS.w}x{CANVAS.h}", "-r", str(OUT_FPS),
                            "-i", "-", "-vf", vf] + _enc() + [str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
@@ -297,10 +304,10 @@ def render_retimed_seg(e: dict, length: float, color: dict, out: Path, lead: flo
     render_video_seg({**e, "speed": 1.0, "ramp": None}, src_frames / rate, color, tmp, rate=rate)
     rd = subprocess.Popen(ffmpeg_base() + ["-i", str(tmp), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    cmd = ffmpeg_base() + ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OUT_W}x{OUT_H}", "-r", str(OUT_FPS),
+    cmd = ffmpeg_base() + ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CANVAS.w}x{CANVAS.h}", "-r", str(OUT_FPS),
                            "-i", "-"] + _enc() + [str(out)]
     wr = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    size = OUT_W * OUT_H * 3
+    size = CANVAS.w * CANVAS.h * 3
     buf: dict[int, np.ndarray] = {}
     flows: dict = {}
     read = -1
@@ -313,13 +320,13 @@ def render_retimed_seg(e: dict, length: float, color: dict, out: Path, lead: flo
             if len(b) < size:
                 break
             read += 1
-            last = np.frombuffer(b, np.uint8).reshape(OUT_H, OUT_W, 3)
+            last = np.frombuffer(b, np.uint8).reshape(CANVAS.h, CANVAS.w, 3)
             buf[read] = last
         for old in [j for j in buf if j < i - 10]:
             del buf[old]
         for old in [j for j in flows if j < i - 1]:
             del flows[old]
-        return buf.get(i, last if last is not None else np.zeros((OUT_H, OUT_W, 3), np.uint8))
+        return buf.get(i, last if last is not None else np.zeros((CANVAS.h, CANVAS.w, 3), np.uint8))
 
     try:
         prev = 0.0
@@ -367,7 +374,7 @@ class _SegReader:
         self.proc = None
         self.pos = -1
         self.last = None
-        self.size = OUT_W * OUT_H * 3
+        self.size = CANVAS.w * CANVAS.h * 3
 
     def frame(self, k: int) -> np.ndarray:
         k = max(0, min(k, self.n - 1))
@@ -379,10 +386,10 @@ class _SegReader:
             if len(buf) < self.size:  # ran out (rounding): hold the last frame
                 self.pos = k
                 break
-            self.last = np.frombuffer(buf, np.uint8).reshape(OUT_H, OUT_W, 3)
+            self.last = np.frombuffer(buf, np.uint8).reshape(CANVAS.h, CANVAS.w, 3)
             self.pos += 1
         if self.last is None:
-            self.last = np.zeros((OUT_H, OUT_W, 3), np.uint8)
+            self.last = np.zeros((CANVAS.h, CANVAS.w, 3), np.uint8)
         return self.last
 
     def close(self):
@@ -391,6 +398,11 @@ class _SegReader:
             self.proc.kill()
             self.proc.wait()
             self.proc = None
+
+
+# what an overlay's own `style` may set (the rest comes from the plan's text preset)
+OVERLAY_STYLE = ("font", "size", "uppercase", "anim", "position", "color", "line_gap", "exit", "legible",
+                 "colors", "fit", "fixed", "lead_font", "lead_size", "y")
 
 
 class TextTrack:
@@ -403,7 +415,7 @@ class TextTrack:
         tcfg = plan.get("text") or {}
         preset = PRESETS.get(str(tcfg.get("preset", "bold")), PRESETS["bold"])
         self.cfg = {}
-        from .typo import CAPTION, legible
+        from .typo import CAPTION, legible, scaled
         readable = bool(tcfg.get("legible", True))
         for kind in ("hook", "location", "cta", "label"):
             base = dict(preset[kind])
@@ -416,18 +428,19 @@ class TextTrack:
             else:
                 own.pop("position", None)
             base.update(own)
-            self.cfg[kind] = legible(kind, base) if readable else base
+            self.cfg[kind] = scaled(legible(kind, base) if readable else base)
         if plan.get("story"):  # a story reel's hook must read inside the first second
             self.cfg["hook"]["fast_in"] = True
-        self.cfg["caption"] = legible("caption", {**CAPTION, **{k: v for k, v in (tcfg.get("caption") or {}).items()
-                                                               if v is not None}})
+        self.cfg["caption"] = scaled(legible("caption", {**CAPTION, **{k: v for k, v in (tcfg.get("caption") or {}).items()
+                                                                      if v is not None}}))
         band = int((plan.get("frame") or {}).get("band") or 0)
-        self.letterbox = 0 < band < OUT_H
-        if 0 < band < OUT_H:  # letterbox: words live in the black bars, never over the picture
+        self.letterbox = 0 < band < CANVAS.h
+        self.band = band
+        if 0 < band < CANVAS.h:  # letterbox: words live in the black bars, never over the picture
             from . import typo
-            bar = (OUT_H - band) // 2
+            bar = (CANVAS.h - band) // 2
             typo.BANDS["bar_top"] = (max(typo.SAFE["top"], bar - 400), bar - 30)
-            typo.BANDS["bar_bottom"] = (OUT_H - bar + 40, min(typo.SAFE["bottom"] + 40, OUT_H - bar + 420))
+            typo.BANDS["bar_bottom"] = (CANVAS.h - bar + 40, min(typo.SAFE["bottom"] + 40, CANVAS.h - bar + 420))
             self.cfg["hook"]["position"] = "bar_top"
             for k in ("label", "cta", "caption", "location"):
                 self.cfg[k]["position"] = "bar_bottom"
@@ -446,7 +459,7 @@ class TextTrack:
         self.beats = beats
 
     def draw(self, frame, t: float, seg: dict):
-        from .typo import build_hook, build_location, build_location_behind, format_coords, split_place
+        from .typo import build_hook, build_location, build_location_behind, format_coords, scaled, split_place
         for k, o in enumerate(self.specs):
             st, du = float(o["start"]), float(o["duration"])
             if not (st <= t <= st + du):
@@ -470,9 +483,19 @@ class TextTrack:
                             frame, subj), self.cfg["location"].get("position"))
                 else:
                     cfg = self.cfg[o["type"] if o["type"] in ("cta", "label", "caption") else "hook"]
+                    if isinstance(o.get("style"), dict):
+                        # this line's own lettering (a recipe's words look and sit like its reference's)
+                        cfg = {**cfg, **scaled({kk: v for kk, v in o["style"].items()
+                                                if kk in OVERLAY_STYLE and v is not None})}
+                    # lettering set on the picture keeps off the shot's subject (same line for every word of a shot)
+                    # a line held across several shots sits where the plan put it (recipes.held_position): the
+                    # subject of the shot it starts on isn't the subject of the others
+                    own = isinstance(o.get("style"), dict) and o["style"].get("position") in ("upper", "center", "lower")
+                    one_shot = st + du <= float(seg.get("out_start", 0.0)) + float(seg.get("dur", du)) + 0.05
+                    avoid = self._subject_rows(seg) if own and one_shot and not cfg.get("fixed") else None
                     el = self._clear_of_others(k, lambda pos: build_hook(
-                        o["text"], st, du, {**cfg, **({"position": pos} if pos else {})}, frame, self.beats, subj),
-                        cfg.get("position"))
+                        o["text"], st, du, {**cfg, **({"position": pos, "y": None} if pos else {})}, frame,
+                        self.beats, subj, avoid=None if pos else avoid, lead=o.get("lead")), cfg.get("position"))
                 self.built[k] = el
                 from .scripts import script_of
                 if not self.native and not self.baked(k) and not script_of(o.get("text") or ""):
@@ -485,14 +508,29 @@ class TextTrack:
             frame = (self.fx.get(k) or el).draw(frame, t)
         return frame
 
+    def _subject_rows(self, seg: dict):
+        """(subject top, subject bottom, top and bottom of where words may go) in output pixels, or None. Words
+        stay on the picture and inside the part of the screen the app's own buttons and caption leave free."""
+        from .typo import SAFE
+        subj = seg.get("subject_out") or {}
+        if seg.get("panel") or "y0" not in subj or "y1" not in subj:
+            return None
+        top, h = ((CANVAS.h - self.band) // 2, self.band) if self.letterbox else (0, CANVAS.h)
+        y0, y1 = top + float(subj["y0"]) * h, top + float(subj["y1"]) * h
+        if y1 - y0 > 0.6 * h:   # the subject is the whole view: nowhere to move to
+            return None
+        return y0, y1, max(top, SAFE["top"] - 18), min(top + h, SAFE["bottom"] + 18)
+
     def _clear_of_others(self, k: int, build, preferred: str | None):
         """Build text element k where it doesn't cover another line on screen at the same time (the hook and a
         subtitle, two labels): first where its style wants it, then in the other bands."""
         o = self.specs[k]
         a0, a1 = float(o["start"]), float(o["start"]) + float(o["duration"])
+        # sharing the screen = overlapping by more than a frame: a word that replaces the last one stays put
+        eps = 1.0 / OUT_FPS
         others = [self.built[j] for j, oj in enumerate(self.specs) if j != k and j in self.built
-                  and self.built[j] is not None and float(oj["start"]) < a1 and float(oj["start"]) + float(oj["duration"]) > a0
-                  and not self.baked(j)]
+                  and self.built[j] is not None and float(oj["start"]) < a1 - eps
+                  and float(oj["start"]) + float(oj["duration"]) > a0 + eps and not self.baked(j)]
 
         def clash(el) -> bool:
             x0, y0, x1, y1 = el.box
@@ -543,9 +581,11 @@ def render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_text
     editors that add them as their own, editable text; edits.py). Titles behind the skyline and maps
     are still drawn, because no editor can rebuild them. `info["texts"]` receives the TextTrack."""
     from . import encode
+    from .framing import use_plan
     import time
     t0 = time.time()
-    log(f"encoder: {encode.describe()}")
+    use_plan(plan)  # an upright or a horizontal frame, and the picture's shape in it
+    log(f"encoder: {encode.describe()}" + (f" · horizontal {CANVAS.w}x{CANVAS.h}" if CANVAS.horizontal else ""))
     try:
         out = _render(plan, out_path, work, workers, native_text, info)
     except ReelError as e:
@@ -566,7 +606,7 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         raise ReelError("plan has no segments")
     _prepare_transitions(plan)
     band = int((plan.get("frame") or {}).get("band") or 0)
-    bar = (OUT_H - band) // 2 if 0 < band < OUT_H else 0
+    bar = (CANVAS.h - band) // 2 if 0 < band < CANVAS.h else 0
     fps = OUT_FPS
     start_f = [int(round(e["out_start"] * fps)) for e in segs]
     dur_f = [int(round(e["dur"] * fps)) for e in segs]
@@ -584,7 +624,7 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         length = n / fps
         e2 = dict(e)
         band = int((plan.get("frame") or {}).get("band") or 0)
-        if band and band < OUT_H and not e.get("panel"):
+        if band and band < CANVAS.h and not e.get("panel"):
             e2["_band"] = band
         if e["kind"] == "video":
             lead_speed = retime.speed_at(retime.seg_keys(e), 0.0) if e.get("ramp") else e.get("speed", 1.0)
@@ -592,7 +632,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         key = short_hash(repr(sorted((k, str(v)) for k, v in e2.items()
                                     if k not in ("idx", "out_start", "note", "trans_out", "trans_dur", "trans_params",
                                                  "level", "drop", "static", "score")))
-                         + f"{n}" + repr(plan.get("color")) + repr(plan.get("grade")) + str(zoom) + RENDER_VERSION, 14)
+                         + f"{n}" + repr(plan.get("color")) + repr(plan.get("grade")) + str(zoom) + RENDER_VERSION
+                         + (f"{CANVAS.w}x{CANVAS.h}" if CANVAS.horizontal else ""), 14)
         f = seg_dir / f"seg_{key}.mp4"
         files.append((f, n))
         if not f.exists():
@@ -625,7 +666,7 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
 
     # ---- final encode: frames from the compositor + text overlays + music
     total = total_f / fps
-    inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OUT_W}x{OUT_H}", "-r", str(fps), "-i", "-"]
+    inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CANVAS.w}x{CANVAS.h}", "-r", str(fps), "-i", "-"]
     vfade = min(float(plan.get("fade_out_video") or 0), total_f / fps * 0.5)
     fc, n_in = [f"[0:v]{f'fade=t=out:st={total_f / fps - vfade:.3f}:d={vfade:.3f},' if vfade > 0.05 else ''}"
                 "format=yuv420p[vout]"], 1
@@ -705,7 +746,7 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                     if not frame.flags.writeable:
                         frame = frame.copy()
                     frame[:bar] = 0
-                    frame[OUT_H - bar:] = 0
+                    frame[CANVAS.h - bar:] = 0
                 if maps is not None:
                     frame = maps.draw(frame, n / fps)
                 frame = texts.draw(frame, n / fps, segs[i])
@@ -736,9 +777,26 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
     return out_path
 
 
+def cover_time(plan: dict) -> float:
+    """The moment of the opening shot that makes the cover: with the title up if the reel has one, never in the
+    middle of a sentence (one word of a lyric, a subtitle or half a tease says nothing as a still)."""
+    d = float(plan["segments"][0]["dur"])
+
+    def spans(pick):
+        return [(float(o.get("start", 0)), float(o.get("start", 0)) + float(o.get("duration", 0)))
+                for o in plan.get("overlays") or [] if pick(o)]
+    passing = spans(lambda o: o.get("type") == "caption" or o.get("recipe") in ("lyric", "tease"))
+    titles = spans(lambda o: o.get("type") == "hook" and o.get("recipe") not in ("lyric", "tease"))
+    free = [t for t in (d * k / 24 for k in range(2, 23)) if not any(a - 0.1 <= t <= b + 0.2 for a, b in passing)]
+    if not free:
+        return d / 2
+    titled = [t for t in free if any(a + 0.6 <= t <= b - 0.3 for a, b in titles)]  # in and settled, not on its way out
+    return min(titled or free, key=lambda t: abs(t - d / 2))
+
+
 def export_cover(plan: dict, video: Path, out: Path) -> Path | None:
-    """Cover image: middle of the first segment (the hook)."""
-    t = plan["segments"][0]["dur"] / 2
+    """Cover image: a still of the first segment (the hook), see cover_time."""
+    t = cover_time(plan)
     proc = subprocess.run(ffmpeg_base() + ["-ss", f"{t:.2f}", "-i", str(video), "-frames:v", "1", "-q:v", "2", str(out)],
                           capture_output=True, text=True)
     return out if proc.returncode == 0 else None

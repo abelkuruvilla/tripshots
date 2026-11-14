@@ -29,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .config import HOME, OUT_FPS, OUT_H, OUT_W
+from .config import CANVAS, HOME, OUT_FPS
 from .util import ReelError, ffmpeg_base, is_mac, log, read_json, run, write_json
 
 MANIFEST_VERSION = 1
@@ -144,7 +144,7 @@ def package(plan_path: Path, out_dir: Path | None = None, clips: bool = True, st
             shutil.copy2(src, pkg / src.name)
     manifest = {
         "tripshots_edits": MANIFEST_VERSION, "created": datetime.now().isoformat(timespec="seconds"),
-        "name": name, "plan": str(plan_path), "width": OUT_W, "height": OUT_H, "fps": OUT_FPS,
+        "name": name, "plan": str(plan_path), "width": CANVAS.w, "height": CANVAS.h, "fps": OUT_FPS,
         "duration": round(float(plan["duration"]), 4), "tempo": plan.get("tempo"),
         "beats": [round(float(b), 3) for b in plan.get("beats") or []],
         "picture": {"file": picture.name, "contains": ["colour grade", "motion and transitions", "effects",
@@ -177,7 +177,7 @@ def package(plan_path: Path, out_dir: Path | None = None, clips: bool = True, st
 def _text_png(el, out: Path):
     """One text element in its final state as a transparent PNG, cropped; box normalised to the frame."""
     from PIL import Image
-    canvas = Image.new("RGBA", (OUT_W, OUT_H), (0, 0, 0, 0))
+    canvas = Image.new("RGBA", (CANVAS.w, CANVAS.h), (0, 0, 0, 0))
     for sp in el.sprites:
         im = Image.fromarray((np.clip(sp.img, 0, 1) * 255).astype(np.uint8), "RGBA")
         layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
@@ -188,8 +188,8 @@ def _text_png(el, out: Path):
         return None
     canvas.crop(bb).save(out)
     x0, y0, x1, y1 = bb
-    return out, {"x": round(x0 / OUT_W, 4), "y": round(y0 / OUT_H, 4),
-                 "w": round((x1 - x0) / OUT_W, 4), "h": round((y1 - y0) / OUT_H, 4)}
+    return out, {"x": round(x0 / CANVAS.w, 4), "y": round(y0 / CANVAS.h, 4),
+                 "w": round((x1 - x0) / CANVAS.w, 4), "h": round((y1 - y0) / CANVAS.h, 4)}
 
 
 def _readme(m: dict) -> str:

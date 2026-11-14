@@ -33,8 +33,16 @@ _AUTH_WORDS = ("not logged in", "please run /login", "invalid api key", "oauth t
                "authentication_error", "authentication failed", "credit balance is too low", "401")
 
 
+_LIMIT_WORDS = ("hit your session limit", "hit your usage limit", "hit your limit", "usage limit reached",
+                "session limit reached", "weekly limit", "limit will reset", "out of extra usage")
+
+
 class AIAuthError(ReelError):
     """The AI backend can't be used at all (not logged in, bad key, no credit): stop asking it."""
+
+
+class AILimitError(AIAuthError):
+    """The AI's usage limit is spent for now: stop asking it; the work can be finished after it resets."""
 
 
 class ClaudeCLI(Backend):
@@ -43,6 +51,7 @@ class ClaudeCLI(Backend):
     def __init__(self, model: str | None = None):
         self.model = model or os.environ.get("TRIPSHOTS_CLAUDE_MODEL") or None
         self.broken: str | None = None  # set on the first login/key error: later calls fail at once
+        self.limited = False            # ... or when the usage limit is spent
 
     @staticmethod
     def login_status() -> dict | None:
@@ -56,7 +65,7 @@ class ClaudeCLI(Backend):
 
     def ask(self, prompt, images=None, max_tokens=4000):
         if self.broken:
-            raise AIAuthError(self.broken)
+            raise (AILimitError if self.limited else AIAuthError)(self.broken)
         images = images or []
         if images:
             listing = "\n".join(f"- {p.resolve()}" for p in images)
@@ -76,6 +85,9 @@ class ClaudeCLI(Backend):
         if proc.returncode != 0 or (isinstance(data, dict) and data.get("is_error")):
             msg = str(data.get("result")) if isinstance(data, dict) and data.get("result") else \
                 (proc.stderr or proc.stdout or "").strip()[-300:]
+            if any(w in msg.lower() for w in _LIMIT_WORDS):
+                self.broken, self.limited = f"the AI's usage limit is reached (Claude Code said: {msg.strip()[:120]})", True
+                raise AILimitError(self.broken)
             if any(w in msg.lower() for w in _AUTH_WORDS):
                 self.broken = f"{LOGIN_HELP}. (Claude Code said: {msg.strip()[:120]})"
                 raise AIAuthError(self.broken)
@@ -248,7 +260,7 @@ SCENES = ["landscape", "mountains", "water", "beach", "forest", "desert", "snow"
 TIMES = ["sunrise", "morning", "midday", "afternoon", "golden-hour", "sunset", "blue-hour", "night", "indoor", "unknown"]
 WEATHER = ["clear", "partly-cloudy", "overcast", "fog", "rain", "snow", "storm", "unknown"]
 ISSUES = ["blurry", "motion-blur", "shaky", "out-of-focus", "dark", "overexposed", "low-contrast", "noisy",
-          "tilted", "cluttered", "obstructed", "finger", "lens-flare", "low-res", "accidental"]
+          "tilted", "cluttered", "obstructed", "finger", "lens-flare", "low-res", "accidental", "burned-in-text"]
 MOTIONS = ["static", "pan", "tilt", "push", "drone", "walk", "timelapse", "handheld"]
 
 SCORE_PROMPT = """You are cataloguing someone's personal travel photos and video clips. Your descriptions are reused for
@@ -271,7 +283,8 @@ For EVERY ID, describe what is actually visible. Be factual and specific; never 
 - landmark: the name of a famous, clearly recognisable place or landmark, else null. Never guess.
 - aesthetic: 1-10 as a photograph anyone would want to keep: 9-10 striking light, composition and moment; 7-8 strong;
   5-6 ordinary snapshot; 1-4 weak.
-- issues: problems you can see, from {issues}; [] if none.
+- issues: problems you can see, from {issues}; [] if none. "burned-in-text" = titles, captions, a watermark or
+  app buttons drawn ON the picture (an edited export, a saved reel, a screenshot); signs in the scene don't count.
 - usable: false for accidental, pocket, blurry or screenshot-like shots nobody would share.
 - duplicate_of: the ID of an earlier, better-or-equal tile in this sheet showing nearly the same view, else null.
 For Instagram Reels specifically:
@@ -475,7 +488,8 @@ def clean_line(t: str) -> str:
         cat = unicodedata.category(ch)
         if cat[0] in "LNPZ" or ch in "&°%$€£+#@'’·":
             keep.append(ch)
-    return " ".join("".join(keep).split()).strip()
+    out = " ".join("".join(keep).split()).strip()
+    return re.sub(r"\.{4,}|…\.+|\.+…", "...", out)  # "dream about...." trails off with three dots, like any line
 
 
 def _hook_rules(h: str, fmt: str) -> float:
@@ -489,6 +503,49 @@ def _hook_rules(h: str, fmt: str) -> float:
     v += 0.8 if low.startswith("pov") and fmt in ("pov", "montage") else 0.0
     v += 0.6 if "?" in h or any(x in low for x in ("wait", "nobody", "didn't", "never", "why", "how", "this is")) else 0
     return max(0.0, min(10.0, v))
+
+
+def misplaced(text: str, facts: list[dict]) -> list[tuple[str, str, str]]:
+    """Names a text puts in the wrong region: [(name, the region it says, the region it is in)]. `facts`: what
+    is known per shot {landmark, place, region}. Only a region named in the same clause as the name counts
+    ("Utah's Half Dome", "Lake McDonald in California"); "from Half Dome in California to Utah" is fine."""
+    regions = {str(f["region"]) for f in facts or [] if f and f.get("region")}
+    home: dict[str, set] = {}
+    for f in facts or []:
+        for k in ("landmark", "place"):
+            name = str((f or {}).get(k) or "").split(",")[0].strip()
+            if len(name) >= 4 and f.get("region") and name not in regions:
+                home.setdefault(name, set()).add(str(f["region"]))
+    out = []
+    for clause in re.split(r"[.;:!?\n,]| then | and then | to ", str(text or "")):
+        said = [r for r in regions if re.search(rf"\b{re.escape(r)}\b", clause, re.I)]
+        for name, true in home.items():
+            if said and not (set(said) & true) and re.search(rf"\b{re.escape(name)}\b", clause, re.I):
+                out.append((name, said[0], sorted(true)[0]))
+    return out
+
+
+def true_caption(backend: Backend, caption: str, facts: list[dict]) -> str:
+    """A caption with every place in its own region: one correction is asked for, and a sentence that still
+    has a place wrong is dropped (what a caption says about a trip is read as fact)."""
+    bad = misplaced(caption, facts)
+    if not bad:
+        return caption
+    wrong = "; ".join(f"{n} is in {t}, not {s}" for n, s, t in bad)
+    debug(f"caption had places wrong ({wrong}): asking again")
+    try:
+        again = str(backend.ask(f"This Reel caption gets places wrong: {wrong}.\n\n{caption}\n\nRewrite it with every "
+                                "place in its right region, changing nothing else. Return ONLY the caption.",
+                                None, max_tokens=400)).strip().strip('"')
+        if again and len(again) < 3 * len(caption) + 80 and not misplaced(again, facts):
+            return again
+    except Exception as e:
+        debug(f"caption correction failed: {e}")
+    kept = [ln for ln in re.split(r"(?<=[.!?])\s+|\n+", caption) if ln.strip() and not misplaced(ln, facts)]
+    regions = list(dict.fromkeys(str(f["region"]) for f in facts if f and f.get("region")))
+    if regions and not any(re.search(rf"\b{re.escape(r)}\b", " ".join(kept), re.I) for r in regions):
+        kept.insert(0, (", ".join(regions[:-1]) + " and " + regions[-1] if len(regions) > 1 else regions[0]) + ".")
+    return "\n".join(kept)
 
 
 def write_story_copy(backend: Backend, plan: dict, shots_by_id: dict, style: dict, fmt: str = "montage",
@@ -519,12 +576,83 @@ def write_story_copy(backend: Backend, plan: dict, shots_by_id: dict, style: dic
         lines = "; ".join(ln.get("english") or ln["text"] for ln in words["lines"][:8])
         sound = (f"\nThe sound is {words.get('kind')} ({words.get('language') or '?'}), in English: \"{lines[:400]}\". "
                  "Make the hook set up these words (the picture answers them), without repeating them.")
+    ref, model, more, rule = extra.get("reference") or {}, "", "", ""
+    kind = extra.get("text_kind")
+    facts = extra.get("facts") or []
+
+    def where(f: dict) -> str:
+        bits = [f"{k}: {f[k]}" for k in ("landmark", "place", "region") if f.get(k)]
+        return ("; ".join(bits) + (" (position from a picture taken minutes apart)" if f.get("near") else "")) \
+            if bits else "not known"
+    if not places and facts:  # no location titles asked for: the copy still names where the trip went
+        places = [p for p in dict.fromkeys(f.get(k) for k in ("region", "landmark") for f in facts) if p][:12]
+    def light(i: int) -> str:  # the dusk belongs to the shot it was filmed in, not to the best-known name
+        a = shots_by_id.get(segs[i].get("shot_id"), {}).get("ai", {}) if i < len(segs) else {}
+        tod = str(a.get("time_of_day") or "").lower().replace("_", " ")
+        plain = ("day", "midday", "morning", "afternoon", "indoor", "unknown", "none")
+        return f" ({tod})" if tod and tod not in plain else ""
+    spots = ""
+    if facts and any(facts):
+        spots = ("\nWhere each shot was filmed, in story order (the light is given where it isn't plain daylight; "
+                 "a sunset, a night or a storm is only ever said of the place it is listed with):\n"
+                 + "\n".join(f"{i + 1}. {where(f)}{light(i)}" for i, f in enumerate(facts)))
+    if extra.get("when"):
+        spots += f"\nFilmed: {extra['when']}."
+    if kind in ("tease", "title", "labels") and ref:
+        # the reel follows one reference's recipe: its words do a job (a line held over the opening, then the
+        # answer when the cut changes gear; one title over everything; a name on every shot). Ours do the same
+        # job for our trip.
+        def quoted(v) -> str:
+            return " / ".join(f'"{x}"' for x in v) if isinstance(v, list) else f'"{v}"'
+        model = ("\nThe reel this one is modelled on shows these words on screen: "
+                 + "; ".join(f"{k}: {quoted(v)}" for k, v in ref.items()) + ". Ours work the same way, about OUR trip.")
+        if kind == "tease":
+            n_pay = len(ref["payoff"]) if isinstance(ref.get("payoff"), list) else 1
+            more = ', "tease": "...", "payoff": ' + ('"..."' if n_pay == 1 else f'[{n_pay} strings]')
+            rule = ("- tease: the line held over the opening, built like the reference tease (same device, about as "
+                    "long, max 7 words), true to these places. payoff: "
+                    + ("the line that answers it when the montage starts, max 5 words" if n_pay == 1 else
+                       f"{n_pay} lines shown one after another, each about as long as the reference's and never "
+                       "longer (at most " + ", ".join(str(len(str(x).split())) for x in ref["payoff"])
+                       + " words: each is on screen only as long as the reference's)")
+                    + ". Read together, tease then payoff are ONE thought exactly the way the reference's are: when "
+                    "the reference payoff finishes the tease's sentence (\"this is\" -> \"the faroe islands\"), ours "
+                    "finishes it too and reads as a sentence; when it answers or turns it, ours does that. Each line "
+                    "is something a person would say: a payoff that stands alone names what the shots after it are "
+                    "(\"The gallery\", \"The camera roll\"), never a bare month, season or adjective (\"The October\").")
+        elif kind == "title":
+            more = ', "title": "..."'
+            rule = ("- title: the one title of this reel, built like the reference title: the same device, the same "
+                    "number of words give or take one, nothing added (a reference that is just a place and a year "
+                    "gives just our place and our year; a place name gives our place name). True to the places and "
+                    "dates above.")
+        elif kind == "labels" and facts:
+            more = f', "labels": [{len(facts)} strings]'
+            n_ref = len(ref["label"]) if isinstance(ref.get("label"), list) else 1
+            regs = [f.get("region") for f in facts if f.get("region")]
+            n_reg = len(set(regs))
+            runs = sum(1 for k, r in enumerate(regs) if k == 0 or r != regs[k - 1])
+            often = runs >= max(3, len(facts) / 3)  # the region changes at least every third shot
+            rule = (f"- labels: the reference puts a name on every shot (see its label lines: the part that changes "
+                    f"from one to the next is the name; it shows {'a new name on almost every shot' if n_ref > 3 else 'few names'}"
+                    f"). Give that name for each of our {len(facts)} shots, in order. Our shots were filmed in "
+                    f"{n_reg} region{'s' if n_reg != 1 else ''}, {runs} one after another. "
+                    + ("When the reference's names are regions (states, countries), ours are too: each shot's "
+                       "region, exactly as listed. " if often else
+                       "Our region changes too seldom to carry a name per shot: ")
+                    + "When the reference names places, or the region can't carry it, use the best-known name the "
+                    "list gives for the shot (a national park, a landmark, a city), never a county or a hamlet "
+                    "nobody has heard of. ONE kind of name through the whole reel: if some shots only have a region, "
+                    "every shot gets its region. Only names from that shot's line, written the way people say them, "
+                    "max 3 words, without the words every reference label starts with. Neighbouring shots of one "
+                    "place share a name. \"\" when a shot's place is not known.")
     prompt = f"""You write the words for a short travel Reel made from the creator's own footage.
 Format: {fmt}. Places: {', '.join(places) or 'unknown'}.
-What the shots show, in story order: {'; '.join(notes[:10]) or ', '.join(dict.fromkeys(tags))}.{sound}
+What the shots show, in story order: {'; '.join(notes[:10]) or ', '.join(dict.fromkeys(tags))}.{spots}{sound}{model}
 Tone: {style.get('caption', {}).get('tone')}.
 Return ONLY JSON: {{"hooks": [{{"text": "...", "type": "curiosity|pov|number|bold|feeling|tease",
-"clarity": 0-10, "curiosity": 0-10, "emotion": 0-10}}], "cta": "...", "caption": "...", "hashtags": ["..."]}}
+"clarity": 0-10, "curiosity": 0-10, "emotion": 0-10}}], "cta": "...", "caption": "...", "hashtags": ["..."]{more}}}
+{rule}
 - hooks: 3 different on-screen opening lines, max 7 words each, readable in one second, never invented facts.
   This format's hook {fmt_rule}. Score each honestly: clarity (reads at a glance), curiosity (makes you stay to
   see), emotion (makes you feel something). No clichés (wanderlust, vibes, paradise, breathtaking).
@@ -534,7 +662,7 @@ Return ONLY JSON: {{"hooks": [{{"text": "...", "type": "curiosity|pov|number|bol
   question the viewer can answer in a comment.
 - hashtags: {min(6, int(style.get('caption', {}).get('hashtags', 6) or 6))} specific ones (places first), without #."""
     try:
-        data = extract_json(backend.ask(prompt, None, max_tokens=900))
+        data = extract_json(backend.ask(prompt, None, max_tokens=900 + 14 * len(facts)))
     except Exception as e:
         debug(f"story copy failed: {e}")
         return {}
@@ -548,9 +676,16 @@ Return ONLY JSON: {{"hooks": [{{"text": "...", "type": "curiosity|pov|number|bol
                       "score": round(0.65 * ai_score + 0.35 * _hook_rules(t, fmt), 2)})
     hooks = [h for h in hooks if h["text"] not in av] or hooks
     hooks.sort(key=lambda h: -h["score"])
-    return {"hooks": hooks, "hook": hooks[0]["text"] if hooks else None,
+    lines = {k: clean_line(str(data.get(k) or "").strip().strip('"')) for k in ("tease", "payoff", "title")
+             if data.get(k) and not isinstance(data.get(k), list)}
+    if isinstance(data.get("payoff"), list):
+        lines["payoff"] = [clean_line(str(p).strip().strip('"')) for p in data["payoff"] if str(p).strip()]
+    if isinstance(data.get("labels"), list):
+        lines["labels"] = [str(x or "").strip() for x in data["labels"]]
+    return {"hooks": hooks, "hook": hooks[0]["text"] if hooks else None, **lines,
             "hook_type": hooks[0]["type"] if hooks else None,
-            "cta": clean_line(str(data.get("cta", ""))), "caption": str(data.get("caption", "")).strip(),
+            "cta": clean_line(str(data.get("cta", ""))),
+            "caption": true_caption(backend, str(data.get("caption", "")).strip(), facts),
             "hashtags": [str(h).lstrip("#").replace(" ", "") for h in data.get("hashtags", [])]}
 
 

@@ -995,10 +995,15 @@ class StylesTab(Horizontal):
         refs = s.get("learned_from") or []
         if not refs:
             return ""
+        from . import recipes
         from .learn import describe_profile
+        rs = [r for r in s.get("recipes") or [] if isinstance(r, dict)]
         return (f"\n\n[b]Learned from[/b] {len(refs)} example reel(s)\n"
                 + "\n".join(f"  {str(r)[:90]}" for r in refs[:6])
-                + f"\n[b]How they hold attention[/b] {describe_profile(s.get('attention') or {})}")
+                + f"\n[b]How they hold attention[/b] {describe_profile(s.get('attention') or {})}"
+                + ("\n[b]Recipes[/b] a reel follows one: the example whose sound you use, else the best fit "
+                   "for the song\n" + "\n".join(f"  {i}. {recipes.describe(r)}" for i, r in enumerate(rs, 1))
+                   if rs else ""))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id

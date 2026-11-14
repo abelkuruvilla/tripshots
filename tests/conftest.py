@@ -16,6 +16,15 @@ os.environ.pop("GEMINI_API_KEY", None)
 needs_ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 
 
+@pytest.fixture(autouse=True)
+def _upright_canvas():
+    """The frame is process-wide state (config.CANVAS): every test starts and ends on the upright reel."""
+    yield
+    from tripshots import framing
+    framing.set_canvas(False)
+    framing.set_frame("9:16")
+
+
 def ff(*args):
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", *map(str, args)], check=True)
 

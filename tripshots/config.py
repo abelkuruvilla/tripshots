@@ -32,7 +32,39 @@ BUILTIN_STYLES = Path(__file__).parent / "styles"
 USER_STYLES = HOME / "styles"
 CACHE_ROOT = HOME / "cache"
 
-OUT_W, OUT_H, OUT_FPS = 1080, 1920, 30
+OUT_W, OUT_H, OUT_FPS = 1080, 1920, 30  # the upright reel; the frame of the reel being made is CANVAS
+
+
+class Canvas:
+    """The frame of the reel being made: 1080x1920, or 1920x1080 for a horizontal reel (framing.set_canvas).
+    Everything that draws, lays out or checks a frame reads its size here, at the time it runs."""
+    w, h = OUT_W, OUT_H
+
+    def __init__(self):
+        self.listeners: list = []  # called after the frame changed (typo re-lays its safe area and text bands)
+
+    @property
+    def size(self) -> tuple[int, int]:
+        return self.w, self.h
+
+    @property
+    def horizontal(self) -> bool:
+        return self.w > self.h
+
+    @property
+    def text(self) -> float:
+        """How much bigger lettering is set than on the upright reel. A horizontal reel is shown across the
+        phone's width, so a letter of the same pixel size is little more than half as tall on the screen."""
+        return 1.4 if self.horizontal else 1.0
+
+    def set(self, w: int, h: int) -> None:
+        if (w, h) != (self.w, self.h):
+            self.w, self.h = int(w), int(h)
+            for fn in self.listeners:
+                fn()
+
+
+CANVAS = Canvas()
 
 DEFAULT_STYLE: dict = {
     "name": "default",
@@ -50,6 +82,8 @@ DEFAULT_STYLE: dict = {
         "min_score": 6,
         "ordering": "energy",          # energy | chronological | score
         "max_per_source": 3,
+        "place_variety": 1.0,           # 0 = any place as often as it scores; 1 = spread the reel over the trip's places
+        "fresh": 1.0,                   # 0 = off; 1 = shots your earlier reels showed are marked down (history.py)
         "slowmo": True,                 # play high-fps calm shots at half speed
     },
     "layout": {
@@ -58,14 +92,17 @@ DEFAULT_STYLE: dict = {
         "photo_zoom": 1.12,
         "pan_speed": 0.06,              # pans and drifts: at most this share of the picture's width per second
     },
-    # frame: the picture's shape inside the 9:16 reel. aspect 9:16 = full screen; 16:9 or 2.39:1 = a cinematic
-    # letterbox (the picture in a band, black above and below, text in the bars)
-    "frame": {"aspect": "9:16"},
+    # frame: the picture's shape. aspect 9:16 = an upright reel; 16:9 or 2.39:1 = a wide picture. output says
+    # which file a wide picture gets: auto / horizontal = a horizontal reel (1920x1080, the picture fills it, no
+    # bars), vertical = the upright file with the picture in a band (black above and below, text in the bars).
+    # auto also goes horizontal when most of an upright reel's shots would only fit whole over a blurred copy.
+    "frame": {"aspect": "9:16", "output": "auto"},
     # taste: what the edit should look for in your footage (learned from reference reels by `tripshots learn`).
     # look: the references' light and colour (diversity.look vector); weight 0..1 how strongly shots that look
     # like that are preferred; light: the kinds of light they show (golden_hour, sunset, fog, ...); people: how
-    # people appear (silhouette, back_to_camera, facing_camera, none).
-    "taste": {"look": None, "weight": 0.0, "light": [], "people": ""},
+    # people appear (silhouette, back_to_camera, facing_camera, none); footage: what they are made of (video |
+    # photos | mixed): a style learned from moving pictures prefers your clips to your photos.
+    "taste": {"look": None, "weight": 0.0, "light": [], "people": "", "footage": ""},
     # transitions: which ones per energy level, what share of cuts get one (the rest are hard
     # cuts on the beat), speed multiplier; "at: sections" forces one at every energy change/drop
     "transitions": {
@@ -139,11 +176,20 @@ DEFAULT_STYLE: dict = {
     # detail|action}, peak_at: where the payoff is held (0-1), variety, mix {wide, people, detail}, speed, reveal, loop.
     # Empty = the built-in story rhythm.
     "attention": {},
+    # recipes (written by `learn`, recipes.py): one per reference reel, kept whole instead of averaged away:
+    # {id, source, duration, tempo, shots [seconds], structure: hold_burst (a long opening shot, then fast cuts) |
+    # flash_intro (a burst of flashes, then steady shots) | steady | montage, turn (where it changes, s), frame,
+    # format, open, people, text {kind: lyrics|tease|title|labels|subtitles|none, lines [{text, from, to, role}],
+    # position, look: caps|script|sans|serif|mono, size: small|medium|large, color, per_word}, why}.
+    # story.recipe picks one per reel: auto (the reference whose sound you use, else the one that fits the song
+    # best) | off (the averaged attention profile) | a number or id (1, r3).
+    "recipes": [],
     # direction: a few sentences on how this style is directed (story, rhythm, camera, light, text); the critic's
     # AI review reads it with tripshots/DIRECTOR.md. `learn` writes one from the reference reels.
     "direction": "",
     "story": {"arc": "on", "format": "auto", "hook_text": "on", "hook_punch": True, "people_first": True,
-              "loop": True, "captions": "auto", "parallax": "auto", "match_cuts": True, "critic": "auto"},
+              "loop": True, "captions": "auto", "parallax": "auto", "match_cuts": True, "critic": "auto",
+              "recipe": "auto"},
     # photo in a frame with the subject stepping out of it (needs rembg for the cut-out)
     "popout": {"use": 0.0, "bg": "paper", "variant": "auto"},
     "caption": {"tone": "warm, concise, first-person travel storyteller", "hashtags": 12},

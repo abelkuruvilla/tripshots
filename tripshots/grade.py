@@ -156,6 +156,9 @@ def save_look(look: dict, name: str) -> Path:
 
 
 # ------------------------------------------------------------ transform
+MAX_CONTRAST = 2.0  # how far a grade may stretch a shot's own tones apart (x its own spread around the middle)
+
+
 def _smooth(x, e0, e1):
     t = np.clip((x - e0) / (e1 - e0), 0, 1)
     return t * t * (3 - 2 * t)
@@ -201,6 +204,10 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
     up = np.minimum(28 if full else 18, 0.5 * sq + 1)
     down = np.minimum(24 if full else 14, (0.45 if full else 0.3) * (100 - sq) + 1)
     tq = sq + np.clip(tq - sq, -down, up)
+    # and a flat scene stays flat: sand, fog or a grey sea has its tones close together, and pulling them as far
+    # apart as the look's turns texture into blotches. Around its middle tone the contrast at most doubles.
+    spread = MAX_CONTRAST * (sq - sq[3])
+    tq = tq[3] + np.where(sq >= sq[3], np.minimum(tq - tq[3], spread + 1), np.maximum(tq - tq[3], spread - 1))
     xp = np.concatenate([[0.0], sq, [100.0]])
     blk = float(np.clip(float(look.get("black", 1)), 0, 20))
     wht = float(np.clip(float(look.get("white", 99)), 85, 100))
@@ -280,7 +287,7 @@ def write_cube(f, path: Path, size: int = GRID) -> Path:
 
 
 def shot_lut(src_stats: dict, look: dict, strength: float, notes: dict | None) -> Path:
-    key = hashlib.sha1(json.dumps(["g5", src_stats, {k: look.get(k) for k in ("Lq", "black", "white", "sh_ab", "mid_ab", "hue",
+    key = hashlib.sha1(json.dumps(["g6", src_stats, {k: look.get(k) for k in ("Lq", "black", "white", "sh_ab", "mid_ab", "hue",
                                                                         "hi_ab", "chroma")}, round(strength, 3),
                                    notes or {}], sort_keys=True, default=str).encode()).hexdigest()[:16]
     p = LUT_DIR / f"{key}.cube"

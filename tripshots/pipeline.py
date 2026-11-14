@@ -83,6 +83,65 @@ def resolve_music(music: str | Path | None, cookies: dict | None = None) -> tupl
     return p, audio_meta(p)
 
 
+def _regions(shots: list[dict]) -> dict:
+    """{shot id: state or country} for every usable shot whose position is known (its own GPS or the picture
+    taken closest in time). One lookup per ~10 km cell, kept on disk."""
+    from . import geo
+    from .diversity import positions
+    pos = positions([s for s in shots if s.get("ai", {}).get("usable", True)])
+    cells = {(round(g[0], 1), round(g[1], 1)) for g in pos.values()}
+    if len(cells) > 20:
+        log(f"looking up the region of {len(cells)} areas this footage was filmed in (kept for next time)")
+    out = {}
+    for sid, g in pos.items():
+        r = geo.region(g[0], g[1], coarse=True)
+        if r:
+            out[sid] = r
+    return out
+
+
+_ADMIN = re.compile(r"\b(County|Parish|Borough|Census Area|Municipality|District|Township)$", re.I)
+
+
+def _seg_facts(plan: dict, by_id: dict, shots: list[dict], full: bool = False) -> list[dict]:
+    """Per slot, what is known about where its shot was filmed: `landmark` (what the AI recognised), `region`
+    (state or country), with `full` also `place` (the park, landmark or town from OpenStreetMap), and `near`
+    when the position is borrowed from the picture taken closest in time. {} for a slot nothing is known of."""
+    from . import geo
+    from .diversity import positions
+    pos = positions(shots)
+    out = []
+    for sg in plan["segments"]:
+        s = by_id.get(sg.get("shot_id")) or {}
+        f: dict = {}
+        lm = (s.get("ai") or {}).get("landmark")
+        if lm and str(lm).lower() not in ("none", "null", "unknown"):
+            f["landmark"] = str(lm)
+        g = pos.get(s.get("id"))
+        if g:
+            # a county is where the map files a spot, not what anyone calls it: the region says more
+            if full and (p := geo.place_name(*g)) and not _ADMIN.search(p.split(",")[0].strip()):
+                f["place"] = p
+            if r := geo.region(g[0], g[1], coarse=not full):
+                f["region"] = r
+            if f and not s.get("gps"):
+                f["near"] = True
+        out.append(f)
+    return out
+
+
+def _filmed(plan: dict, by_id: dict) -> str | None:
+    """When the reel's shots were filmed, in words: "June 2026", "May to June 2026"."""
+    from .diversity import _when
+    ts = sorted(t for sg in plan["segments"] if (t := _when(by_id.get(sg.get("shot_id")) or {})) is not None)
+    if not ts:
+        return None
+    a, b = datetime.fromtimestamp(ts[0]), datetime.fromtimestamp(ts[-1])
+    if (a.year, a.month) == (b.year, b.month):
+        return a.strftime("%B %Y")
+    return f"{a.strftime('%B') if a.year == b.year else a.strftime('%B %Y')} to {b.strftime('%B %Y')}"
+
+
 def make(inputs: list[Path], music: str | Path | None, style_name: str | None, out: Path | None,
          duration: float | None, backend_name: str | None, hook: str | None, location: str | None,
          no_location: bool, dry_run: bool, workers: int = 2, source_opts: dict | None = None,
@@ -135,12 +194,24 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
     if ex.get("labels"):
         style["text"].setdefault("labels", {})["mode"] = ex["labels"]
     stc = style.setdefault("story", {})
-    for k in ("format", "arc", "captions", "critic", "parallax"):
+    for k in ("format", "arc", "captions", "critic", "parallax", "recipe"):
         if ex.get(k):
             stc[k] = ex[k]
+    asked = tuple(k for k in ("format", "captions") if ex.get(k)) + (("loop",) if ex.get("loop") is not None else ())
+    # ^ what a recipe must leave alone
     if stc.get("captions"):
         from .lyrics import caption_mode
         stc["captions"] = caption_mode(stc["captions"])  # a bad language fails here, not after the analysis
+    if ex.get("orientation"):
+        o = str(ex["orientation"]).lower()
+        if o not in ("auto", "vertical", "horizontal"):
+            raise ReelError(f"--orientation {o}: use auto, vertical or horizontal")
+        style["frame"] = {**(style.get("frame") or {}), "output": o}
+    if ex.get("fresh"):
+        f = str(ex["fresh"]).lower()
+        if f not in ("on", "off"):
+            raise ReelError(f"--fresh {f}: use on or off")
+        style["shots"]["fresh"] = 0.0 if f == "off" else (float(style["shots"].get("fresh", 1.0) or 0) or 1.0)
     if ex.get("variant"):
         style["shots"]["variant"] = int(ex["variant"])
     if ex.get("avoid_hooks"):
@@ -157,7 +228,8 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         style["shots"]["min_score"] = float(min_score) + 2  # planner allows min_score - 2 when footage is thin
     if allow_similar:
         style["shots"]["allow_similar"] = True
-    if no_location or os.environ.get("TRIPSHOTS_NO_LOCATION") == "1":
+    no_place = bool(no_location or os.environ.get("TRIPSHOTS_NO_LOCATION") == "1")
+    if no_place:
         style["text"]["location"]["mode"] = "off"
     music, mmeta = resolve_music(music, cookies)  # download first: fails fast on a bad link
     if music_start is not None:
@@ -166,24 +238,50 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         # a reel's sound starts where Instagram starts it; cutting from 0:00 keeps the edit
         # in sync when you attach the same sound in the app
         style["music"]["window"] = 0.0
+        style["_music_exact"] = True  # ...from its first sample, not from the first downbeat after it
     if upload_copy is None:
         upload_copy = bool(mmeta.get("from_url"))
     shots, backend, work = prepare_shots(inputs, backend_name, source_opts=source_opts, rescore=rescore)
     by_id = {s["id"]: s for s in shots}
+    if float(style["shots"].get("fresh", 1.0) or 0) > 0:
+        # a series from one trip: what an earlier reel showed steps back, above all its opening and ending
+        from . import history
+        from .diversity import place_keys
+        seen = history.shown(shots, [out, *(ex.get("siblings") or [])], place_keys(shots))
+        if seen["n"]:
+            style["_shown"] = seen
+            names = seen["reels"][:3]
+            log(f"{seen['n']} of these shots were in your earlier reels ({', '.join(names)}"
+                + (f" and {len(seen['reels']) - 3} more" if len(seen["reels"]) > 3 else "")
+                + "): this reel leans on other shots and opens and ends somewhere else (--fresh off allows repeats)")
     mus = analyze_music(music, work) if music else None
     if not music:
         log("no --music given: rendering a silent reel timed to 100 BPM (add a trending sound in Instagram)")
     st = style.setdefault("story", {})
     arc = str(st.get("arc", "on")).lower() not in ("off", "false", "0", "none")
     words = None
+    recipe = None
     places_all: dict = {}
     if arc:
         if music and str(st.get("words", "auto")) != "off":
             from . import lyrics
             words = lyrics.words(music, mus.get("duration") if mus else None)
             style["_words"] = words
+        if mus and style.get("recipes"):
+            # a style learned from several reels keeps each one's recipe: this reel follows one of them
+            from . import recipes
+            recipe = recipes.choose(style, mmeta.get("url"), mus, words, st.get("recipe", "auto"))
+            if recipe:
+                recipes.apply(style, recipe, mus, keep=asked)
+                log(f"recipe {recipe['id']}" + (" (this sound's own reel)" if recipe.get("_own") else "")
+                    + f": {recipes.describe(recipe)}")
+        named = bool(recipe) and (recipe.get("text") or {}).get("kind") == "labels" and not no_place
+        if named:
+            # a name on every shot: the reel is cut from shots whose place is known, one region after another
+            places_all = _regions(shots)
+            style["_named"] = set(places_all)
         # no location titles = no place names anywhere: not in the hook, not as numbered list labels
-        if style["text"]["location"].get("mode") != "off":
+        elif style["text"]["location"].get("mode") != "off":
             seen: dict = {}
             for s in sorted(shots, key=lambda s: -float(s.get("ai", {}).get("score", 5)))[:60]:
                 if s.get("gps"):
@@ -202,8 +300,22 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         st["format"] = fmt
         style["_places"] = places_all
         log(f"format: {fmt}")
+    if backend and arc and st.get("critic", "auto") in ("auto", "ai"):
+        from . import recipes as recipes_mod
+        from .framing import picture_aspect
+        style["_audition"] = lambda cands, need, spans: recipes_mod.audition(
+            cands, need, work, backend, recipe, spans, picture_aspect(style.get("frame")))
     plan = build_plan(shots, mus, style, duration, str(music.resolve()) if music else None)
+    from .framing import better_horizontal
+    if better_horizontal(plan, by_id, style.get("frame")):
+        log("every shot is landscape and most can't be cropped upright: making this reel horizontal "
+            "(--orientation vertical keeps it upright)")
+        style["frame"] = {**(style.get("frame") or {}), "aspect": "16:9", "output": "horizontal"}
+        plan = build_plan(shots, mus, style, duration, str(music.resolve()) if music else None)
     plan["photo_zoom"] = style["layout"].get("photo_zoom", 1.12)
+    if recipe:
+        from . import recipes
+        plan["recipe"] = recipes.brief(recipe)
     words_rel = None
     if arc and words and words.get("lines"):
         from . import lyrics
@@ -225,8 +337,13 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         hook_cfg = {**hook_cfg, "mode": "ai"}
         style["text"]["hook"] = hook_cfg
     copy = {}
-    if backend and arc:
+    facts: list[dict] = []
+
+    def story_copy() -> dict:
+        """The reel's words from the AI, for the plan as it stands (asked again when the critic changes a shot
+        that carries a name)."""
         from . import formats
+        nonlocal facts
         day, n_days = formats.trip_day([by_id[sg["shot_id"]] for sg in plan["segments"] if sg.get("shot_id") in by_id],
                                        shots)
         fmt = st.get("format", "montage")
@@ -234,8 +351,15 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
             fmt = st["format"] = "montage"
         plist = [formats.short_place(places_all.get(sg["shot_id"])) for sg in plan["segments"]]
         plist = [p for p in dict.fromkeys(plist) if p] + ([location] if location else [])
-        copy = ai_mod.write_story_copy(backend, plan, by_id, style, fmt, plist, words_rel,
-                                       {"day": day, "n_places": len(plist)})
+        extra = {"day": day, "n_places": len(plist)}
+        if recipe:
+            extra.update({"reference": recipes.reference_lines(recipe), "text_kind": plan["recipe"].get("text")})
+            if not no_place:  # the reference's words name places and dates: ours can only with the facts in hand
+                facts = _seg_facts(plan, by_id, shots, full=plan["recipe"].get("text") == "labels")
+                extra.update({"facts": facts, "when": _filmed(plan, by_id)})
+        return ai_mod.write_story_copy(backend, plan, by_id, style, fmt, plist, words_rel, extra) if backend else {}
+    if arc and (backend or recipe):
+        copy = story_copy()
         if copy.get("hooks"):
             log("hooks: " + " | ".join(f"{h['text']} ({h['score']:.1f})" for h in copy["hooks"]))
     elif backend:
@@ -245,7 +369,17 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
             want_hook=hook_cfg.get("mode") == "ai" and not hook,
             want_cta=(style["text"].get("cta") or {}).get("mode") == "ai")
     hook_text = hook or (hook_cfg.get("text") if hook_cfg.get("mode") == "text" else None) or copy.get("hook")
-    if hook_text and hook_cfg.get("mode") != "off" or hook:
+    rtext = []
+    if recipe:  # the words do what the reference's words do (sung word by word, a tease then its answer, a title)
+        rtext = recipes.text_overlays(plan, recipe, words_rel, copy,
+                                      hook or (hook_cfg.get("text") if hook_cfg.get("mode") == "text" else None), facts)
+        plan["overlays"] += rtext
+        if rtext:
+            log(f"text like the reference: {len(rtext)} overlay(s) ("
+                + ", ".join(sorted({str(o.get('recipe')) for o in rtext})) + ")")
+    if rtext:
+        pass
+    elif hook_text and hook_cfg.get("mode") != "off" or hook:
         h_start, h_dur = float(hook_cfg.get("start", 0.2)), float(hook_cfg.get("duration", 2.6))
         if arc:  # on screen from the third frame, held while the opening plays
             first = plan["segments"][0]
@@ -260,8 +394,13 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
     if arc:
         from . import formats, lyrics
         formats.apply(plan, st.get("format", "montage"), by_id, places_all, copy,
-                      plan["segments"][0]["out_start"] + plan["segments"][0]["dur"])
+                      plan["segments"][0]["out_start"] + plan["segments"][0]["dur"],
+                      cards=not any(o.get("recipe") == "label" for o in rtext))
         caps = lyrics.caption_overlays(words_rel, plan["duration"], str(st.get("captions", "auto")), backend)
+        if any(o.get("recipe") == "lyric" for o in rtext) and "captions" not in asked:
+            caps = []  # the sung words are already on screen, the way the reference shows them
+        if recipe and "captions" not in asked:
+            caps = recipes.subtitled(recipe, caps)
         if caps:
             plan["overlays"] += caps
             log(f"captions: {len(caps)} line(s) of the {words_rel.get('kind')}")
@@ -271,9 +410,9 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         copy.get("cta") if cta_cfg.get("mode") == "ai" else None)
     if cta_text:
         du = float(cta_cfg.get("duration", 2.2))
-        st = max(0.0, plan["duration"] - du - 0.1)
-        if all(o["start"] + o["duration"] <= st for o in plan["overlays"]):
-            plan["overlays"].append({"type": "cta", "text": cta_text, "start": round(st, 3), "duration": du})
+        c_at = max(0.0, plan["duration"] - du - 0.1)
+        if all(o["start"] + o["duration"] <= c_at for o in plan["overlays"]):
+            plan["overlays"].append({"type": "cta", "text": cta_text, "start": round(c_at, 3), "duration": du})
 
     rm_cfg = style.get("route_map") or {}
     if str(rm_cfg.get("mode", "off")) not in ("off", "none", "False", "false"):
@@ -315,8 +454,21 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
     critic_report = None
     if arc and str(st.get("critic", "auto")) != "off":
         from . import critic
+        was = {sg.get("shot_id") for sg in plan["segments"]}
         critic_report = critic.review(plan, by_id, shots, style, backend if st.get("critic", "auto") in ("auto", "ai")
                                       else None, work)
+        again = None
+        if backend and copy.get("caption") and {sg.get("shot_id") for sg in plan["segments"]} != was:
+            # the caption was written for the shots as they were: it doesn't mention a sunset the critic took out
+            again = story_copy()
+            if again.get("caption"):
+                copy = {**copy, "caption": again["caption"], "hashtags": again.get("hashtags") or copy.get("hashtags")}
+                log("caption written again for the shots the critic changed")
+        if recipe and recipes.labels_stale(plan):  # a named shot was changed: its name is written again
+            again = again or story_copy()
+            plan["overlays"] = [o for o in plan["overlays"] if o.get("recipe") != "label"] + recipes.label_overlays(
+                plan, recipe, recipes.label_names(facts, again.get("labels")))
+            log("names on the shots written again after the critic's changes")
     from . import grade as grade_mod
     grade_img = None
     try:
@@ -346,6 +498,8 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
     if dry_run:
         return result
     render(plan, out, work, workers=workers)
+    from .history import remember
+    remember(plan, out)
     cover = export_cover(plan, out, out.with_suffix(".cover.jpg"))
     result.update({"video": str(out), "cover": str(cover) if cover else None})
     try:
@@ -398,6 +552,8 @@ def render_plan(plan_path: Path, out: Path | None, workers: int = 2, text_motion
         plan.setdefault("text", {})["motion"] = text_motion
     out = (out or plan_path.with_name(plan_path.name.replace(".plan.json", ".mp4"))).resolve()
     render(plan, out, work, workers=workers)
+    from .history import remember
+    remember(plan, out)
     export_cover(plan, out, out.with_suffix(".cover.jpg"))
     try:
         from .effects import check_beats
@@ -405,6 +561,11 @@ def render_plan(plan_path: Path, out: Path | None, workers: int = 2, text_motion
     except Exception as e:
         log(f"beat check skipped ({e})")
     run_qa(out, plan)
+    m = plan.get("music") or {}
+    if m.get("path") and m.get("source_url"):
+        # the sound is a reel's: the copy to post has to follow every re-render, or an old cut gets uploaded
+        export_no_audio(out)
+        log(posting_note(plan))
     log(f"done: {out}")
     return out
 
@@ -428,6 +589,8 @@ def load_plan(plan_path: Path) -> tuple[dict, Path]:
     plan = read_json(plan_path)
     if not plan:
         raise ReelError(f"could not read plan {plan_path}")
+    from .framing import use_plan
+    use_plan(plan)  # the plan's own frame (upright or horizontal) for everything that lays it out
     # re-tile segments in case durations were edited by hand
     t = 0.0
     for i, s in enumerate(plan["segments"]):
@@ -499,8 +662,11 @@ def make_variants(n: int, inputs, music, style_name, out, *args, extras: dict | 
     base_out = out
     for k in range(n):
         log(f"===== variant {k + 1}/{n} =====")
-        ex = {**(extras or {}), "variant": k, "avoid_hooks": [h for h in hooks if h]}
         o = _variant_path(base_out, k, n)
+        # versions of one reel: the others' shots don't count as shown
+        ex = {**(extras or {}), "variant": k, "avoid_hooks": [h for h in hooks if h],
+              "siblings": [r["video"] for r in results if r.get("video")]
+              + ([_variant_path(base_out, j, n) for j in range(n)] if base_out else [])}
         r = make(inputs, music, style_name, o, *args, extras=ex, **kw)
         if base_out is None and r.get("plan"):  # name the next ones after the first
             p = Path(r["plan"])
@@ -630,6 +796,8 @@ def clone(ref: str, inputs: list[Path], out: Path | None, style_name: str | None
             f"{len(set(s['shot_id'] for s in plan['segments']))} different shots of yours")
         if not dry_run:
             render(plan, o, work, workers=workers)
+            from .history import remember
+            remember(plan, o)
             cover = export_cover(plan, o, o.with_suffix(".cover.jpg"))
             r.update({"video": str(o), "cover": str(cover) if cover else None})
             if upload_copy and plan["music"].get("path"):

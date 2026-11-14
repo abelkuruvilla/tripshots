@@ -12,7 +12,7 @@ import subprocess
 import cv2
 import numpy as np
 
-from .config import OUT_H, OUT_W
+from .config import CANVAS, OUT_H, OUT_W
 from .fx import hdr_chain
 from .util import ffmpeg_base
 
@@ -142,12 +142,22 @@ def focus_box(shot: dict) -> dict | None:
 PAN_SPEED = 0.06
 
 
-FRAME = {"ar": OUT_W / OUT_H}  # the picture's shape (width / height); a letterbox reel sets 16/9 or 2.39
+FRAME = {"ar": OUT_W / OUT_H}  # the picture's shape (width / height); a wide reel sets 16/9 or 2.39
+HORIZONTAL = (OUT_H, OUT_W)  # a horizontal reel's frame: 16:9, the widest shape every Instagram surface shows whole
+
+
+def set_canvas(horizontal: bool = False) -> tuple[int, int]:
+    """Set the frame of the reel being made: upright 1080x1920, or horizontal 1920x1080."""
+    CANVAS.set(*(HORIZONTAL if horizontal else (OUT_W, OUT_H)))
+    return CANVAS.size
 
 
 def set_frame(aspect: str | float | None) -> float:
-    """Set the picture shape for this plan ("9:16", "16:9", "2.39:1" or a number). Returns width/height."""
-    ar = OUT_W / OUT_H
+    """Set the picture shape for this plan ("9:16", "16:9", "2.39:1" or a number). Returns width/height. The
+    picture is never narrower than the frame; in a horizontal frame it fills it (no bars: a 2.39:1 style is
+    cut to 16:9)."""
+    lo = CANVAS.w / CANVAS.h
+    ar = lo
     if isinstance(aspect, (int, float)):
         ar = float(aspect)
     elif aspect and ":" in str(aspect):
@@ -156,14 +166,70 @@ def set_frame(aspect: str | float | None) -> float:
             ar = float(a) / float(b)
         except ValueError:
             pass
-    FRAME["ar"] = max(OUT_W / OUT_H, min(2.6, ar))
+    FRAME["ar"] = lo if CANVAS.horizontal else max(lo, min(2.6, ar))
     return FRAME["ar"]
 
 
+def wide(aspect: str | float | None) -> bool:
+    """Is this frame.aspect a wide picture (16:9, 2.39:1), not the upright 9:16?"""
+    if isinstance(aspect, (int, float)):
+        return float(aspect) > 1.2
+    try:
+        a, b = str(aspect or "").split(":", 1)
+        return float(a) / float(b) > 1.2
+    except ValueError:
+        return False
+
+
+def output_for(frame_cfg: dict | None) -> bool:
+    """Does a style's frame ask for a horizontal file? output horizontal, or auto with a wide picture."""
+    cfg = frame_cfg or {}
+    out = str(cfg.get("output") or "auto").lower()
+    if out in ("horizontal", "landscape", "wide"):
+        return True
+    if out in ("vertical", "portrait", "upright"):
+        return False
+    return wide(cfg.get("aspect"))
+
+
+def picture_aspect(frame_cfg: dict | None) -> str | float | None:
+    """The picture shape a style's frame gives. The picture fills the file (horizontal for a wide one, upright
+    otherwise); only `output: vertical` keeps the style's own shape as a band between bars."""
+    cfg = frame_cfg or {}
+    if output_for(cfg):
+        return "16:9"
+    if str(cfg.get("output") or "auto").lower() in ("vertical", "portrait", "upright"):
+        return cfg.get("aspect")
+    return None
+
+
+def use_plan(plan: dict) -> None:
+    """Set the frame and the picture shape a plan was made for (before rendering, checking or editing it)."""
+    fr = plan.get("frame") or {}
+    c = fr.get("canvas") or ()
+    set_canvas(len(c) == 2 and int(c[0]) > int(c[1]))
+    set_frame(fr.get("aspect"))
+
+
+def better_horizontal(plan: dict, by_id: dict, frame_cfg: dict | None) -> bool:
+    """An upright plan that would show its footage as strips: every source is landscape and most shots can't be
+    cropped upright (`wide`: nothing in them fits a 9:16 window). Such a reel is better as a horizontal file.
+    Only when the style leaves it open."""
+    if CANVAS.horizontal or str((frame_cfg or {}).get("output") or "auto").lower() != "auto":
+        return False
+    segs = [s for s in plan.get("segments") or [] if not s.get("panel")]
+    if len(segs) < 3 or len(segs) < len(plan.get("segments") or []):
+        return False
+    src = [by_id.get(s.get("shot_id")) or {} for s in segs]
+    if not all(float(x.get("w") or 0) > float(x.get("h") or 1) * 1.2 for x in src):
+        return False
+    return sum(1 for s in segs if s.get("wide") or s.get("layout") == "blur_fill") > len(segs) / 2
+
+
 def band_height(ar: float | None = None) -> int:
-    """Height of the picture band in the 1080x1920 reel (1920 = full screen)."""
+    """Height of the picture band in the frame (the frame's own height = the picture fills it)."""
     ar = ar or FRAME["ar"]
-    return min(OUT_H, int(round(OUT_W / ar / 2)) * 2)
+    return min(CANVAS.h, int(round(CANVAS.w / ar / 2)) * 2)
 
 
 def crop_fraction(w: int, h: int) -> float:

@@ -10,6 +10,8 @@ Everything works from the shot thumbnails, so it is quick and needs no AI.
 from __future__ import annotations
 
 import math
+import re
+from collections import Counter
 from datetime import datetime
 from functools import lru_cache
 
@@ -69,19 +71,155 @@ def _when(s: dict) -> float | None:
     c = s.get("created")
     if not c:
         return None
+    c = str(c).split(";")[-1].strip()      # "UTC;local" from some drones (files read before media._norm_time knew)
     try:
-        return datetime.fromisoformat(str(c).replace("Z", "+00:00")).replace(tzinfo=None).timestamp()
+        return datetime.fromisoformat(c.replace("Z", "+00:00")).replace(tzinfo=None).timestamp()
     except ValueError:
         return None
 
 
-def _far(a: dict, b: dict, metres: float = 400) -> bool:
-    ga, gb = a.get("gps"), b.get("gps")
-    if not ga or not gb:
-        return False
+def _metres(ga, gb) -> float:
     dy = (ga[0] - gb[0]) * 111_000
     dx = (ga[1] - gb[1]) * 111_000 * math.cos(math.radians(ga[0]))
-    return math.hypot(dx, dy) > metres
+    return math.hypot(dx, dy)
+
+
+def _far(a: dict, b: dict, metres: float = 400) -> bool:
+    ga, gb = a.get("gps"), b.get("gps")
+    return bool(ga and gb) and _metres(ga, gb) > metres
+
+
+def _fixer(timed: list[tuple]):
+    """where(t, shot) -> [lat, lon] or None: the shot's own GPS, else the fix of the picture taken closest in
+    time (within 40 minutes). `timed`: (time, id, shot) for every shot with a time."""
+    import bisect
+    fixes = [(t, s["gps"]) for t, _, s in timed if s.get("gps")]
+    ft = [t for t, _ in fixes]
+
+    def where(t, s):
+        if s.get("gps"):
+            return s["gps"]
+        k = bisect.bisect_left(ft, t)
+        best = min((fixes[i] for i in (k - 1, k) if 0 <= i < len(fixes)), key=lambda f: abs(f[0] - t), default=None)
+        return best[1] if best and abs(best[0] - t) <= 2400 else None
+    return where
+
+
+def positions(shots: list[dict]) -> dict[str, list]:
+    """{shot id: [lat, lon]} for every shot whose position is known: its own GPS, or (a drone, a camera
+    without GPS) the phone picture taken closest in time."""
+    timed = sorted(((t, s["id"], s) for s in shots if (t := _when(s)) is not None), key=lambda x: x[:2])
+    where = _fixer(timed)
+    out = {s["id"]: s["gps"] for s in shots if s.get("gps")}
+    for t, sid, s in timed:
+        if sid not in out and (g := where(t, s)):
+            out[sid] = g
+    return out
+
+
+def sessions(shots: list[dict], gap: float = 900.0, near: float = 1200.0) -> dict[str, str]:
+    """{shot id: stop id}: one stop of the trip, whatever the angle or the camera. A reel that shows the
+    same headland three times in a row looks like it ran out of places, even when each shot is good.
+
+    Shots filmed one after another with no pause longer than `gap` seconds are one stop; a drone or camera
+    without GPS borrows the position of the phone picture taken closest in time (within 40 minutes), and
+    stops within `near` metres and four hours of each other are the same place (a long visit with breaks).
+    Chunks of one clip always share a stop; shots without a time are their own."""
+    timed = sorted(((t, s["id"], s) for s in shots if (t := _when(s)) is not None), key=lambda x: x[:2])
+    where = _fixer(timed)
+
+    out: dict[str, str] = {}
+    by_src: dict[str, str] = {}
+    stops: dict[str, dict] = {}       # stop id -> {t0, t1, pts}
+    cur, last_t, last_g = None, 0.0, None
+    for t, sid, s in timed:
+        src = str(s.get("src") or sid)
+        if src in by_src:
+            out[sid] = by_src[src]
+            continue
+        g = where(t, s)
+        if cur is None or t - last_t > gap or (g and last_g and _metres(g, last_g) > 1500):
+            cur = sid
+            stops[cur] = {"t0": t, "t1": t, "pts": []}
+        out[sid] = by_src[src] = cur
+        end = t + (float(s.get("t1") or 0) if s.get("kind") == "video" else 0.0)
+        stops[cur]["t1"] = max(stops[cur]["t1"], end)
+        if g:
+            stops[cur]["pts"].append(g)
+            last_g = g
+        last_t = max(last_t, end) if cur != sid else end
+    # a long visit with breaks: stops close in place and time are one
+    parent = {k: k for k in stops}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    keys = sorted(stops, key=lambda k: stops[k]["t0"])
+    mid = {k: (float(np.mean([p[0] for p in v["pts"]])), float(np.mean([p[1] for p in v["pts"]])))
+           for k, v in stops.items() if v["pts"]}
+    for i, a in enumerate(keys):
+        if a not in mid:
+            continue
+        for b in keys[i + 1:]:
+            if stops[b]["t0"] - stops[a]["t1"] > 4 * 3600:
+                break
+            if b in mid and _metres(mid[a], mid[b]) <= near:
+                parent[find(b)] = find(a)
+    out = {k: find(v) for k, v in out.items()}
+    by_src = {k: find(v) for k, v in by_src.items()}
+    for s in shots:
+        if s["id"] not in out:
+            src = str(s.get("src") or s["id"])
+            out[s["id"]] = by_src.setdefault(src, s["id"])
+    return out
+
+
+def place_name(shot: dict) -> str | None:
+    """The landmark the AI recognised, as a key: "Half Dome, Yosemite" and "Half Dome (Glacier Point)" are one."""
+    lm = (shot.get("ai") or {}).get("landmark")
+    if not lm or str(lm).lower() in ("none", "null", "unknown"):
+        return None
+    name = re.split(r"[,(/;]| - ", str(lm))[0].lower().replace("'", "").replace("\u2019", "")
+    name = re.sub(r"[^\w ]+", " ", name)
+    name = re.sub(r" (national|state) (park|monument|forest|seashore)$", "", " ".join(name.split()))
+    return " ".join(w for w in name.split() if w != "the") or None
+
+
+def place_keys(shots: list[dict]) -> dict[str, str]:
+    """{shot id: place}: where a shot was taken, for variety. A recognised landmark is the place wherever and
+    whenever it was filmed (two visits, the drone and the phone); the rest go by the stop of the trip
+    (`sessions`). A stop whose named shots mostly agree gives that name to its unnamed ones."""
+    stops = sessions(shots)
+    named = {s["id"]: n for s in shots if (n := place_name(s))}
+    votes: dict[str, Counter] = {}
+    for sid, n in named.items():
+        votes.setdefault(stops[sid], Counter())[n] += 1
+    lead = {}
+    for stop, c in votes.items():
+        n, k = c.most_common(1)[0]
+        if k * 2 > sum(c.values()) or len(c) == 1:
+            lead[stop] = n
+    out = {}
+    for s in shots:
+        sid = s["id"]
+        n = named.get(sid) or lead.get(stops[sid])
+        out[sid] = f"at:{n}" if n else f"stop:{stops[sid]}"
+    return out
+
+
+_BAKED = re.compile(r"\b(text overlay|title overlay|overlay text|caption|subtitle|watermark|screenshot|"
+                    r"screen recording|logo overlay)s?\b")
+
+
+def baked_text(shot: dict) -> bool:
+    """True for a picture that already carries titles, captions or a watermark (an edited export, a reel saved
+    back to the camera roll): another title on top of it looks like a mistake."""
+    a = shot.get("ai") or {}
+    if "burned-in-text" in (a.get("issues") or []):
+        return True
+    return bool(_BAKED.search(" | ".join(str(t).lower() for t in [*(a.get("tags") or [])[:12], a.get("note") or ""])))
 
 
 def same_scene(a: dict, b: dict, fa=None, fb=None) -> bool:

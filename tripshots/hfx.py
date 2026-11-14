@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .config import HOME, OUT_FPS, OUT_H, OUT_W
+from .config import CANVAS, HOME, OUT_FPS
 from .util import ReelError, log
 
 CACHE = HOME / "cache" / "text"
@@ -59,6 +59,8 @@ def motion_for(kind: str, text_cfg: dict, overlay: dict | None = None) -> str | 
     many, they change fast and must never lag the words."""
     if kind not in ("hook", "location", "cta", "label"):
         return None
+    if isinstance((overlay or {}).get("style"), dict) and not (overlay or {}).get("motion"):
+        return None  # a line with its own lettering (a recipe's) is drawn as written
     want = str((overlay or {}).get("motion") or text_cfg.get("motion") or "auto").lower()
     if want in ("off", "none", "false", "0"):
         return None
@@ -134,8 +136,8 @@ def text_page(el, motion: str, kind: str) -> tuple[str, list[str]]:
     page = f"""<!doctype html>
 <html><head><meta charset="utf-8">
 <style>{font_css}
-html,body{{margin:0;padding:0;background:transparent;width:{OUT_W}px;height:{OUT_H}px;overflow:hidden}}
-#root{{position:relative;width:{OUT_W}px;height:{OUT_H}px;overflow:hidden}}
+html,body{{margin:0;padding:0;background:transparent;width:{CANVAS.w}px;height:{CANVAS.h}px;overflow:hidden}}
+#root{{position:relative;width:{CANVAS.w}px;height:{CANVAS.h}px;overflow:hidden}}
 .ln{{position:absolute;white-space:pre;color:#fff;text-shadow:0 3px 16px rgba(0,0,0,0.55),0 1px 3px rgba(0,0,0,0.5)}}
 .u{{display:inline-block;white-space:pre;will-change:transform,filter,opacity}}
 .sp{{white-space:pre}}
@@ -145,7 +147,7 @@ html,body{{margin:0;padding:0;background:transparent;width:{OUT_W}px;height:{OUT
 </style>
 <script src="assets/gsap.min.js"></script>
 </head><body>
-<div id="root" data-composition-id="root" data-start="0" data-duration="{D}" data-width="{OUT_W}" data-height="{OUT_H}">
+<div id="root" data-composition-id="root" data-start="0" data-duration="{D}" data-width="{CANVAS.w}" data-height="{CANVAS.h}">
 {"".join(divs)}
 <script>
 const D = {D}, CUES = {json.dumps([round(c, 3) for c in cues])}, MOTION = "{motion}";

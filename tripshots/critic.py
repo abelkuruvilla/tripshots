@@ -53,7 +53,15 @@ def checks(plan: dict, by_id: dict, shots: list[dict]) -> list[dict]:
     ds = [s["dur"] for s in segs]
     ratio = max(ds) / max(0.01, min(ds)) if ds else 1
     flat = max((sum(1 for _ in g) for _, g in __import__("itertools").groupby(round(d, 1) for d in ds)), default=0)
-    add("rhythm", ratio >= 2.5 and flat <= 4, 15, f"shot lengths vary ({min(ds or [0]):.1f}-{max(ds or [0]):.1f}s)")
+    att = plan.get("attention") or {}
+    if att.get("shot_sec") and ds:
+        # a learned style is judged against its own references, not a general rule: a calm reel may hold its
+        # shots, a fast montage may not drag
+        avg, ref = sum(ds) / len(ds), float(att.get("shot_mean") or att["shot_sec"])
+        add("rhythm", 0.6 * ref <= avg <= 1.7 * ref, 15,
+            f"paced like the style's references (a cut every {avg:.1f}s, theirs every {ref:.1f}s)")
+    else:
+        add("rhythm", ratio >= 2.5 and flat <= 4, 15, f"shot lengths vary ({min(ds or [0]):.1f}-{max(ds or [0]):.1f}s)")
     have_people = any(_people(s) for s in shots)
     early = [s for s in segs if s["out_start"] < 3.0]
     early_ok = any(_people(by_id.get(s.get("shot_id"))) for s in early)
@@ -71,6 +79,13 @@ def checks(plan: dict, by_id: dict, shots: list[dict]) -> list[dict]:
         "repeats" if rep or adj else None)
     static = sum(1 for s in segs if not _moving(s, by_id.get(s.get("shot_id"))))
     add("movement", static <= len(segs) / 2, 10, f"{static} of {len(segs)} shots static")
+    if hk and segs:  # the opening line must be about what is on screen while it shows
+        first_ai = (by_id.get(segs[0].get("shot_id")) or {}).get("ai") or {}
+        named = first_ai.get("landmark")
+        others = {(by_id.get(s.get("shot_id")) or {}).get("ai", {}).get("landmark") for s in segs[1:]} - {None, named}
+        wrong = next((o for o in others if o and o.lower() in hk["text"].lower()), None)
+        add("hook_matches", not wrong, 10, "the hook names what the opening shot shows"
+            + (f" (it names {wrong}, shown later)" if wrong else ""), "hook_shot" if wrong else None)
     loop = plan.get("loop") or any(o["type"] == "cta" for o in plan.get("overlays") or [])
     add("ending", loop, 15, "the ending loops back or closes with a line", None if loop else "loop")
     return out
@@ -126,6 +141,14 @@ def fix(plan: dict, by_id: dict, shots: list[dict], cs: list[dict]) -> list[str]
                             _swap(segs, i, j, by_id)
                             done.append(f"slots {i + 1} and {j + 1} swapped (same clip back to back)")
                             break
+        elif f == "hook_shot":  # the hook names a landmark shown later: open on that shot
+            hk = next((o for o in plan["overlays"] if o["type"] == "hook"), None)
+            j = next((i for i, s in enumerate(segs) if i and not s.get("panel") and hk and
+                      ((by_id.get(s.get("shot_id")) or {}).get("ai", {}).get("landmark") or "\0").lower()
+                      in hk["text"].lower()), None)
+            if j is not None and not segs[0].get("panel"):
+                _swap(segs, 0, j, by_id)
+                done.append(f"opening shot is now the one the hook names (was slot {j + 1})")
         elif f == "loop":
             plan["loop"] = True
             done.append("ending now loops into the opening")

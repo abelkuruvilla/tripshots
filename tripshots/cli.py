@@ -115,6 +115,14 @@ def cookie_args(a) -> dict:
 def cmd_learn(a):
     from .learn import learn
     refs = a.refs
+    if a.add and refs:  # more examples for an existing style: learn from the old and the new ones together
+        from .config import load_style
+        try:
+            old = list(load_style(a.name).get("learned_from") or [])
+        except Exception:
+            old = []
+        refs = list(dict.fromkeys(old + refs))
+        print(f"'{a.name}' now learns from {len(refs)} reference(s)")
     if not refs:  # re-learn an existing style from the reels it was learned from (downloads are cached)
         from .config import load_style
         try:
@@ -624,6 +632,9 @@ def build_parser() -> argparse.ArgumentParser:
     lr.add_argument("refs", nargs="*", help="reel links or video files (none: re-learn the style named by -n from "
                                             "the reels it was learned from)")
     lr.add_argument("-n", "--name", required=True)
+    lr.add_argument("--add", action="store_true",
+                    help="add these reels to the ones the style already learns from (a style is what its "
+                         "examples have in common)")
     lr.add_argument("-b", "--backend")
     add_cookie_args(lr)
     lr.set_defaults(fn=cmd_learn)

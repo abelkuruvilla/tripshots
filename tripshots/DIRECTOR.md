@@ -36,6 +36,8 @@ Lemo-Opuscar skill's DIRECTOR.md (lemomo-ai/lemo-opuscar, MIT).
 
 ## Self-check before render
 - Would a stranger stop on frame one? Is there a person or movement in the first 3 s?
+- Does the hook line describe what is on screen while it shows?
+- Does the pace match the style's own references (its `attention` profile), not a general idea of "fast"?
 - Is any moment shown twice? Is anything blurry, dark or tilted?
 - Does the payoff land on the drop and get held?
 - Can every line of text be read before it goes?

@@ -415,6 +415,7 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         "transition_duration": float(style["transitions"].get("duration", 0.3)),
         "color": style["color"], "text": style["text"], "segments": out, "overlays": [],
         **({"direction": style["direction"]} if style.get("direction") else {}),
+        **({"attention": style["attention"]} if (style.get("attention") or {}).get("curve") else {}),
         "beats": grid["beats"], "drops": grid["drops"],
         "motion": {**style.get("motion", {}), **({"hook_punch": True} if arc and st.get("hook_punch", True) else {})},
         "loop": bool(style.get("loop", False)) or (arc and bool(st.get("loop", True))),

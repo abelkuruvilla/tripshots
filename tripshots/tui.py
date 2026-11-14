@@ -545,13 +545,19 @@ class EditStyle(ModalScreen[dict | None]):
 
 
 class LearnStyle(ModalScreen[dict | None]):
+    def __init__(self, add_to: str | None = None):
+        super().__init__()
+        self.add_to = add_to  # an existing learned style: the new reels join its examples
+
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog wide"):
-            yield Label("Learn a style from reels you like", classes="dialog_q")
+            yield Label(f"Add example reels to “{self.add_to}”" if self.add_to else "Learn a style from reels you like",
+                        classes="dialog_q")
             yield Label("Reel links or video files, one per line (2–3 similar reels work best)", classes="field_label")
             yield TextArea(id="l_urls")
             yield Label("Name for the style", classes="field_label")
-            yield Input(placeholder="e.g. moody-coast", id="l_name")
+            yield Input(placeholder="e.g. moody-coast", id="l_name", value=self.add_to or "",
+                        disabled=bool(self.add_to))
             with Horizontal(classes="dialog_buttons"):
                 yield Button("Learn", id="ok", variant="primary")
                 yield Button("Cancel", id="cancel")
@@ -928,6 +934,8 @@ class StylesTab(Horizontal):
             with Horizontal(classes="actions wrap"):
                 yield Button("Edit…", id="st_edit", variant="primary")
                 yield Button("Use for next reel", id="st_use")
+                yield Button("Add example reels…", id="st_add")
+                yield Button("Re-learn", id="st_relearn")
                 yield Button("Open file", id="st_open")
                 yield Button("Delete", id="st_delete", variant="error")
 
@@ -980,7 +988,17 @@ class StylesTab(Horizontal):
             f"[b]Text[/b] {t.get('preset')} · hook {t['hook'].get('mode')} · location {t['location'].get('mode')} · "
             f"behind {t['location'].get('behind', 'preset default')} · cta {t.get('cta', {}).get('mode')}\n"
             f"[b]Colour[/b] saturation {c['saturation']} · contrast {c['contrast']} · warmth {c['warmth']} · "
-            f"vignette {c['vignette']}")
+            f"vignette {c['vignette']}" + self._learned(s))
+
+    @staticmethod
+    def _learned(s: dict) -> str:
+        refs = s.get("learned_from") or []
+        if not refs:
+            return ""
+        from .learn import describe_profile
+        return (f"\n\n[b]Learned from[/b] {len(refs)} example reel(s)\n"
+                + "\n".join(f"  {str(r)[:90]}" for r in refs[:6])
+                + f"\n[b]How they hold attention[/b] {describe_profile(s.get('attention') or {})}")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
@@ -997,6 +1015,22 @@ class StylesTab(Horizontal):
             return
         path = list_styles()[n]
         builtin = USER_STYLES not in path.parents
+        if bid in ("st_add", "st_relearn"):
+            if not (load_style(str(path)).get("learned_from") or []):
+                self.notify("This style wasn't learned from reels. Use “Learn from reels…” to make one that is",
+                            severity="warning")
+                return
+            if bid == "st_relearn":  # from the saved examples: nothing is downloaded again
+                self.app.push_screen(RunScreen(f"Re-learning “{n}” from its examples", ["learn", "-n", n]),
+                                     lambda _: (self.refresh_list(), self.show()))
+                return
+
+            def more(r):
+                if r:
+                    self.app.push_screen(RunScreen(f"Adding examples to “{n}”", ["learn", *r["refs"], "-n", n, "--add"]),
+                                         lambda _: (self.refresh_list(), self.show()))
+            self.app.push_screen(LearnStyle(add_to=n), more)
+            return
         if bid == "st_use":
             self.app.query_one("#style", Select).value = n
             self.app.query_one(TabbedContent).active = "tab_make"

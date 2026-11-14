@@ -134,6 +134,11 @@ DEFAULT_STYLE: dict = {
     # parallax: photos move in depth (2.5D) instead of a flat zoom: auto | on | off.
     # match_cuts: order and cut moving shots so their motion carries across the cut.
     # critic: check the plan like an editor and fix what it can: auto (rules + AI when available) | rules | off.
+    # attention (written by `learn`): how the style's references hold attention. curve: relative shot length in
+    # each eighth of the reel (story.rhythm follows it), shot_sec: median shot, open {hold, shot: person|wide|
+    # detail|action}, peak_at: where the payoff is held (0-1), variety, mix {wide, people, detail}, speed, reveal, loop.
+    # Empty = the built-in story rhythm.
+    "attention": {},
     # direction: a few sentences on how this style is directed (story, rhythm, camera, light, text); the critic's
     # AI review reads it with tripshots/DIRECTOR.md. `learn` writes one from the reference reels.
     "direction": "",

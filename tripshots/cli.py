@@ -43,8 +43,8 @@ def cmd_make(a):
                extras={"split": a.split_screens, "ramps": a.speed_ramps, "labels": a.labels, "loop": a.loop,
                        "speed_up": a.speed_up, "drop_speed": a.drop_speed, "smooth": a.slowmo_smooth,
                        "format": a.format, "arc": a.arc, "captions": a.captions, "critic": a.critic,
-                       "parallax": a.parallax, "text_motion": a.text_motion,
-                       "name": a._label},
+                       "parallax": a.parallax, "recipe": a.recipe, "orientation": a.orientation, "fresh": a.fresh,
+                       "text_motion": a.text_motion, "name": a._label},
                look=a.look, grade_strength=a.grade_strength, route_map=a.route_map, sound=sound_args(a))
     print(json.dumps(res, indent=2))
 
@@ -543,6 +543,17 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--critic", choices=["auto", "rules", "off"],
                    help="check the plan like an editor and fix weak spots (auto: rules + AI review)")
     m.add_argument("--parallax", choices=["auto", "on", "off"], help="photos move in depth (2.5D) instead of a flat zoom")
+    m.add_argument("--recipe", metavar="auto|off|N",
+                   help="a style learned from several reels keeps each one's recipe (its cut, picture shape and text). "
+                        "auto (default): the recipe of the reel whose sound you use, else the one that fits the song; "
+                        "N: the N-th reference's; off: the style's average")
+    m.add_argument("--orientation", choices=["auto", "vertical", "horizontal"],
+                   help="shape of the file. auto (default): upright 1080x1920, or horizontal 1920x1080 when the "
+                        "style or recipe is widescreen or the footage only works wide (no black bars); "
+                        "vertical: always upright (a wide picture sits in a band); horizontal: always 1920x1080")
+    m.add_argument("--fresh", choices=["on", "off"],
+                   help="on (default): shots your earlier reels of this footage showed are marked down, and this "
+                        "reel opens and ends on something else; off: the best shots, whatever was posted before")
     m.add_argument("--loop", action=argparse.BooleanOptionalAction, default=None, help="seamless loop ending")
     m.add_argument("--min-score", type=float, metavar="N",
                    help="lowest AI score (1-10) a shot may have to be used (default: style's min_score - 2)")

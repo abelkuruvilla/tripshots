@@ -1,6 +1,7 @@
 """Build an edit decision list (plan.json) from scored shots, music beats and a style."""
 from __future__ import annotations
 
+import math
 from collections import Counter
 
 import numpy as np
@@ -50,6 +51,8 @@ def cut_grid(music: dict | None, style: dict, target: float) -> dict:
         first_db += 1
     # start on the first downbeat if it is close, so cuts phrase with bars
     i = first_db if first_db < len(beats) and beats[first_db] < 1.2 else 0
+    if style.get("_music_exact"):
+        i = 0  # a reel's own sound stays where it is: the edit has to line up when the sound is attached in the app
     offset = beats[i]
     bounds = [beats[i]]
     levels = []
@@ -99,7 +102,8 @@ def cut_grid(music: dict | None, style: dict, target: float) -> dict:
     return {"music_start": round(start + offset, 4), "segments": segs, "tempo": tempo,
             "duration": round(total, 4), "beat_len": beat_len, "beats": beats_out, "drops": drops,
             "energy": energy_out, "beats_all": beats_all, "energy_all": energy_all,
-            "thresholds": (lo_th, hi_th)}
+            "thresholds": (lo_th, hi_th),
+            "avail": round(music["duration"] - start - offset, 4) if music else None}  # music left from the start
 
 
 # ------------------------------------------------------------ shot selection
@@ -108,9 +112,10 @@ def _quality(s: dict) -> float:
 
 
 def taste_scores(shots: list[dict], style: dict) -> dict[str, float]:
-    """Bonus (about -3..+3) for shots that look like what the style was learned from: the same light and colour
-    (golden backlight for a golden, backlit reference), its kind of light and of people, and shots that fit
-    the frame's shape."""
+    """Bonus for shots that look like what the style was learned from: the same light and colour (golden backlight
+    for a golden, backlit reference), its kind of light and of people (within about ±0.9 x weight: taste decides
+    between shots of similar quality, it doesn't put a weak shot ahead of a clearly better one), and a penalty
+    for shots that don't fit the frame's shape or the references' kind of footage."""
     t = style.get("taste") or {}
     w = float(t.get("weight", 0) or 0)
     ref = t.get("look")
@@ -124,6 +129,7 @@ def taste_scores(shots: list[dict], style: dict) -> dict[str, float]:
     lights = {str(x).lower() for x in t.get("light") or []}
     people = str(t.get("people") or "").lower()
     from .story import has_people
+    pref: dict[str, float] = {}
     for s in shots:
         v = 0.0
         if ref_v is not None and w > 0:
@@ -142,13 +148,50 @@ def taste_scores(shots: list[dict], style: dict) -> dict[str, float]:
                 v += w * (0.8 if hp else -0.3)
             elif people == "none":
                 v += w * (-0.6 if hp else 0.3)
-        if FRAME["ar"] > 1.0 and s.get("w") and s.get("h") and s["w"] < s["h"]:
-            v -= 2.0  # an upright clip in a wide cinematic band loses most of its picture
-        out[s["id"]] = round(v, 3)
+        pref[s["id"]], v = v, -misfit(s)
+        footage = str(t.get("footage") or "").lower()
+        if w > 0 and footage == "video" and s.get("kind") == "photo":
+            v -= 1.2 * w  # the references are all moving pictures
+        elif w > 0 and footage == "photos" and s.get("kind") == "video":
+            v -= 0.6 * w
+        out[s["id"]] = v
+    # likeness is relative: measured against this footage's own middle and spread, then bounded. A look averaged
+    # over several references is like none of the shots, and raw it would outweigh how good a shot is.
+    vals = list(pref.values())
+    if w > 0 and vals:
+        mid = float(np.median(vals))
+        half = max(1.0, float(np.percentile(vals, 90) - np.percentile(vals, 10)) / 2.0)
+        for k, v in pref.items():
+            out[k] += 0.9 * w * math.tanh((v - mid) / half)
+    return {k: round(v, 3) for k, v in out.items()}
+
+
+def misfit(s: dict) -> float:
+    """What it costs a shot not to fit the frame being made: an upright clip or photo in a wide picture (a
+    horizontal reel, a cinematic band) loses most of itself, often the very thing it was taken for."""
+    from .framing import FRAME
+    return 2.0 if FRAME["ar"] > 1.0 and s.get("w") and s.get("h") and s["w"] < s["h"] else 0.0
+
+
+def colourless(shots: list[dict]) -> dict[str, float]:
+    """How grey a shot is in footage that has plenty of colour, 0..1 (grey sand from above between a red canyon and
+    a blue lake is a dip wherever it lands). Measured against this footage's own middle, so a snow trip or a grey
+    coast has none: under 0.4 of it counts a little, under 0.15 fully."""
+    vals = [float(s["metrics"]["color"]) for s in shots if "color" in (s.get("metrics") or {})]
+    if len(vals) < 8:
+        return {}
+    mid = max(1e-6, float(sorted(vals)[len(vals) // 2]))
+    out = {}
+    for s in shots:
+        c = float((s.get("metrics") or {}).get("color", mid))
+        if c < 0.4 * mid:
+            out[s["id"]] = round(min(1.0, (0.4 * mid - c) / (0.25 * mid)), 3)
     return out
 
 
-def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
+def select_shots(shots: list[dict], n: int, style: dict, cast: list[dict] | None = None) -> list[dict]:
+    """The `n` shots a reel is cut from: the best ones, but spread over clips, subjects, moments and places.
+    `cast`: shots that already have a slot (a long opening hold): their places count as shown."""
     sh = style["shots"]
     pool = [s for s in shots if s.get("ai", {}).get("usable", True)]
     if not pool and shots:  # the user picked this footage (e.g. a search): use the best of it anyway
@@ -168,7 +211,20 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
     from .diversity import scene_groups
     group = scene_groups(good) if not sh.get("allow_similar") else {}
     used_group = Counter()
+    # one trip, many places: each further shot of a place has to be clearly better than a new place's best
+    from .diversity import baked_text, place_keys
+    variety = float(sh.get("place_variety", 1.0))
+    place = place_keys(list(shots) + [c for c in cast or [] if all(c["id"] != s["id"] for s in shots)]) if variety > 0 else {}
+    used_place = Counter(place.get(c["id"], c["id"]) for c in cast or [])
     chosen, used_src, used_tags = [], Counter(), Counter()
+    from .history import mark_down
+    shown = {s["id"]: mark_down(style, s) for s in good}  # in an earlier reel of this footage: others first
+    named = style.get("_named")  # a reel that names every shot: shots whose place is known come first
+    # ...and every region gets about the same number of shots (two of California, two of Utah, not six and one)
+    region = (style.get("_places") or {}) if named is not None else {}
+    quota = math.ceil(n / max(1, len(set(region.values())))) if region else 0
+    used_region = Counter(region.get(c["id"]) for c in cast or [])
+    grey = colourless(good)
     cands = sorted(good, key=_quality, reverse=True)
     while len(chosen) < n and cands:
         best, best_v = None, -1e9
@@ -185,6 +241,15 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
                 v -= 2.5
             # the same moment again (a burst, the photo and the clip of one view): only when footage is thin
             v -= 4.0 * used_group[group.get(s["id"], s["id"])]
+            v -= 0.9 * variety * used_place[place.get(s["id"], s["id"])]
+            v -= 2.4 * shown[s["id"]]
+            if named is not None and s["id"] not in named:
+                v -= 2.5
+            if quota and used_region[region.get(s["id"])] >= quota:
+                v -= 3.0
+            if baked_text(s):  # someone's finished edit, titles and all: only when nothing else is left
+                v -= 3.0
+            v -= 1.2 * grey.get(s["id"], 0.0)  # it has to be clearly better than a shot with colour in it
             if v > best_v:
                 best, best_v = s, v
         if best is None:
@@ -193,6 +258,8 @@ def select_shots(shots: list[dict], n: int, style: dict) -> list[dict]:
         chosen.append(best)
         cands.remove(best)
         used_group[group.get(best["id"], best["id"])] += 1
+        used_place[place.get(best["id"], best["id"])] += 1
+        used_region[region.get(best["id"])] += 1
         used_src[best["src"]] += 1
         for t in best.get("ai", {}).get("tags", [])[:4]:
             used_tags[t] += 1
@@ -309,10 +376,12 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
                music_path: str | None = None) -> dict:
     target = float(target or style["duration"]["target"])
     target = clamp(target, style["duration"]["min"], style["duration"]["max"])
-    from .framing import band_height, set_frame
-    ar = set_frame((style.get("frame") or {}).get("aspect"))
+    from .framing import band_height, output_for, picture_aspect, set_canvas, set_frame
+    fcfg = style.get("frame") or {}
+    canvas = set_canvas(output_for(fcfg))  # a wide picture gets a horizontal file, not black bars in an upright one
+    ar = set_frame(picture_aspect(fcfg))
     letterbox = ar > 1.0
-    if letterbox:  # a cinematic band: full-screen layouts (split screens, pop-out frames) don't fit it
+    if letterbox:  # a wide picture: upright full-screen layouts (split screens, pop-out frames) don't fit it
         style.setdefault("panels", {})["use"] = 0.0
         style.setdefault("popout", {})["use"] = 0.0
     grid = cut_grid(music, style, target)
@@ -359,15 +428,35 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
     segs, beat_len = plan_panels(segs, grid, style, avail)
     normal = [sg for sg in segs if not sg.get("panel")]
     panel_need = sum(panel_shot_count(sg) for sg in segs if sg.get("panel"))
-    chosen = select_shots(shots, len(normal) + panel_need, style)
+    # a long opening shot (a recipe's hold): it has to be one clip that lasts that long
+    hold, spare = None, 0
+    if arc and normal and normal[0].get("role") == "hook":
+        from . import story
+        from .recipes import HOLD_MIN
+        if normal[0]["dur"] >= (HOLD_MIN if style.get("_recipe") else 4.0):
+            hold = story.hold_candidates(shots, normal[0]["dur"], style,
+                                         ((style.get("attention") or {}).get("open") or {}).get("shot"))
+            if hold:
+                normal[0]["hold"] = True
+                style["_spans"] = story.clip_spans([s for s in shots if s.get("ai", {}).get("usable", True)])
+                spare = 3  # the hold's own clip can't be used again
+                log(f"opening hold {normal[0]['dur']:.1f}s: " + ", ".join(
+                    f"{s['id']} {v:.1f}" for s, v in hold[:5]) + " (best first)")
+                if callable(style.get("_audition")) and not variant:  # the AI watches the best few and picks
+                    hold = style["_audition"](hold, normal[0]["dur"], style["_spans"])
+            else:
+                log(f"no clip lasts the {normal[0]['dur']:.1f}s opening shot: the best shot is slowed to cover it")
+    opener = [hold[min(variant, len(hold) - 1)][0]] if hold else None
+    chosen = select_shots(shots, len(normal) + panel_need + spare, style, cast=opener)
     # the strongest shots go full-screen; the rest fill panels (they're seen smaller anyway)
     ranked = sorted(chosen, key=_quality, reverse=True)
-    full, extra = ranked[:len(normal)], ranked[len(normal):]
+    full, extra = ranked[:len(normal) + spare], ranked[len(normal) + spare:]
     if arc:
         from . import story
-        from .diversity import scene_groups
+        from .diversity import place_keys, scene_groups
+        where = place_keys(shots) if float(style["shots"].get("place_variety", 1.0)) > 0 else None
         order_normal = story.cast(full, normal, style, variant, scene_groups(full), tease=fmt == "reveal",
-                                  places=style.get("_places"), fmt=fmt)
+                                  places=style.get("_places"), fmt=fmt, hold=hold, where=where)
     else:
         order_normal = assign(full, normal, style)
     extra = _spread_sources(extra)
@@ -420,8 +509,9 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         "motion": {**style.get("motion", {}), **({"hook_punch": True} if arc and st.get("hook_punch", True) else {})},
         "loop": bool(style.get("loop", False)) or (arc and bool(st.get("loop", True))),
         **({"story": {"format": fmt, "arc": [s.get("role") for s in out]}} if arc else {}),
-        **({"frame": {"aspect": (style.get("frame") or {}).get("aspect"), "ar": round(ar, 4),
-                      "band": band_height(ar)}} if letterbox else {}),
+        **({"frame": {"aspect": picture_aspect(fcfg), "ar": round(ar, 4),
+                      "canvas": list(canvas),
+                      **({"band": band_height(ar)} if band_height(ar) < canvas[1] else {})}} if letterbox else {}),
     }
 
 
@@ -439,7 +529,7 @@ def use_incam(segs: list[dict], by_id: dict, style: dict, max_n: int = 3) -> int
     n, last = 0, -9.0
     for i, e in enumerate(segs[:-1]):
         sh = by_id.get(e.get("shot_id"))
-        if (n >= max_n or not sh or e.get("panel") or e.get("ramp") or e.get("kind") != "video"
+        if (n >= max_n or not sh or e.get("panel") or e.get("ramp") or e.get("kind") != "video" or e.get("hold")
                 or float(e.get("speed", 1)) > 1.01 or e["out_start"] - last < 4.0):
             continue
         need = float(e["dur"]) * float(e.get("speed", 1))
@@ -491,7 +581,15 @@ def _shot_fields(shot: dict, dur: float, level: str, style: dict, kb_dir: int, s
         if size is None:
             lay, extra = decide_layout(shot, box, style["layout"].get("landscape", "auto"))
             fb = focus_box(shot)
-            if lay == "pan" and fb and (fb["x1"] - fb["x0"]) <= crop_fraction(shot["w"], shot["h"]) * 0.95:
+            fits = bool(fb) and (fb["x1"] - fb["x0"]) <= crop_fraction(shot["w"], shot["h"]) * 0.95
+            if lay == "blur_fill" and style["layout"].get("landscape", "auto") in ("auto", None):
+                # the whole wide frame as a strip between two bars is the last thing a full-screen reel shows:
+                # hold the person when there is one, else drift slowly across the middle of the view.
+                # `wide` remembers it: a reel made mostly of such shots is turned horizontal instead
+                if not fits:
+                    e["wide"] = True
+                lay, extra = "pan", {"pan_from": box["x0"], "pan_to": box["x1"]}
+            if lay == "pan" and fits:
                 # a pan across a wide view would start or end without the person (or the main subject): frame it
                 lay, extra = "crop", {}
                 e["subject"], e["subject_x"] = fb, fb["cx"]
@@ -569,7 +667,7 @@ def apply_speed(segs: list[dict], by_id: dict, grid: dict, style: dict) -> None:
         if smooth != "flow":
             e["smooth"] = smooth
         sh = by_id.get(e.get("shot_id"))
-        if not sh or e.get("panel") or float(e.get("speed", 1)) < 0.99:
+        if not sh or e.get("panel") or e.get("hold") or float(e.get("speed", 1)) < 0.99:
             continue
         motion = (sh.get("ai") or {}).get("motion")
         moving = e.get("moving") or motion in FAST_MOTIONS - {"timelapse"}
@@ -594,7 +692,7 @@ def apply_speed(segs: list[dict], by_id: dict, grid: dict, style: dict) -> None:
         d = float(grid["drops"][0])
         for i, e in enumerate(segs):
             sh = by_id.get(e.get("shot_id"))
-            if not sh or e.get("kind") != "video" or e.get("panel"):
+            if not sh or e.get("kind") != "video" or e.get("panel") or e.get("hold"):
                 continue
             end = float(e["out_start"]) + float(e["dur"])
             if drop in ("rush", "both") and abs(end - d) < 0.05 and e["dur"] >= 0.6:
@@ -608,6 +706,11 @@ def apply_speed(segs: list[dict], by_id: dict, grid: dict, style: dict) -> None:
 def _entry_for(shot: dict, seg: dict, style: dict, kb_dir: int) -> tuple[dict, int]:
     e, kb_dir = _shot_fields(shot, seg["dur"], seg["level"], style, kb_dir)
     e.update({"out_start": seg["out_start"], "dur": seg["dur"], "level": seg["level"]})
+    if seg.get("hold") and e["kind"] == "video":
+        # one unbroken take: from where this shot starts, on through the rest of its clip, in real time
+        a, b = (style.get("_spans") or {}).get(shot["id"], (shot["t0"], shot["t1"]))
+        speed = clamp((b - shot["t0"]) / max(seg["dur"], 0.1), 0.6, 1.0)
+        e.update({"in": round(shot["t0"], 3), "speed": round(speed, 3), "hold": True})
     # pop-out frame: photos with one clear, not-too-big subject (person, lighthouse, tree…)
     pcfg = style.get("popout") or {}
     if (e["kind"] == "photo" and float(pcfg.get("use", 0) or 0) > 0 and seg["dur"] >= 0.9

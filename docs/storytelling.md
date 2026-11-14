@@ -44,6 +44,63 @@ the photo and clip of one view count once.
 `auto` picks `pov` for dialogue, `list` when the footage covers 3+ places, else `montage`; once your results show a
 clear winner (below), it leans towards that.
 
+## Recipes from reference reels
+
+A style learned from reels you like ([Learn a style](making-reels.md#learn-a-style-from-reels-you-like)) keeps one
+recipe per example, and a reel follows one of them instead of the built-in arc lengths:
+
+| Structure | What the cut does |
+|---|---|
+| `hold_burst` | One long opening shot (cast from a single continuous clip, auditioned by the AI), then fast cuts from the turn |
+| `flash_intro` | A burst of flashes under a tease line, then steady shots |
+| `steady` | Even shots |
+| `montage` | Uneven shots, as the example has them |
+
+The recipe's shot lengths are laid on the song's beats; with the example's own sound they are used exactly. Its
+text kind decides the words: `lyrics` (the song's own words one at a time until the turn), `tease` (a line through
+the opening, then the payoff line), `title` (one line for the whole reel), `labels`, `subtitles` or `none`. The
+words take the example's lettering, colour and place, and keep off the subject of the shot. A line that stays up
+across several shots is placed once for all of them: in the third of the frame they leave freest, at a height that
+keeps it off somebody's head, inside the safe area. The critic checks the plan against its recipe (the hold is one
+clip, the burst is fast, the words are there).
+
+Casting follows the cut: the turn takes one of the best-looking shots, longer slots get better shots, the view an
+opening held isn't shown again, and one kind of view doesn't keep coming back. A nearly colourless shot (steam, fog)
+has to be clearly better than a colourful one, and never opens, turns or closes a colourful reel.
+
+What each kind of text does with your footage:
+
+* **`title`** is built like the example's ("USA 2026" gives "West Coast 2026", not a sentence) and stays up for the
+  same share of the reel as the example's title.
+* **`tease`** then its answer read as one sentence across the turn ("this is" → "the pacific coast"); when the
+  example has several answers, yours has one per stretch.
+* **`labels`** name every shot the way the example does: a state, a park or a landmark per shot, in the example's
+  lettering (a small handwritten line such as "Greetings from..." above big postcard capitals, each letter its own
+  colour when the example's are). The names are facts, not guesses: the landmark the AI recognised, the park or town
+  from the GPS, or the state; a camera without GPS borrows the position of the phone picture taken closest in time.
+  The same kind of name is used through the reel, and one that would hardly ever change (five shots, one state) is
+  swapped for the better-known name per shot (never a county). Shots whose place is known are preferred for such a
+  reel, its places are spread over the regions of the trip, and it is told place by place: each place's shots stay
+  together.
+
+The critic never rewrites a line that was built from the example, and its shot swaps stay inside a place in a reel
+told place by place.
+
+A recipe reel leaves out what only the style's average has: no split screens unless the example has them, and
+subtitles only where the example shows them (on its own sound, a subtitled spoken opening doesn't make the song
+after it subtitled; an example with no words over its voice gets none). A tease the example leaves unanswered
+trails off with three dots.
+
+Pick one with `make --recipe N`, or `--recipe off` for the style's averaged profile.
+
+### A series from one trip
+
+Every rendered reel is noted in `~/.tripshots/history.json` (which shots it showed, and which opened it). The next
+`make` from the same footage marks those shots down, the opening shot most, so five reels from one trip are five
+different reels rather than the same best ten shots in a new order. A shot from the same moment as one already shown
+counts as (nearly) shown. Re-rendering a reel replaces its own note, and a reel whose file you deleted is forgotten.
+`make --fresh off` (style `shots.fresh: 0`) ignores the memory.
+
 ## Hooks and text
 
 The AI writes three opening lines for the format, scores each for clarity, curiosity and emotion, and a quick
@@ -114,6 +171,8 @@ later (10); the fix opens on the shot it names.
 
 It fixes what it can (the hook punch, the hook's timing, a shot of you moved early, repeats swapped apart, the
 loop). With an AI backend it also looks at the storyboard and may apply up to three swaps or a better hook line.
+The spare shots it may swap in are ones that fit the reel: not shown in an earlier reel, not grey in a colourful
+reel, not upright in a horizontal one. When it changes the shots, the Instagram caption is written again for them.
 `--critic rules` skips the AI review, `--critic off` skips it all.
 
 The AI review judges the plan against **director's notes**: the house rules in

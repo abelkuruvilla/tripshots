@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from .config import OUT_H, OUT_W
+from .config import CANVAS
 
 FONT_CANDIDATES = {
     "bold": [
@@ -66,17 +66,17 @@ def render_hook_png(text: str, out: Path, cfg: dict, font_name: str | None) -> P
     if cfg.get("uppercase"):
         text = text.upper()
     size = int(cfg.get("size", 82))
-    img = Image.new("RGBA", (OUT_W, OUT_H), (0, 0, 0, 0))
+    img = Image.new("RGBA", (CANVAS.w, CANVAS.h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     font = load_font(size, "bold", font_name)
-    lines = _wrap(d, text, font, OUT_W - 220)
+    lines = _wrap(d, text, font, CANVAS.w - 220)
     lh = int(size * 1.18)
-    y0 = {"upper": 330, "center": OUT_H // 2 - lh * len(lines) // 2, "lower": 1250}.get(cfg.get("position", "upper"), 330)
+    y0 = {"upper": 330, "center": CANVAS.h // 2 - lh * len(lines) // 2, "lower": 1250}.get(cfg.get("position", "upper"), 330)
     shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow)
     for i, line in enumerate(lines):
         w = d.textlength(line, font=font)
-        x, y = (OUT_W - w) / 2, y0 + i * lh
+        x, y = (CANVAS.w - w) / 2, y0 + i * lh
         sd.text((x + 3, y + 4), line, font=font, fill=(0, 0, 0, 170))
         d.text((x, y), line, font=font, fill=(255, 255, 255, 255))
     shadow = shadow.filter(ImageFilter.GaussianBlur(8))
@@ -86,14 +86,14 @@ def render_hook_png(text: str, out: Path, cfg: dict, font_name: str | None) -> P
 
 def render_location_png(text: str, out: Path, cfg: dict, font_name: str | None) -> Path:
     size = int(cfg.get("size", 40))
-    img = Image.new("RGBA", (OUT_W, OUT_H), (0, 0, 0, 0))
+    img = Image.new("RGBA", (CANVAS.w, CANVAS.h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     font = load_font(size, "bold", font_name)
     tw = d.textlength(text, font=font)
     pin = int(size * 0.9)
     pos = cfg.get("position", "lower_left")
-    y = {"lower_left": 1380, "upper_left": 260, "center": OUT_H // 2}.get(pos, 1380)
-    x = 80 if "left" in pos else int((OUT_W - tw - pin - 16) / 2)
+    y = {"lower_left": 1380, "upper_left": 260, "center": CANVAS.h // 2}.get(pos, 1380)
+    x = 80 if "left" in pos else int((CANVAS.w - tw - pin - 16) / 2)
     # pill background
     pad = int(size * 0.45)
     d.rounded_rectangle([x - pad, y - pad, x + pin + 16 + tw + pad, y + size + pad],
@@ -168,10 +168,46 @@ def _vertical_tile(path: str, size: tuple[int, int], subject_x: float, layout: s
         return _tile(path, size)
 
 
+def used_frame(seg: dict, shot: dict) -> str:
+    """A still of the moment the reel uses: a shot's thumbnail is its best frame, which may lie outside the
+    part that is cut in (a clip that pans from a bridge to a river). Photos and failures: the thumbnail."""
+    thumb = shot.get("thumb", "")
+    src = seg.get("src") or shot.get("src")
+    if shot.get("kind") != "video" or seg.get("in") is None or not src:
+        return thumb
+    from .config import CACHE_ROOT
+    from .fx import hdr_chain
+    from .util import ffmpeg_base, run, short_hash
+    t = float(seg["in"]) + 0.5 * float(seg.get("dur") or 0) * float(seg.get("speed") or 1.0)
+    if shot.get("t1"):
+        t = min(t, float(shot["t1"]) - 0.05)
+    t = max(0.0, t)
+    key = "|".join([str(src), str(shot.get("sig")), f"{t:.1f}"])
+    f = CACHE_ROOT / "frames" / f"{short_hash(key, 16)}.jpg"
+    if f.exists():
+        return str(f)
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        vf = ["scale=640:-2:flags=area"] + hdr_chain({"hdr": shot.get("hdr"), "transfer": shot.get("transfer")})
+        run(ffmpeg_base() + ["-ss", f"{t:.3f}", "-i", src, "-frames:v", "1", "-vf", ",".join(vf), "-q:v", "4", f],
+            timeout=40)
+        return str(f) if f.exists() else thumb
+    except Exception:
+        return thumb
+
+
 def storyboard(plan: dict, shots_by_id: dict, out: Path) -> Path:
+    from concurrent.futures import ThreadPoolExecutor
     segs = plan["segments"]
+    with ThreadPoolExecutor(4) as ex:  # what each cut really shows, not just the shot's best frame
+        stills = list(ex.map(lambda s: used_frame(s, shots_by_id.get(s["shot_id"], {})), segs))
     cols = 8
     tw, th = 180, 320
+    frame = plan.get("frame") or {}
+    wide = float(frame.get("ar") or 0) > 0.6     # a wide picture with bars: show the picture, not a 9:16 crop
+    if wide:
+        cols, tw = 4, 372
+        th = int(round(tw / float(frame["ar"])))
     rows = (len(segs) + cols - 1) // cols
     img = Image.new("RGB", (cols * (tw + 10) + 10, rows * (th + 64) + 70), (24, 24, 24))
     d = ImageDraw.Draw(img)
@@ -179,13 +215,16 @@ def storyboard(plan: dict, shots_by_id: dict, out: Path) -> Path:
     f = load_font(15, "regular")
     fb = load_font(17, "bold")
     texts = " · ".join(f"\"{o['text']}\"" for o in plan.get("overlays", []))
-    d.text((12, 16), f"{plan['style']} · {plan['duration']:.1f}s · {len(segs)} shots · {plan.get('tempo', 0):.0f} BPM  {texts}"[:110],
+    c = frame.get("canvas") or ()
+    shape = (f" · horizontal {c[0]}x{c[1]}" if len(c) == 2 and c[0] > c[1]
+             else f" · {frame.get('aspect')} picture" if wide and frame.get("aspect") else "")
+    d.text((12, 16), f"{plan['style']} · {plan['duration']:.1f}s · {len(segs)} shots · {plan.get('tempo') or 0:.0f} BPM{shape}  {texts}"[:110],
            font=title, fill=(255, 255, 255))
     for i, s in enumerate(segs):
         x = 10 + (i % cols) * (tw + 10)
         y = 64 + (i // cols) * (th + 64)
         sh = shots_by_id.get(s["shot_id"], {})
-        tile = _vertical_tile(sh.get("thumb", ""), (tw, th), float(s.get("subject_x", 0.5)), s.get("layout", ""))
+        tile = _vertical_tile(stills[i], (tw, th), float(s.get("subject_x", 0.5)), s.get("layout", ""))
         lut = s.get("lut") or (s.get("clips") or [{}])[0].get("lut")
         if lut and Path(lut).exists():  # show the graded colour
             import numpy as np
@@ -195,7 +234,7 @@ def storyboard(plan: dict, shots_by_id: dict, out: Path) -> Path:
         from .retime import describe
         spd = f" {describe(s, short=True)}" if describe(s) else ""
         d.text((x, y + th + 4), f"#{i + 1} {s['shot_id']} {s['dur']:.1f}s{spd}", font=fb, fill=(255, 214, 0))
-        d.text((x, y + th + 26), (s.get("note") or s.get("layout", ""))[:24], font=f, fill=(200, 200, 200))
+        d.text((x, y + th + 26), (s.get("note") or s.get("layout", ""))[:50 if wide else 24], font=f, fill=(200, 200, 200))
         if s.get("trans_out"):
             d.text((x + tw - 14, y + th // 2), "»", font=fb, fill=(255, 214, 0))
     img.save(out, "JPEG", quality=88)

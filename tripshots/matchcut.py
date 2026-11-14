@@ -73,7 +73,7 @@ def _continuity(a: dict, b: dict) -> float:
 def _refit(seg: dict, by_id: dict) -> None:
     from .planner import _best_window
     sh = by_id.get(seg.get("shot_id"))
-    if not sh or seg.get("kind") != "video" or seg.get("ramp"):
+    if not sh or seg.get("kind") != "video" or seg.get("ramp") or seg.get("hold"):
         return
     speed = float(seg.get("speed", 1) or 1)
     avail = sh["t1"] - sh["t0"]

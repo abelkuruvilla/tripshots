@@ -29,7 +29,7 @@ from .util import ReelError
 WAIT = 50.0  # seconds a tool blocks before handing back a job id
 
 INSTRUCTIONS = """TripShots turns the user's own travel photos and clips into beat-synced Instagram Reels
-(1080x1920). Nothing is generated: every frame is the user's footage.
+(1080x1920, or 1920x1080 for a horizontal reel). Nothing is generated: every frame is the user's footage.
 
 Workflow for a request like "a reel about my days in Yellowstone" or "a reel of the photos I'm in":
 1. `status` once: footage folders, known people, AI backend. If no footage folders are set, ask the user
@@ -282,7 +282,8 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
                     upload_copy: bool = False, speed_ramps: str | None = None, speed_up: str | None = None,
                     drop_speed: str | None = None, format: str | None = None,
                     text_motion: str | None = None, no_location: bool = False,
-                    captions: str | None = None) -> list:
+                    captions: str | None = None, recipe: str | None = None,
+                    orientation: str | None = None, fresh: str | None = None) -> list:
     """Plan (dry_run=true, default) or plan+render a reel.
 
     sources: selection ids from find_footage ("sel:xxxx") and/or folders/files.
@@ -300,6 +301,15 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
     format: auto | montage | pov | list (numbered places) | series ("Day N of") | reveal. Every reel is planned as a
       story (hook, build, payoff, looping end) and checked by the critic; the result's "score" and "critic" file
       say what it fixed and what is still weak.
+    recipe: for a style learned from several reels, which reference's recipe (its cut, picture shape and text) to
+      follow: auto (the reel whose sound is used, else the one that fits the song), a number (1 = the first
+      reference), or off (the style's average).
+    orientation: auto | vertical | horizontal. auto (default) gives an upright 1080x1920 reel, or a horizontal
+      1920x1080 one when the style/recipe is widescreen or the footage only works wide (never black bars);
+      horizontal forces a 16:9 file, vertical an upright one (a wide picture then sits in a band).
+    fresh: on | off. on (default): a series from the same footage doesn't repeat itself: shots that earlier rendered
+      reels showed are marked down and their openings and endings aren't reused. off when the user wants the very
+      best shots again (e.g. another version of the same reel under a new name).
     upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
       same sound inside Instagram: do this when the music is a commercial song.
     Returns the plan path and the storyboard image to review (or a job id to poll)."""
@@ -307,7 +317,8 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
     for flag, v in (("-m", music), ("-s", style), ("-d", duration), ("--hook", hook), ("--location", location),
                     ("--look", look), ("--text-preset", text_preset), ("--route-map", route_map),
                     ("--speed-ramps", speed_ramps), ("--speed-up", speed_up), ("--drop-speed", drop_speed),
-                    ("--format", format), ("--text-motion", text_motion), ("--captions", captions)):
+                    ("--format", format), ("--text-motion", text_motion), ("--captions", captions),
+                    ("--recipe", recipe), ("--orientation", orientation), ("--fresh", fresh)):
         if v not in (None, ""):
             args += [flag, str(v)]
     if variants and variants > 1:
@@ -465,7 +476,7 @@ async def edits_package(plan: str, clips: bool = True) -> list:
     TripShots' styling), the sound effects track, the song and a manifest.json. Takes a few minutes: returns a job.
 
     Then either call edits_push, or, if the Edits MCP tools are connected to you as well, assemble it there from
-    manifest.json: new 9:16 project; clips at their starts (or picture.mp4 at 0); each text as Edits text at its
+    manifest.json: new project in the manifest's width x height (9:16, or 16:9 for a horizontal reel); clips at their starts (or picture.mp4 at 0); each text as Edits text at its
     start/duration; sound-effects.wav at 0; the song from Edits' library at music.song_start. Use paths under
     'staged' when present (Edits can only open files in its own container). Don't export or post unless asked."""
     args = ["edits", "package", str(_plan(plan))] + ([] if clips else ["--no-clips"])

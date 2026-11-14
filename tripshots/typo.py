@@ -22,7 +22,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from .config import OUT_H, OUT_W
+from .config import CANVAS
 
 FONT_DIR = Path(__file__).parent / "fonts"
 FONTS = {  # name -> (file, variable weight or None)
@@ -84,8 +84,35 @@ PRESETS = {
 }
 
 # Reels UI covers roughly the top 220px and bottom 420px, and the right edge has buttons
-SAFE = {"top": 250, "bottom": OUT_H - 440, "left": 80, "right": OUT_W - 150}
-BANDS = {"upper": (300, 760), "center": (720, 1200), "lower": (1050, 1440)}
+SAFE: dict = {}
+BANDS: dict = {}
+
+
+def relayout() -> None:
+    """The safe area and the rows text may sit in, for the frame being made (CANVAS)."""
+    W, H = CANVAS.size
+    BANDS.clear()
+    if CANVAS.horizontal:
+        # a horizontal reel plays as a band across the screen: the app's buttons sit outside it, so the words
+        # only keep clear of the edges
+        SAFE.update({"top": 70, "bottom": H - 80, "left": 130, "right": W - 130})
+        BANDS.update({"upper": (90, 440), "center": (330, 750), "lower": (640, 990)})
+    else:
+        SAFE.update({"top": 250, "bottom": H - 440, "left": 80, "right": W - 150})
+        BANDS.update({"upper": (300, 760), "center": (720, 1200), "lower": (1050, 1440)})
+
+
+relayout()
+CANVAS.listeners.append(relayout)
+
+
+def scaled(cfg: dict) -> dict:
+    """A text style's sizes for the frame being made (lettering is set bigger on a horizontal reel)."""
+    k = CANVAS.text
+    if k == 1.0:
+        return cfg
+    return {**cfg, **{key: int(round(float(cfg[key]) * k)) for key in ("size", "sub_size", "mono_size", "lead_size")
+                      if isinstance(cfg.get(key), (int, float))}}
 
 _font_cache: dict = {}
 
@@ -128,8 +155,9 @@ class Sprite:
 
 
 def _render_text(text: str, fnt, fill=(255, 255, 255), shadow: float = 0.55, stroke: int = 0,
-                 tracking: float = 0.0) -> tuple[np.ndarray, int]:
-    """RGBA sprite of one piece of text with a soft drop shadow. Returns (array, pad)."""
+                 tracking: float = 0.0, fills: list | None = None) -> tuple[np.ndarray, int]:
+    """RGBA sprite of one piece of text with a soft drop shadow. Returns (array, pad).
+    fills: a colour per character (postcard lettering) instead of one `fill`."""
     asc, desc = fnt.getmetrics()
     if tracking:
         widths = [fnt.getlength(c) for c in text]
@@ -158,11 +186,38 @@ def _render_text(text: str, fnt, fill=(255, 255, 255), shadow: float = 0.55, str
         d = ImageDraw.Draw(txt)
     if stroke:
         draw(d, pad, pad, (0, 0, 0, 200), stroke)
-    draw(d, pad, pad, (*fill, 255))
+    if fills:
+        x = float(pad)
+        for i, c in enumerate(text):
+            if not tracking:  # where the letter sits in the whole word (keeps the kerning)
+                x = pad + fnt.getlength(text[:i])
+            d.text((x, pad), c, font=fnt, fill=(*[int(v) for v in fills[i % len(fills)][:3]], 255))
+            if tracking:
+                x += widths[i] + tracking
+    else:
+        draw(d, pad, pad, (*fill, 255))
     return np.asarray(txt).astype(np.float32) / 255.0, pad
 
 
 def _wrap(words: list[str], fnt, max_w: float, space: float) -> list[list[str]]:
+    lines = _wrap_greedy(words, fnt, max_w, space)
+    if len(lines) < 2:
+        return lines
+    # balance the lines: the narrowest measure that still needs no more lines, so a title never leaves one word
+    # hanging under a full line ("The urge to keep / driving." reads as "The urge to / keep driving.")
+    def width(ls):
+        return max(sum(fnt.getlength(w) for w in ln) + space * (len(ln) - 1) for ln in ls)
+    lo, hi = max(fnt.getlength(w) for w in words), width(lines) + 1.0  # (+1: the sums round differently)
+    for _ in range(12):
+        mid = (lo + hi) / 2
+        if len(_wrap_greedy(words, fnt, mid, space)) <= len(lines):
+            hi = mid
+        else:
+            lo = mid
+    return _wrap_greedy(words, fnt, hi, space)
+
+
+def _wrap_greedy(words: list[str], fnt, max_w: float, space: float) -> list[list[str]]:
     lines, cur, cw = [], [], 0.0
     for w in words:
         ww = fnt.getlength(w)
@@ -227,6 +282,9 @@ class TextElement:
             q = min(1.0, local / 0.35)
             e = 1 - (1 - q) ** 3
             return min(1.0, local / 0.2) * out_k, 0.82 + 0.18 * e, 0, 0, 1.0
+        if a == "cut":  # there on the syllable, no fade: a word sung, then the next one in its place
+            q = min(1.0, local / 0.1)
+            return out_k, 1.05 - 0.05 * q, 0, 0, 1.0
         # fade
         q = min(1.0, local / 0.35)
         return q * out_k, 1.03 - 0.03 * q, 0, 0, 1.0
@@ -345,8 +403,8 @@ def choose_band(frame: np.ndarray | None, preferred: str, subject: dict | None =
     for name, (y0, y1) in BANDS.items():
         s = busy_map_score(frame, y0, y1)
         if subject:  # keep text off the subject
-            sy0 = subject.get("y0", 0) * OUT_H
-            sy1 = subject.get("y1", 0) * OUT_H
+            sy0 = subject.get("y0", 0) * CANVAS.h
+            sy1 = subject.get("y1", 0) * CANVAS.h
             overlap = max(0.0, min(y1, sy1) - max(y0, sy0)) / (y1 - y0)
             s += overlap * 1.5
         if name == "center":
@@ -362,6 +420,21 @@ def band_brightness(frame: np.ndarray | None, box) -> float:
     y0, y1 = max(0, y0), min(frame.shape[0], max(y0 + 1, y1))
     x0, x1 = max(0, x0), min(frame.shape[1], max(x0 + 1, x1))
     return float(frame[y0:y1, x0:x1].mean() / 255.0)
+
+
+def colour_clash(frame: np.ndarray | None, box, fill) -> bool:
+    """Coloured letters about the colour of what is behind them. White and near-white type is left to the
+    brightness checks; a red, yellow or blue line is compared with the picture's own colour under it."""
+    if frame is None or min(fill[:3]) > 200:
+        return False
+    x0, y0, x1, y1 = [int(v) for v in box]
+    y0, y1 = max(0, y0), min(frame.shape[0], max(y0 + 1, y1))
+    x0, x1 = max(0, x0), min(frame.shape[1], max(x0 + 1, x1))
+    patch = frame[y0:y1, x0:x1].reshape(-1, 3).astype(np.float32)
+    if not len(patch):
+        return False
+    near = np.linalg.norm(patch - np.asarray(fill[:3], np.float32), axis=1) < 90
+    return float(near.mean()) > 0.2   # a fifth of the ground behind the words is about their colour
 
 
 # --------------------------------------------------------------- builders
@@ -403,15 +476,39 @@ def script_cfg(text: str, cfg: dict) -> dict:
     return out
 
 
+def clear_rows(top: float, h: float, avoid, gap: float = 18.0) -> float:
+    """Where a text block of height h, wanted at `top`, sits clear of the subject: avoid = (subject top, subject
+    bottom, picture top, picture bottom) in pixels. The nearer free side that still fits in the picture; else
+    it stays where it was."""
+    if not avoid:
+        return top
+    s0, s1, lo, hi = avoid
+    if top + h <= s0 - gap or top >= s1 + gap:
+        return top
+    sides = [t for t in (s0 - gap - h, s1 + gap) if lo + gap <= t and t + h <= hi - gap]
+    return min(sides, key=lambda t: abs(t - top)) if sides else top
+
+
 def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.ndarray | None,
-               beats: list[float], subject: dict | None = None) -> TextElement:
+               beats: list[float], subject: dict | None = None, avoid=None, lead: str | None = None) -> TextElement:
+    """A line (or up to three) of big lettering. cfg extras for a recipe's own words: `fit` (0..1: a short
+    line is set as wide as that share of the safe width, like a postcard's place name), `colors` (a colour
+    per letter), `fixed` (the block starts at the same height whatever it says, so a name that changes with
+    every shot doesn't jump), `y` (the middle of the block, 0..1 down the frame, instead of the middle of its
+    band), and with `lead` a small line above it (`lead_font`, `lead_size`)."""
     cfg = script_cfg(text, cfg)
     if cfg.get("uppercase"):
         text = text.upper()
-    size = int(cfg.get("size", 100))
+    size = base_size = int(cfg.get("size", 100))
     fnt = font(cfg.get("font"), size)
     anim = cfg.get("anim", "pop")
     max_w = SAFE["right"] - SAFE["left"] - 40
+    if cfg.get("fit") and text.strip():
+        wide = fnt.getlength(text)
+        k = min(2.2, float(cfg["fit"]) * max_w / max(1.0, wide))
+        if k > 1.0 or wide > max_w and len(text.split()) <= 2:  # a short name grows; one or two words shrink to a line
+            size = max(48, int(size * max(0.55, k)))
+            fnt = font(cfg.get("font"), size)
     while True:
         space = fnt.getlength(" ")
         lines = _wrap(text.split(), fnt, max_w, space)
@@ -423,11 +520,45 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
     lh = int((asc + desc) * float(cfg.get("line_gap", 1.05)))
     band = choose_band(frame, cfg.get("position", "auto"), subject)
     by0, by1 = BANDS[band]
-    block_h = lh * len(lines)
-    top = by0 + max(0, (by1 - by0 - block_h) // 2)
+    lead_fnt = lead_h = None
+    if lead:
+        lead_size = int(cfg.get("lead_size") or max(40, base_size * 0.42))
+        lead_fnt = font(cfg.get("lead_font") or "caveat", lead_size)
+        while lead_fnt.getlength(lead) > max_w and lead_size > 30:
+            lead_size = int(lead_size * 0.9)
+            lead_fnt = font(cfg.get("lead_font") or "caveat", lead_size)
+        lead_h = int(sum(lead_fnt.getmetrics()) * 0.95)
+    block_h = lh * len(lines) + (lead_h or 0)
+    if cfg.get("fixed"):  # placed as if it were one line of the plain size: what it says doesn't move it
+        one = int(sum(font(cfg.get("font"), base_size).getmetrics()) * float(cfg.get("line_gap", 1.05)))
+        top = by0 + max(0, (by1 - by0 - one - (lead_h or 0)) // 2)
+        top = max(SAFE["top"], min(top, SAFE["bottom"] - block_h))
+    else:
+        top = by0 + max(0, (by1 - by0 - block_h) // 2)
+    if cfg.get("y") is not None:  # the plan chose the height (a line held across shots: recipes.free_row)
+        top = max(SAFE["top"], min(int(float(cfg["y"]) * CANVAS.h - block_h / 2), SAFE["bottom"] - block_h))
+        avoid = None
+    if avoid and not cfg.get("fixed"):
+        # the letters, not the line box, must clear the subject (capitals leave the descender row empty)
+        ink0, ink1 = (asc * 0.22, asc * 1.02) if text.upper() == text else (asc * 0.2, asc + desc * 0.8)
+        top = int(round(clear_rows(top + ink0, block_h - lh + ink1 - ink0, avoid) - ink0))
     el = TextElement(start, duration, anim, beats=beats)
+    if cfg.get("exit") is not None:
+        el.exit = max(0.01, float(cfg["exit"]))
+    fill = tuple(int(c) for c in cfg["color"][:3]) if cfg.get("color") else (255, 255, 255)
+    palette = cfg.get("colors") if isinstance(cfg.get("colors"), list) and cfg.get("colors") else None
+    inked = 0  # letters drawn so far: the colours run on through the lines
     items = []  # (text, x, y, line)
     widths = []
+    if lead:
+        lw = lead_fnt.getlength(lead)
+        widths.append(lw)
+        lx = SAFE["left"] + 20 + (max_w - lw) / 2
+        el.lines.append({"text": lead, "x": lx, "y": top, "font": cfg.get("lead_font") or "caveat",
+                         "size": lead_fnt.size, "tracking": 0.0, "h": lead_h, "role": "lead"})
+        img, pad = _render_text(lead, lead_fnt, shadow=0.7)
+        el.sprites.append(Sprite(img, lx - pad, top - pad, 0.0, 0))
+        top += lead_h
     for li, words in enumerate(lines):
         lw = sum(fnt.getlength(w) for w in words) + space * (len(words) - 1)
         widths.append(lw)
@@ -447,6 +578,7 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
         else:
             items.append((" ".join(words), x, y, li))
     x0 = SAFE["left"] + 20 + (max_w - max(widths)) / 2
+    top -= lead_h or 0
     el.box = (x0, top, x0 + max(widths), top + block_h)
     bright = band_brightness(frame, el.box)
     el.scrim = 0.34 if bright > 0.62 else (0.2 if bright > 0.45 else 0.0)
@@ -455,6 +587,10 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
         busy = busy_map_score(frame, max(0, int(el.box[1])), min(frame.shape[0], int(el.box[3]) + 1))
         if busy > 0.55:
             el.scrim = max(el.scrim, 0.3)
+    edge = 0
+    if frame is not None and not palette and colour_clash(frame, el.box, fill):
+        # red letters on a red rock (an example's colour over our picture): outline them and shade behind
+        edge, el.scrim = max(2, size // 26), max(el.scrim, 0.3)
     # entrance times
     if cfg.get("fast_in") and anim in ("pop", "scale", "typewriter"):
         # the opening line must read within the first second: every word in by about 0.5 s
@@ -469,12 +605,22 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
         times = [0.09 * it[3] for it in items]
     elif anim == "tracking":
         times = [0.0 for _ in items]
+    elif anim == "cut":
+        times = [0.0 for _ in items]
     else:
         times = [0.07 * i for i in range(len(items))]
     for (txt, x, y, li), ti in zip(items, times):
         if txt == " ":
             continue
-        img, pad = _render_text(txt, fnt, shadow=0.6 if el.scrim < 0.3 else 0.45)
+        fills = None
+        if palette:
+            fills, n = [], inked
+            for c in txt:
+                fills.append(palette[n % len(palette)])
+                n += 0 if c == " " else 1
+            inked = n
+        img, pad = _render_text(txt, fnt, fill=fill, shadow=0.6 if el.scrim < 0.3 else 0.45, fills=fills,
+                                stroke=max(2, size // 36) if palette else edge)
         el.sprites.append(Sprite(img, x - pad, y - pad, ti, li))
     return el
 
@@ -555,7 +701,7 @@ def build_location(main: str, sub: str | None, coords: str | None, start: float,
     for li, ((txt, f, tr), lh) in enumerate(zip(lines, heights)):
         w = (sum(f.getlength(c) for c in txt) + tr * (len(txt) - 1)) if tr else f.getlength(txt)
         widths.append(w)
-        x = SAFE["left"] + 10 if left_align else (OUT_W - w) / 2
+        x = SAFE["left"] + 10 if left_align else (CANVAS.w - w) / 2
         el.lines.append({"text": txt, "x": x, "y": y, "font": names[li][0], "size": names[li][1],
                          "tracking": float(tr), "h": lh, "role": ("main", "sub", "mono")[min(li, 2)]
                          if layout == "title" else ("main" if li == 0 else "mono")})
@@ -572,7 +718,7 @@ def build_location(main: str, sub: str | None, coords: str | None, start: float,
             img, pad = _render_text(txt, f, shadow=0.6, tracking=tr)
             el.sprites.append(Sprite(img, x - pad, y - pad, 0.12 * li, li))
         y += lh + 10
-    x0 = SAFE["left"] if left_align else (OUT_W - max(widths)) / 2
+    x0 = SAFE["left"] if left_align else (CANVAS.w - max(widths)) / 2
     el.box = (x0, top, x0 + max(widths), top + block_h)
     bright = band_brightness(frame, el.box)
     el.scrim = 0.4 if bright > 0.6 else (0.2 if bright > 0.45 else 0.0)
@@ -605,9 +751,9 @@ def build_location_behind(main: str, sub: str | None, coords: str | None, start:
     l, t_ink, r, b_ink = f.getbbox(text)
     ink_h = b_ink - t_ink
     tw = f.getlength(text)
-    x = (OUT_W - tw) / 2
+    x = (CANVAS.w - tw) / 2
     sky_line = skyline(m)
-    span = sky_line[int(max(0, x)):int(min(OUT_W, x + tw))]
+    span = sky_line[int(max(0, x)):int(min(CANVAS.w, x + tw))]
     if span.size == 0:
         return None
     line_y = float(np.median(span))
@@ -616,8 +762,8 @@ def build_location_behind(main: str, sub: str | None, coords: str | None, start:
     if ink_top < SAFE["top"]:
         return None
     # check the letters really overlap the foreground (otherwise it's just normal text)
-    y0, y1 = int(ink_top), int(min(OUT_H, ink_top + ink_h))
-    cover = float(m[y0:y1, int(max(0, x)):int(min(OUT_W, x + tw))].mean()) if y1 > y0 else 0
+    y0, y1 = int(ink_top), int(min(CANVAS.h, ink_top + ink_h))
+    cover = float(m[y0:y1, int(max(0, x)):int(min(CANVAS.w, x + tw))].mean()) if y1 > y0 else 0
     if not 0.12 <= cover <= 0.7:
         return None
     el = TextElement(start, duration, cfg.get("behind_anim", "rise"))
@@ -640,7 +786,7 @@ def build_location_behind(main: str, sub: str | None, coords: str | None, start:
             break
         w = sum(ff.getlength(c) for c in txt) + tr * (len(txt) - 1)
         img, pad = _render_text(txt, ff, shadow=0.6, tracking=tr)
-        el.sprites.append(Sprite(img, (OUT_W - w) / 2 - pad, y - pad, 0.45 + 0.12 * (len(extras) - 1 - i), 1,
+        el.sprites.append(Sprite(img, (CANVAS.w - w) / 2 - pad, y - pad, 0.45 + 0.12 * (len(extras) - 1 - i), 1,
                                  anim="slide"))
         y -= 8
     el.box = (x, y, x + tw, ink_top + ink_h)

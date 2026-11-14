@@ -50,14 +50,15 @@ usage: tripshots make [-h] [-m MUSIC]
                       [--slowmo-smooth {flow,blend,off}] [--labels {ai,off}]
                       [--format {auto,montage,pov,list,series,reveal}] [--arc {on,off}]
                       [--captions auto|off|original|LANGUAGE] [--critic {auto,rules,off}]
-                      [--parallax {auto,on,off}] [--loop | --no-loop] [--min-score N]
-                      [--look LOOK] [--grade-strength 0-1] [--variants N]
-                      [--route-map {intro,tracker,both,off}] [--allow-similar] [--music-start SEC]
-                      [--upload-copy | --no-upload-copy] [--cookies-from-browser BROWSER]
-                      [--cookies FILE] [--sfx {on,off}] [--ambience {on,off}]
-                      [--clip-sound {auto,on,off}] [--sfx-level DB] [--sfx-licenses LIST]
-                      [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND] [--hook HOOK]
-                      [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
+                      [--parallax {auto,on,off}] [--recipe auto|off|N]
+                      [--orientation {auto,vertical,horizontal}] [--fresh {on,off}]
+                      [--loop | --no-loop] [--min-score N] [--look LOOK] [--grade-strength 0-1]
+                      [--variants N] [--route-map {intro,tracker,both,off}] [--allow-similar]
+                      [--music-start SEC] [--upload-copy | --no-upload-copy]
+                      [--cookies-from-browser BROWSER] [--cookies FILE] [--sfx {on,off}]
+                      [--ambience {on,off}] [--clip-sound {auto,on,off}] [--sfx-level DB]
+                      [--sfx-licenses LIST] [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND]
+                      [--hook HOOK] [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
                       [--exclude GLOB] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--no-recursive]
                       [--include-live-photos] [--watch {auto,gemini,off}] [--rescore]
                       [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
@@ -105,6 +106,18 @@ options:
                         check the plan like an editor and fix weak spots (auto: rules + AI review)
   --parallax {auto,on,off}
                         photos move in depth (2.5D) instead of a flat zoom
+  --recipe auto|off|N   a style learned from several reels keeps each one's recipe (its cut,
+                        picture shape and text). auto (default): the recipe of the reel whose
+                        sound you use, else the one that fits the song; N: the N-th reference's;
+                        off: the style's average
+  --orientation {auto,vertical,horizontal}
+                        shape of the file. auto (default): upright 1080x1920, or horizontal
+                        1920x1080 when the style or recipe is widescreen or the footage only works
+                        wide (no black bars); vertical: always upright (a wide picture sits in a
+                        band); horizontal: always 1920x1080
+  --fresh {on,off}      on (default): shots your earlier reels of this footage showed are marked
+                        down, and this reel opens and ends on something else; off: the best shots,
+                        whatever was posted before
   --loop, --no-loop     seamless loop ending
   --min-score N         lowest AI score (1-10) a shot may have to be used (default: style's
                         min_score - 2)

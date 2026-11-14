@@ -77,3 +77,26 @@ def test_companion_skills_listed(tmp_path, monkeypatch):
     assert set(st) == {"hyperframes", "remotion", "one-take", "lemo-opuscar"}
     assert st["hyperframes"]["installed"] and not st["remotion"]["installed"]
     assert st["one-take"]["install"] == "npx skills add KaranO-Dev/one-take-skill"
+
+
+def test_a_title_never_leaves_one_word_hanging():
+    from tripshots import typo
+    f = typo.font(None, 90)
+    sp = f.getlength(" ")
+    words = "The urge to keep driving.".split()
+    w = sum(f.getlength(x) for x in words[:4]) + 3 * sp + 5  # room for four words: greedy leaves "driving." alone
+    assert [len(ln) for ln in typo._wrap_greedy(words, f, w, sp)] == [4, 1]
+    lines = typo._wrap(words, f, w, sp)
+    assert len(lines) == 2 and min(len(ln) for ln in lines) >= 2
+
+
+def test_coloured_letters_on_their_own_colour_get_an_outline():
+    from tripshots import typo
+    red = np.zeros((1920, 1080, 3), np.uint8)
+    red[:] = (200, 70, 50)
+    assert typo.colour_clash(red, (100, 800, 900, 1000), (232, 64, 56))
+    assert not typo.colour_clash(_bg(), (100, 800, 900, 1000), (232, 64, 56))
+    assert not typo.colour_clash(red, (100, 800, 900, 1000), (255, 255, 255))
+    cfg = legible("hook", dict(PRESETS["editorial"]["hook"]))
+    el = build_hook("Touched", 0, 1.4, {**cfg, "color": [232, 64, 56]}, red, [])
+    assert el.scrim >= 0.3

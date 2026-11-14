@@ -88,6 +88,7 @@ def test_words_cleaning_window_and_captions():
     assert win["lines"][0]["start"] == 0.0 and win["punch_t"] == 1.2
     caps = lyrics.caption_overlays(win, 10, "auto")
     assert [c["text"] for c in caps] == ["You", "Come here"]          # Malayalam dialogue -> English subtitles
+    assert caps[0]["start"] + caps[0]["duration"] <= caps[1]["start"]   # one line at a time, never two at once
     assert lyrics.caption_overlays({**win, "kind": "song"}, 10, "auto") == []
 
 

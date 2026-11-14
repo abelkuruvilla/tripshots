@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .config import OUT_FPS, OUT_H, OUT_W
+from .config import CANVAS, OUT_FPS
 from .motion import ease_out
 from .util import ffmpeg_base
 
@@ -30,18 +30,18 @@ def layout_rects(kind: str) -> list[tuple[int, int, int, int]]:
     """Panel rectangles (even sizes: H.264 needs them)."""
     g = GUTTER
     if kind == "split2":  # two stacked
-        h = _even((OUT_H - g) / 2)
-        return [(0, 0, OUT_W, h), (0, h + g, OUT_W, OUT_H - h - g)]
+        h = _even((CANVAS.h - g) / 2)
+        return [(0, 0, CANVAS.w, h), (0, h + g, CANVAS.w, CANVAS.h - h - g)]
     if kind == "split3":  # three horizontal strips
-        h = _even((OUT_H - 2 * g) / 3)
-        return [(0, i * (h + g), OUT_W, h if i < 2 else OUT_H - 2 * (h + g)) for i in range(3)]
+        h = _even((CANVAS.h - 2 * g) / 3)
+        return [(0, i * (h + g), CANVAS.w, h if i < 2 else CANVAS.h - 2 * (h + g)) for i in range(3)]
     if kind == "grid4":  # 2x2
-        w, h = _even((OUT_W - g) / 2), _even((OUT_H - g) / 2)
-        return [(0, 0, w, h), (w + g, 0, OUT_W - w - g, h), (0, h + g, w, OUT_H - h - g),
-                (w + g, h + g, OUT_W - w - g, OUT_H - h - g)]
+        w, h = _even((CANVAS.w - g) / 2), _even((CANVAS.h - g) / 2)
+        return [(0, 0, w, h), (w + g, 0, CANVAS.w - w - g, h), (0, h + g, w, CANVAS.h - h - g),
+                (w + g, h + g, CANVAS.w - w - g, CANVAS.h - h - g)]
     if kind == "columns3":  # three tall columns
-        w = _even((OUT_W - 2 * g) / 3)
-        return [(i * (w + g), 0, w if i < 2 else OUT_W - 2 * (w + g), OUT_H) for i in range(3)]
+        w = _even((CANVAS.w - 2 * g) / 3)
+        return [(i * (w + g), 0, w if i < 2 else CANVAS.w - 2 * (w + g), CANVAS.h) for i in range(3)]
     raise ValueError(kind)
 
 
@@ -132,12 +132,12 @@ def composite_panel_segment(e: dict, clip_files: list[tuple[dict, Path, int]], l
     for c in clips:
         t1 = float(c.spec["t1"])
         ends[id(c)] = n if t1 >= float(e["dur"]) - 1e-3 else int(round((lead + t1) * OUT_FPS))
-    cmd = ffmpeg_base() + ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OUT_W}x{OUT_H}", "-r", str(OUT_FPS),
+    cmd = ffmpeg_base() + ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CANVAS.w}x{CANVAS.h}", "-r", str(OUT_FPS),
                            "-i", "-"] + enc + [str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for k in range(n):
-            canvas = np.empty((OUT_H, OUT_W, 3), np.uint8)
+            canvas = np.empty((CANVAS.h, CANVAS.w, 3), np.uint8)
             canvas[:] = bg
             first = min(clips, key=lambda c: c.u0)
             for c in sorted(clips, key=lambda c: c.u0):  # later clips on top (they slide over)

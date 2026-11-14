@@ -63,11 +63,13 @@ def list_order(pool: list[dict], places: dict) -> list[dict]:
     return [s for g in order for s in sorted(groups[g], key=lambda x: x.get("created") or "")]
 
 
-def apply(plan: dict, fmt: str, by_id: dict, places: dict, copy: dict, hook_seg_end: float | None = None) -> None:
-    """Add the format's on-screen text to a plan (after the hook, which the pipeline places)."""
+def apply(plan: dict, fmt: str, by_id: dict, places: dict, copy: dict, hook_seg_end: float | None = None,
+          cards: bool = True) -> None:
+    """Add the format's on-screen text to a plan (after the hook, which the pipeline places).
+    cards: False when the plan already names its places (a recipe's own labels)."""
     plan.setdefault("story", {})["format"] = fmt
     segs = plan["segments"]
-    if fmt == "list":
+    if fmt == "list" and cards:
         n = 0
         last = None
         for s in segs:

@@ -35,6 +35,8 @@ Read `reels/<name>.storyboard.jpg` and `reels/<name>.grade.jpg`. Check:
 - No two near-identical shots back to back; nothing blurry, dark or tilted.
 - The last shot is a calm, wide "ending" shot.
 - Vertical crops keep the subject in frame. If not, adjust `subject_x` in the plan, or use `"layout": "blur_fill"`.
+- A series from one trip: render each reel before planning the next (renders are remembered in ~/.tripshots/history.json, and the next `make` avoids their shots; `--fresh off` ignores that), and give each a different recipe (`-m <reel link>` or `--recipe N`). A labels recipe names each shot from facts (landmark, park/town from GPS, state): check every label against its shot on the frames
+- Shape: a widescreen style/recipe, or landscape footage that can't be cropped upright, gives a horizontal 1920x1080 reel (the log says so; the storyboard title says `horizontal`). Never deliver a wide picture between black bars: if most shots are `blur_fill`, re-run with `--orientation horizontal`. `--orientation vertical` only when the user wants an upright file.
 
 To swap shots, run `tripshots scan <folders> --top 40` to see the candidates, then edit `shot_id` in `reels/<name>.plan.json`.
 

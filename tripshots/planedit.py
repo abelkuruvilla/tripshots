@@ -25,7 +25,7 @@ from .config import load_style
 from .util import ReelError, read_json, write_json
 
 SLOT_KEYS = {"dur", "out_start", "idx", "level", "drop", "trans_out", "trans_dur", "trans_params", "incam_out",
-             "incam_in", "hero"}
+             "incam_in", "hero", "role", "hold"}   # a slot's place in the story stays when its shot changes
 TRANSITIONS = {None, "whip", "zoom_in", "zoom_out", "spin", "flash", "glitch", "blur", "dissolve", "dip", "leak"}
 
 
@@ -37,6 +37,13 @@ def _put(seg: dict, content: dict) -> None:
     for k in [k for k in seg if k not in SLOT_KEYS]:
         del seg[k]
     seg.update(content)
+
+
+def _plain_cut(segs: list, i: int) -> None:
+    """A camera's own swing belongs to the footage that had it: with another shot in the slot the cut is a plain one."""
+    if segs[i].pop("incam_out", None) is not None and i + 1 < len(segs):
+        segs[i + 1].pop("incam_in", None)
+    segs[i].pop("incam_in", None)
 
 
 def _slot(plan, n) -> int:
@@ -77,6 +84,8 @@ def apply(plan_path: Path, edits: list[dict]) -> dict:
     if not plan:
         raise ReelError(f"could not read {plan_path}")
     style = load_style(plan.get("style"))
+    from .framing import use_plan
+    use_plan(plan)     # a horizontal or letterboxed plan: new shots are framed for its picture
     shots = _shots(plan)
     segs = plan["segments"]
     done, regrade = [], False
@@ -90,12 +99,14 @@ def apply(plan_path: Path, edits: list[dict]) -> dict:
             from .planner import _shot_fields
             e, _ = _shot_fields(sh, segs[i]["dur"], segs[i].get("level", "mid"), style, i)
             _put(segs[i], e)
+            _plain_cut(segs, i)
             regrade = True
             done.append(f"slot {i + 1} -> {sh['id']}")
         elif op in ("move", "exchange"):
             a, b = (_slot(plan, ed["from"]), _slot(plan, ed["to"])) if op == "move" else \
                 (_slot(plan, ed["a"]), _slot(plan, ed["b"]))
             contents = [_content(s) for s in segs]
+            before = [s.get("shot_id") for s in segs]
             if op == "move":
                 c = contents.pop(a)
                 contents.insert(b, c)
@@ -104,6 +115,8 @@ def apply(plan_path: Path, edits: list[dict]) -> dict:
             for s, c in zip(segs, contents):
                 _put(s, c)
             for k in range(min(a, b), max(a, b) + 1):
+                if segs[k].get("shot_id") != before[k]:
+                    _plain_cut(segs, k)
                 _refit(segs[k], plan, style)
             done.append(f"{op} {a + 1} <-> {b + 1}")
         elif op == "text":

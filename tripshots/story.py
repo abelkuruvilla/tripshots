@@ -19,10 +19,15 @@ a "Day N" series, a slow reveal.
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 
 from .config import OUT_FPS
 
 ROLES = ("hook", "setup", "build", "peak", "release", "ending")
+# how far below the best a fresher shot may be and still take a slot that carries the reel (an opening seen
+# before is the easiest repeat to notice, so there the newer shot gets more room)
+LEAD_SLACK = {"hook": 2.5, "ending": 1.5}
+PEAK_Q = 0.8  # the turn of a reel goes to one of its best-looking shots: this close to the best (a reveal: half)
 
 
 def _rand(*parts) -> float:
@@ -61,6 +66,19 @@ class _BeatClock:
             return round(t / self.bl)
         return float(min(range(len(self.b)), key=lambda i: abs(self.b[i] - t)))
 
+    def x_at(self, t: float) -> float:
+        """The fractional beat index at time t (the inverse of `t`)."""
+        b = self.b
+        if not b:
+            return t / self.bl
+        if t >= b[-1]:
+            return len(b) - 1 + (t - b[-1]) / self.bl
+        if t <= b[0]:
+            return max(0.0, (t - b[0]) / self.bl)
+        import bisect
+        i = bisect.bisect_right(b, t) - 1
+        return i + (t - b[i]) / max(b[i + 1] - b[i], 1e-6)
+
 
 def _level(e: float, th: tuple) -> str:
     return "calm" if e < th[0] else ("intense" if e >= th[1] else "medium")
@@ -68,13 +86,22 @@ def _level(e: float, th: tuple) -> str:
 
 def _drops(beats: list[float], energy: list[float], total: float) -> list[float]:
     import numpy as np
-    out = []
-    for j in range(4, len(beats) - 3):
-        prev = float(np.mean(energy[max(0, j - 4):j]))
-        nxt = float(np.mean(energy[j:j + 4]))
-        if nxt - prev > 0.22 and 0.3 < beats[j] < total - 0.5:
-            if not out or beats[j] - out[-1] > 2.0:
-                out.append(round(beats[j], 4))
+
+    def rise(j: int) -> float:
+        return float(np.mean(energy[j:j + 4])) - float(np.mean(energy[max(0, j - 4):j]))
+
+    out, n, j = [], len(beats) - 3, 4
+    while j < n:
+        if rise(j) > 0.22 and 0.3 < beats[j] < total - 0.5:
+            # the four-beat averages start to part a beat or two before the hit: the drop is where they part most
+            k = max(range(j, min(j + 4, n)), key=lambda i: (round(rise(i), 4), -i))
+            if beats[k] >= total - 0.5:
+                k = j
+            if not out or beats[k] - out[-1] > 2.0:
+                out.append(round(beats[k], 4))
+            j = k + 1
+        else:
+            j += 1
     return out
 
 
@@ -91,7 +118,8 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
     clock = _BeatClock(beats, bl)
     dmin, dmax = float(style["duration"]["min"]), float(style["duration"]["max"])
 
-    if words and words.get("kind") == "dialogue" and words.get("lines"):
+    recipe = style.get("_recipe")
+    if words and words.get("kind") == "dialogue" and words.get("lines") and not recipe:
         return _dialogue_rhythm(words, beats, energy, th, bl, style, target)
 
     end_i = clock.index_at(min(target, (beats[-1] if beats else target)))
@@ -121,6 +149,14 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
             n = 1.0
         return n
 
+    if recipe:  # one reference's own shot lengths, laid on this song (recipes.py)
+        from . import recipes
+        avail = grid.get("avail")
+        limit = clock.x_at(avail) if avail and target >= avail - 0.3 else float(clock.index_at(target))
+        lengths = recipes.slots(recipe, {**grid, "drops": _drops(beats, energy, clock.t(limit))}, clock, limit)
+        if lengths:
+            total = clock.t(sum(n for n, _ in lengths))
+            return _to_segments(lengths, clock, energy, th, _drops(beats, energy, total), 0.0)
     att = style.get("attention") or {}
     if att.get("curve") and att.get("shot_sec"):
         return _curve_rhythm(att, clock, bl, end_i, energy, th, drops, mid, words, variant)
@@ -368,6 +404,31 @@ def has_people(s: dict) -> bool:
     return any(w in text.lower() for w in ("person", "silhouette", "hiker", " man ", "woman", "people", "selfie"))
 
 
+def _words(s: dict) -> set:
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w
+            for t in (_ai(s).get("tags") or [])[:7] for w in str(t).lower().split()}
+
+
+def alike(a: dict, b: dict) -> bool:
+    """The same kind of view (the rig from the drone again, another lake with someone at the shore): what the AI
+    called the scene and three words of what it saw first. Shots with no place on record repeat this way."""
+    scene = _ai(a).get("scene")
+    return bool(scene) and scene == _ai(b).get("scene") and len(_words(a) & _words(b)) >= 3
+
+
+def landmark(s: dict) -> str:
+    """The landmark the AI named, without its park ("Half Dome, Yosemite" and "Half Dome" are one)."""
+    return str(_ai(s).get("landmark") or "").split(",")[0].strip().lower()
+
+
+def same_view(a: dict, b: dict) -> bool:
+    """The same kind of view from the same half day (the forest road again, two hours on): after a shot that
+    stays on screen for seconds it reads as a repeat, however far apart the two were filmed."""
+    from .diversity import _when
+    ta, tb = _when(a), _when(b)
+    return ta is not None and tb is not None and abs(ta - tb) <= 12 * 3600 and alike(a, b)
+
+
 def moving(s: dict) -> bool:
     m = s.get("metrics") or {}
     return s.get("kind") == "video" and (m.get("pan", 0) > 0.004 or m.get("activity", 0) > 0.012)
@@ -422,16 +483,118 @@ def _moving(s: dict) -> bool:
     return s.get("kind") == "video" and (m.get("pan", 0) > 0.004 or m.get("activity", 0) > 0.015)
 
 
+# ------------------------------------------------------------- a long hold
+HOLD_ACTS = ("walk", "hik", "stand", "run", "driv", "rid", "look", "gaz", "sit", "climb", "wad", "stroll")
+HOLD_MOTIONS = {"drone", "walk", "walking", "push", "pan", "tilt"}
+HOLD_FLAWS = {"obstructed", "cluttered", "dark", "motion-blur", "accidental", "out-of-focus", "blurry", "tilted",
+              "overexposed", "finger", "noisy"}
+
+
+def clip_spans(shots: list[dict]) -> dict[str, tuple[float, float]]:
+    """For each video shot, the unbroken stretch of its clip that it sits in. Long clips are stored as
+    back-to-back chunks; a shot held for many seconds may run on into the next ones. {shot id: (start, end)}"""
+    by: dict[str, list[dict]] = {}
+    for s in shots:
+        if s.get("kind") == "video":
+            by.setdefault(s["src"], []).append(s)
+    out = {}
+    for chunks in by.values():
+        chunks.sort(key=lambda s: s["t0"])
+        run = [chunks[0]]
+        for s in chunks[1:] + [None]:
+            if s is not None and abs(s["t0"] - run[-1]["t1"]) < 0.08:
+                run.append(s)
+                continue
+            for r in run:
+                out[r["id"]] = (run[0]["t0"], run[-1]["t1"])
+            run = [s]
+    return out
+
+
+def hold_score(s: dict) -> float:
+    """How well a clip carries a long opening hold: one beautiful, steady, moving view, best with someone in it
+    (walking away, standing at the edge) so the eye has something to follow while the words appear."""
+    a = _ai(s)
+    w = a.get("watch") or {}
+    v = _q(s) + 0.5 * float(a.get("aesthetic") or _q(s)) / 10
+    if has_people(s):
+        p = a.get("people") if isinstance(a.get("people"), dict) else {}
+        act = str(p.get("activity") or "").lower()
+        v += 1.0 + (0.7 if any(k in act for k in HOLD_ACTS) else 0.0)
+        from .framing import person_box
+        pb = person_box(s)
+        if pb and (pb["x1"] - pb["x0"]) * (pb["y1"] - pb["y0"]) < 0.12:
+            v += 0.5  # a small figure in a big landscape
+    if {a.get("motion"), w.get("motion")} & HOLD_MOTIONS:
+        v += 1.0
+    elif not moving(s):
+        v -= 1.0  # a locked-off view with nothing moving reads as a photo
+    v += {"steady": 0.6, "slight_shake": -0.4, "shaky": -2.5}.get(w.get("stability"), 0.0)
+    issues = set(a.get("issues") or [])
+    v -= 1.5 * ("shaky" in issues) + 1.0 * len(issues & HOLD_FLAWS) + 0.4 * ("low-contrast" in issues)
+    if w.get("framing") not in (None, "upright"):
+        v -= 2.0
+    return v
+
+
+def hold_candidates(shots: list[dict], need: float, style: dict, open_kind: str | None = None,
+                    n: int = 12) -> list[tuple[dict, float]]:
+    """The clips that can be held for `need` seconds without a cut, best first: [(shot it starts on, score)].
+    The hold may run on through the following chunks of the same clip (clip_spans); slowing a clip to cover the
+    time is the last resort."""
+    from .history import mark_down
+    from .planner import colourless, taste_scores
+    usable = [s for s in shots if s.get("kind") == "video" and _ai(s).get("usable", True)]
+    grey = colourless([s for s in shots if _ai(s).get("usable", True)])
+    spans = clip_spans(usable)
+    by: dict[str, list[dict]] = {}
+    for s in usable:
+        by.setdefault(s["src"], []).append(s)
+    first = []
+    for s in usable:  # cheap pass: long enough, then judged on its own
+        room = spans[s["id"]][1] - s["t0"]
+        if room < need * 0.75:
+            continue
+        speed = min(1.0, room / need)
+        first.append((hold_score(s) - 4.0 * (1.0 - speed), s, speed))
+    first.sort(key=lambda c: c[0], reverse=True)
+    first = first[:max(60, n * 5)]
+    taste = taste_scores([c[1] for c in first], style)
+    want = {"person": "people"}.get(open_kind or "", open_kind)
+    out = []
+    for _, s, speed in first:  # the whole stretch it would show has to hold up, not just where it starts
+        end = s["t0"] + need * speed
+        covered = [c for c in by[s["src"]] if c["t0"] < end - 0.3 and c["t1"] > s["t0"] + 0.3] or [s]
+        sc = [hold_score(c) for c in covered]
+        v = 0.6 * sum(sc) / len(sc) + 0.4 * min(sc) - 4.0 * (1.0 - speed) + taste.get(s["id"], 0.0)
+        v -= 5.0 * max(mark_down(style, c, lead=True) for c in covered)  # an earlier reel's opening: not again
+        v -= 4.0 * grey.get(s["id"], 0.0)  # seconds of grey sand to open a reel full of colour
+        if want and (shot_kind(s) == want or (want == "action" and _moving(s))):
+            v += 1.0
+        out.append((s, round(v, 3)))
+    out.sort(key=lambda c: c[1], reverse=True)
+    picked, seen = [], set()
+    for s, v in out:  # one start per clip
+        if s["src"] not in seen:
+            seen.add(s["src"])
+            picked.append((s, v))
+    return picked[:n]
+
+
 def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, groups: dict | None = None,
-         tease: bool = False, places: dict | None = None, fmt: str = "montage") -> list[dict]:
-    """Put each chosen shot where it serves the story: the hook, the payoff, the ending first, then the rest."""
+         tease: bool = False, places: dict | None = None, fmt: str = "montage",
+         hold: list[tuple[dict, float]] | None = None, where: dict | None = None) -> list[dict]:
+    """Put each chosen shot where it serves the story: the hook, the payoff, the ending first, then the rest.
+    `hold`: the clips that can carry a long opening shot (hold_candidates); the hook is one of them.
+    `where`: {shot id: place} (diversity.place_keys): a place isn't shown twice in a row, and rarely twice."""
     from .diversity import thumb_look
     pool = list(chosen)
     order: list[dict | None] = [None] * len(segs)
     st = style.get("story") or {}
     ctx = {"people_weight": 1.6 if st.get("people_first", True) else 0.5, "tease": tease, "looks": {}}
-    from .planner import taste_scores
+    from .planner import colourless, taste_scores
     taste = taste_scores(chosen, style)  # a learned style's light, colour and people
+    grey = colourless(chosen)  # a grey shot in a colourful reel doesn't open, turn or close it
 
     att = style.get("attention") or {}
     open_kind = (att.get("open") or {}).get("shot")
@@ -452,16 +615,54 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
     def used_pen(s):  # thin footage repeats shots in the pool: never the same one twice while others remain
         return -50.0 if any(o is not None and o["id"] == s["id"] for o in order) else 0.0
 
+    def seen(s, weight=1.0):  # the place again: the viewer has been there already
+        if not where:
+            return 0.0
+        k = where.get(s["id"], s["id"])
+        return -weight * sum(1 for o in order if o is not None and where.get(o["id"], o["id"]) == k)
+
+    def again(s, weight=1.0):  # the same kind of view again: the rig from the drone a third time; a landmark
+        mark = landmark(s)      # again from another angle (two Half Domes in one reel) is a repeat as well
+        return -weight * sum((1.0 if alike(o, s) else 0.0) + (2.5 if mark and landmark(o) == mark else 0.0)
+                             for o in order if o is not None and o["id"] != s["id"])
+
     def take(idx: int, role: str, extra=None):
         if not pool:
             return
-        ranked = sorted(pool, key=lambda s: role_score(s, role, ctx) + taste.get(s["id"], 0.0) + used_pen(s)
-                        + (extra(s) if extra else 0), reverse=True)
+        from .history import mark_down
+        base = {s["id"]: role_score(s, role, ctx) + taste.get(s["id"], 0.0) + used_pen(s) + seen(s, 2.0) + again(s)
+                - 1.5 * grey.get(s["id"], 0.0) + (extra(s) if extra else 0) for s in pool}
+        # what carried an earlier reel doesn't carry this one, among the shots that can carry it about as well:
+        # a slot the reel turns on is never handed to a middling shot for being new
+        shown = {landmark(o) for o in order if o is not None} - {""}
+        new = [s for s in pool if landmark(s) not in shown] or pool  # a landmark once, whatever the slot
+        # the slots a reel is remembered by (its opening, its turn, its last frame) never go to a grey shot
+        new = [s for s in new if grey.get(s["id"], 0.0) < 0.5] or new
+        if role == "peak":  # liveliness, people and a learned taste choose among the best, not instead of them
+            near = max([_q(s) for s in new if not used_pen(s)] or [0.0]) - PEAK_Q * (0.5 if tease else 1.0)
+            fit = {s["id"]: _q(s) >= near for s in new}
+        else:
+            near = max(base[s["id"]] for s in new) - LEAD_SLACK.get(role, 1.5)
+            fit = {s["id"]: base[s["id"]] >= near for s in new}
+        fit = {s["id"]: fit.get(s["id"], False) for s in pool}
+        ranked = sorted(pool, reverse=True, key=lambda s: (
+            fit[s["id"]], base[s["id"]] - 4.0 * mark_down(style, s, lead=True)))
         pick = ranked[min(variant, len(ranked) - 1)] if role == "hook" and variant else ranked[0]
         order[idx] = pick
         pool.remove(pick)
     roles = [s.get("role", "release") for s in segs]
-    if "hook" in roles:
+    if "hook" in roles and hold:  # a long hold: one unbroken clip that lasts, never a photo
+        i = roles.index("hook")
+        pick = hold[min(variant, len(hold) - 1)][0]
+        order[i] = pick
+        t_a, t_b = pick["t0"] - 2.0, pick["t0"] + float(segs[i]["dur"]) + 2.0
+        pool = [s for s in pool if s["id"] != pick["id"]  # and none of the same stretch again later
+                and not (s.get("src") == pick["src"] and s.get("t0", 0) < t_b and s.get("t1", 0) > t_a)]
+        # nor the view it held for seconds from another clip of that day, while other shots can fill the slots
+        other = [s for s in pool if not same_view(pick, s)]
+        if len(other) >= len(segs) - 1:
+            pool = other
+    elif "hook" in roles:
         take(roles.index("hook"), "hook", open_bonus if open_kind else None)
     if "peak" in roles:
         take(roles.index("peak"), "peak")
@@ -482,9 +683,49 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
             pool.remove(best)
     # the rest by role, in story order; chronology inside the middle when the style asks for it
     rest = [i for i in range(len(segs)) if order[i] is None]
-    if fmt == "list" and places:  # chapters: one place after another, the best place last
-        from .formats import list_order
-        for i, sh in zip(rest, list_order(pool, places)):
+    if fmt == "list" and places:
+        # chapters: one place after another, the best place last. The whole reel, not only the free slots: the
+        # opening's place is the first chapter and the ending's the last, so no place comes back half way
+        from .formats import list_order, short_place
+        last = len(segs) - 1
+        keep = [i for i in (hook_i, last) if order[i] is not None and len(segs) > 2]
+        free = [i for i in range(len(segs)) if i not in keep]
+
+        def at(s):
+            return short_place(places.get(s["id"])) or "?"
+        mid = sorted([order[i] for i in free if order[i] is not None] + pool, key=_q, reverse=True)
+        a = at(order[hook_i]) if hook_i in keep else None
+        b = at(order[last]) if last in keep else None
+        # someone in the first seconds: the opening chapter's shot with a person follows a hook without one
+        face = a if (a and st.get("people_first", True) and not has_people(order[hook_i])) else None
+        if style.get("_named") is not None:
+            # a name on every shot: each place gets about as many shots as the next (the best of each)
+            have = Counter(at(order[i]) for i in keep)
+            left, mid = mid, []
+            while left and len(mid) < len(free):
+                pl = min({at(s) for s in left}, key=lambda p: (have[p], -max(_q(s) for s in left if at(s) == p)))
+                s = next(s for s in left if at(s) == pl)
+                if pl == face:
+                    s = next((x for x in left if at(x) == pl and has_people(x) and _q(x) >= _q(s) - 2.0), s)
+                    face = None
+                mid.append(s)
+                left.remove(s)
+                have[pl] += 1
+        mid = mid[:len(free)]
+        for i in free:
+            order[i] = None
+        seq = list_order(mid, places)
+        head = [s for s in seq if a not in (None, "?") and at(s) == a]
+        if a and st.get("people_first", True) and not has_people(order[hook_i]):
+            head.sort(key=lambda s: not has_people(s))  # (stable: the rest keep their order)
+        tail = [s for s in seq if b not in (None, "?") and at(s) == b]
+        if a == b and head:  # out and back: the place is shared between the two ends
+            body = [s for s in seq if at(s) != a]
+            cut = (len(head) + 1) // 2 if body else len(head)
+            head, tail = head[:cut], head[cut:]
+        else:
+            body = [s for s in seq if at(s) not in {x for x in (a, b) if x not in (None, "?")}]
+        for i, sh in zip(free, _apart(head, where) + _apart(body, where, at) + _apart(tail, where)):
             order[i] = sh
         pool = []
     elif style["shots"].get("ordering") == "chronological":
@@ -505,18 +746,88 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
                     pen -= 2.0
                 if prev is not None and groups and groups.get(s["id"], s["id"]) == groups.get(prev["id"], prev["id"]):
                     pen -= 3.0
-                return pen + (_rand("mix", variant, s["id"], i) - 0.5) * (1.2 if variant else 0.3)
+                nxt = order[i + 1] if i + 1 < len(order) else None
+                for o in (prev, nxt):  # the same place on both sides of a cut reads as one shot that stutters
+                    if o is not None and where and where.get(s["id"], s["id"]) == where.get(o["id"], o["id"]):
+                        pen -= 2.5
+                return (pen + seen(s, 0.8) + again(s, 0.7)
+                        + (_rand("mix", variant, s["id"], i) - 0.5) * (1.2 if variant else 0.3))
             ranked = sorted(pool, key=lambda s: role_score(s, role, ctx) + 0.5 * taste.get(s["id"], 0.0) + adj(s)
                             + used_pen(s) + mix_bonus(s), reverse=True)
             order[i] = ranked[0]
             counts[shot_kind(ranked[0])] += 1
             pool.remove(ranked[0])
+        _long_slots_first(order, rest, segs)
+        _part_places(order, rest, where)
     # footage thinner than the slots: repeat the best (planner merged most of these away)
     best = sorted(chosen, key=_q, reverse=True)
     for i in range(len(order)):
         if order[i] is None:
             order[i] = best[i % len(best)]
     return order
+
+
+def _long_slots_first(order: list, free: list[int], segs: list[dict]) -> None:
+    """Among slots that play the same part, the one that stays on screen much longer shows the clearly better
+    shot: a view worth a second isn't spent on a flash while a lesser one lingers."""
+    for i in sorted(free, key=lambda i: -float(segs[i]["dur"])):
+        if order[i] is None:
+            continue
+        short = [j for j in free if order[j] is not None and segs[j].get("role") == segs[i].get("role")
+                 and float(segs[i]["dur"]) >= 1.8 * float(segs[j]["dur"]) and _q(order[j]) >= _q(order[i]) + 0.6]
+        if short:
+            j = max(short, key=lambda j: (_q(order[j]), -float(segs[j]["dur"])))
+            order[i], order[j] = order[j], order[i]
+
+
+def _apart(run: list[dict], where: dict | None, chapter=None) -> list[dict]:
+    """A chapter's shots in their order, but one stop never on both sides of a cut when another shot of the
+    chapter can go between. `chapter`: shot -> chapter name, for a run of several chapters (each kept whole)."""
+    if not where or len(run) < 3:
+        return run
+    out: list[dict] = []
+    left = list(run)
+    while left:
+        ch = chapter(left[0]) if chapter else None
+        prev = where.get(out[-1]["id"], out[-1]["id"]) if out else None
+        pick = next((s for s in left if (not chapter or chapter(s) == ch) and where.get(s["id"], s["id"]) != prev),
+                    left[0])
+        out.append(pick)
+        left.remove(pick)
+    return out
+
+
+def _part_places(order: list, free: list[int], where: dict | None) -> None:
+    """Casting slot by slot can leave one place for the last slots, side by side: swap middle shots (never the
+    hook, the payoff or the ending) until no place sits on both sides of a cut, as far as the footage allows."""
+    if not where:
+        return
+
+    def key(i):
+        return where.get(order[i]["id"], order[i]["id"]) if 0 <= i < len(order) and order[i] is not None else None
+
+    def clashes():
+        return sum(1 for i in range(1, len(order)) if key(i) is not None and key(i) == key(i - 1))
+    free = [i for i in free if order[i] is not None]
+    for _ in range(len(free)):
+        now = clashes()
+        if not now:
+            return
+        bad = [i for i in free if key(i) in (key(i - 1), key(i + 1))]
+        best = None
+        for i in bad:
+            for j in free:
+                if j == i:
+                    continue
+                order[i], order[j] = order[j], order[i]
+                gain = now - clashes()
+                order[i], order[j] = order[j], order[i]
+                if gain > 0 and (best is None or (gain, -abs(i - j)) > best[0]):
+                    best = ((gain, -abs(i - j)), i, j)
+        if best is None:
+            return
+        _, i, j = best
+        order[i], order[j] = order[j], order[i]
 
 
 def restrain_transitions(segs: list[dict]) -> int:

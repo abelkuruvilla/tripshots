@@ -41,7 +41,26 @@ def test_taste_prefers_the_references_light(tmp_path):
     shots = [{"id": "G", "thumb": golden, "ai": {"time_of_day": "golden hour"}, "w": 1920, "h": 1080},
              {"id": "B", "thumb": blue, "ai": {"time_of_day": "midday"}, "w": 1920, "h": 1080}]
     t = planner.taste_scores(shots, style)
-    assert t["G"] > t["B"] + 2
+    assert t["G"] > t["B"] + 1
+
+
+def test_taste_decides_between_equals_not_against_a_better_shot(tmp_path):
+    golden = _img(tmp_path / "g.jpg", (235, 170, 90), (90, 70, 30))
+    blue = _img(tmp_path / "b.jpg", (80, 150, 240), (60, 120, 60))
+    style = load_style("beat-montage")
+    style["taste"] = {"look": [float(x) for x in look(np.asarray(Image.open(golden)))], "weight": 1.0,
+                      "light": ["golden_hour"], "people": ""}
+
+    def shot(i, thumb, score, tod):
+        return {"id": f"S{i}", "kind": "video", "src": f"/x/{i}.mp4", "t0": 0.0, "t1": 4.0, "w": 1920, "h": 1080,
+                "thumb": thumb, "ai": {"score": score, "time_of_day": tod, "tags": [f"t{i}"]}}
+    shots = [shot(0, blue, 8.4, "midday"), shot(1, golden, 7.0, "golden hour"),      # nothing like the references,
+             shot(2, golden, 8.0, "golden hour"), shot(3, blue, 8.0, "midday")]      # but clearly the best shot
+    t = planner.taste_scores(shots, style)
+    assert max(t.values()) - min(t.values()) < 1.9
+    style["shots"]["allow_similar"] = True          # four flat test cards are one "moment" otherwise
+    got = [s["id"] for s in planner.select_shots(shots, 2, style)]
+    assert got == ["S2", "S0"]                      # between equals the references' light; never the weak golden one
 
 
 def test_full_match_moves_further_toward_the_look():

@@ -409,9 +409,10 @@ class TextTrack:
     """All on-screen text of a plan. Each element is laid out lazily on the first frame it
     appears, so its position can avoid the subject and busy parts of that actual frame."""
 
-    def __init__(self, plan: dict, beats: list[float], native: bool = False):
+    def __init__(self, plan: dict, beats: list[float], native: bool = False, fx: bool = True):
         from .typo import PRESETS
         self.native = native  # build everything, draw only what an editor can't rebuild (see render)
+        self.use_fx = fx      # motion text (HyperFrames); off for a quick still
         tcfg = plan.get("text") or {}
         preset = PRESETS.get(str(tcfg.get("preset", "bold")), PRESETS["bold"])
         self.cfg = {}
@@ -429,6 +430,7 @@ class TextTrack:
                 own.pop("position", None)
             base.update(own)
             self.cfg[kind] = scaled(legible(kind, base) if readable else base)
+        self.cfg["text"] = dict(self.cfg["hook"])  # a line someone added in the editor: the hook's lettering
         if plan.get("story"):  # a story reel's hook must read inside the first second
             self.cfg["hook"]["fast_in"] = True
         self.cfg["caption"] = scaled(legible("caption", {**CAPTION, **{k: v for k, v in (tcfg.get("caption") or {}).items()
@@ -446,7 +448,7 @@ class TextTrack:
                 self.cfg[k]["position"] = "bar_bottom"
             self.cfg["location"]["behind"] = "off"
         self.specs = sorted([o for o in plan.get("overlays") or []
-                             if o["type"] in ("hook", "location", "cta", "label", "caption")], key=lambda o: o["start"])
+                             if o["type"] in ("hook", "location", "cta", "label", "caption", "text")], key=lambda o: o["start"])
         caps = [o for o in self.specs if o["type"] == "caption"]
         for h in (o for o in self.specs if o["type"] == "hook"):
             h0, h1 = float(h["start"]), float(h["start"]) + float(h["duration"])
@@ -482,7 +484,7 @@ class TextTrack:
                             main, sub, coords, st, du, {**self.cfg["location"], **({"position": pos} if pos else {})},
                             frame, subj), self.cfg["location"].get("position"))
                 else:
-                    cfg = self.cfg[o["type"] if o["type"] in ("cta", "label", "caption") else "hook"]
+                    cfg = self.cfg[o["type"] if o["type"] in ("cta", "label", "caption", "text") else "hook"]
                     if isinstance(o.get("style"), dict):
                         # this line's own lettering (a recipe's words look and sit like its reference's)
                         cfg = {**cfg, **scaled({kk: v for kk, v in o["style"].items()
@@ -498,7 +500,7 @@ class TextTrack:
                         self.beats, subj, avoid=None if pos else avoid, lead=o.get("lead")), cfg.get("position"))
                 self.built[k] = el
                 from .scripts import script_of
-                if not self.native and not self.baked(k) and not script_of(o.get("text") or ""):
+                if self.use_fx and not self.native and not self.baked(k) and not script_of(o.get("text") or ""):
                     from .hfx import animate, motion_for
                     fx = animate(el, motion_for(o["type"], self.tcfg, o), o["type"])
                     if fx is not None:
@@ -597,6 +599,134 @@ def render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_text
     return out
 
 
+def segment_files(plan: dict, work: Path) -> list[tuple[dict, Path, int, int]]:
+    """Per slot: (render fields, cached clip file, frames in it, frames of lead-in before the slot starts). The
+    file is named by everything that changes its picture, so an unchanged shot is never rendered twice."""
+    segs = plan["segments"]
+    fps = OUT_FPS
+    dur_f = [int(round(e["dur"] * fps)) for e in segs]
+    half = [int(round(float(e.get("trans_dur") or 0) * fps)) // 2 for e in segs]
+    lead_f = [0] + half[:-1]
+    tail_f = half[:-1] + [0]
+    zoom = float(plan.get("photo_zoom", 1.12))
+    band = int((plan.get("frame") or {}).get("band") or 0)
+    out = []
+    for i, e in enumerate(segs):
+        n = dur_f[i] + lead_f[i] + tail_f[i]
+        e2 = dict(e)
+        if band and band < CANVAS.h and not e.get("panel"):
+            e2["_band"] = band
+        if e["kind"] == "video":
+            lead_speed = retime.speed_at(retime.seg_keys(e), 0.0) if e.get("ramp") else e.get("speed", 1.0)
+            e2["in"] = max(0.0, e["in"] - lead_f[i] / fps * lead_speed)
+        key = short_hash(repr(sorted((k, str(v)) for k, v in e2.items()
+                                    if k not in ("idx", "out_start", "note", "trans_out", "trans_dur", "trans_params",
+                                                 "level", "drop", "static", "score")))
+                         + f"{n}" + repr(plan.get("color")) + repr(plan.get("grade")) + str(zoom) + RENDER_VERSION
+                         + (f"{CANVAS.w}x{CANVAS.h}" if CANVAS.horizontal else ""), 14)
+        out.append((e2, work / "segments" / f"seg_{key}.mp4", n, lead_f[i]))
+    return out
+
+
+def _source_frame(e: dict, local: float, color: dict, size: tuple[int, int]):
+    """One frame of a shot straight from its source, framed and coloured as its segment would be (the editor's
+    preview of a shot whose clip isn't rendered yet). None when it can't be had."""
+    W, H = size
+    if e.get("panel"):
+        return None
+    vf = []
+    if e.get("kind") == "video" and e.get("src_w") and e.get("src"):
+        at = float(e.get("in", 0.0)) + local * float(e.get("speed", 1.0))
+        vf = hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")}) + _video_layout(e, 1.0, size)
+        inp = ["-ss", f"{max(0.0, at):.3f}", "-i", str(e["src"])]
+    elif e.get("still") or e.get("src"):
+        sx = float(e.get("subject_x", 0.5))
+        vf = [f"scale={W}:{H}:force_original_aspect_ratio=increase",
+              f"crop={W}:{H}:'(iw-{W})*{sx:.3f}':'(ih-{H})/2'"]
+        inp = ["-i", str(e.get("still") or e["src"])]
+    else:
+        return None
+    vf = vf + color_chain(seg_color(color, e)) + ["format=rgb24"]
+    try:
+        raw = subprocess.run(ffmpeg_base() + inp + ["-frames:v", "1", "-filter_complex", ",".join(vf),
+                                                    "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                             capture_output=True, timeout=40).stdout
+    except subprocess.TimeoutExpired:
+        return None
+    if len(raw) < W * H * 3:
+        return None
+    return np.frombuffer(raw[: W * H * 3], np.uint8).reshape(H, W, 3)
+
+
+def still(plan: dict, t: float, out: Path, raw: bool = False, mask: str | None = None) -> Path:
+    """One frame of the reel at t with its text, quickly, for the editor: the shot's picture from its cached clip
+    (else straight from its source, coloured the same way; else its thumbnail), and every line of text on screen
+    then, laid out as render does. Motion graphics, transitions and beat punches are left out. `raw`: the shot as
+    filmed, without the grade or its own colour corrections (the editor's before/after)."""
+    import numpy as np
+    from PIL import Image
+    from .framing import use_plan
+    use_plan(plan)
+    _prepare_transitions(plan)
+    t0 = 0.0
+    for e in plan["segments"]:
+        e["out_start"] = round(t0, 4)
+        t0 += float(e["dur"])
+    t = max(0.0, min(float(t), t0 - 1.0 / OUT_FPS))
+    work = Path(plan.get("work") or out.parent)
+    files = segment_files(plan, work)
+    i = max(k for k, e in enumerate(plan["segments"]) if e["out_start"] <= t + 1e-6)
+    seg = plan["segments"][i]
+    _e2, f, n, lead = files[i]
+    frame = None
+    band = int((plan.get("frame") or {}).get("band") or 0)
+    size = (CANVAS.w, band) if 0 < band < CANVAS.h and not seg.get("panel") else CANVAS.size
+    if raw:
+        e = {k: v for k, v in seg.items() if k not in ("lut", "adjust")}
+        frame = _source_frame({**e, "no_grade": True}, t - seg["out_start"], dict(plan.get("color") or {}), size)
+    elif not f.exists():
+        frame = _source_frame(seg, t - seg["out_start"], {**(plan.get("color") or {}), "grade": plan.get("grade")}, size)
+    if frame is None and f.exists():
+        local = min(n - 1, lead + int(round((t - seg["out_start"]) * OUT_FPS)))
+        try:
+            buf = subprocess.run(ffmpeg_base() + ["-ss", f"{local / OUT_FPS:.3f}", "-i", str(f), "-frames:v", "1",
+                                                  "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                 capture_output=True, timeout=30).stdout
+            w, h = CANVAS.w, len(buf) // (CANVAS.w * 3) if buf else 0
+            if h:
+                frame = np.frombuffer(buf[: w * h * 3], np.uint8).reshape(h, w, 3)
+        except (subprocess.TimeoutExpired, ValueError):
+            frame = None
+    if frame is None:  # not rendered yet: the shot's thumbnail, filling the frame
+        frame = np.zeros((CANVAS.h, CANVAS.w, 3), np.uint8)
+        if seg.get("thumb") and Path(seg["thumb"]).exists():
+            with Image.open(seg["thumb"]) as im:
+                im = im.convert("RGB")
+                k = max(CANVAS.w / im.width, CANVAS.h / im.height)
+                im = im.resize((int(im.width * k) + 1, int(im.height * k) + 1))
+                cx = int(float(seg.get("subject_x", 0.5)) * im.width - CANVAS.w / 2)
+                cx = max(0, min(im.width - CANVAS.w, cx))
+                cy = (im.height - CANVAS.h) // 2
+                frame = np.asarray(im.crop((cx, cy, cx + CANVAS.w, cy + CANVAS.h)))
+    if frame.shape[0] != CANVAS.h:  # a letterboxed slot: the picture sits in its band
+        pad = np.zeros((CANVAS.h, CANVAS.w, 3), np.uint8)
+        y = (CANVAS.h - frame.shape[0]) // 2
+        pad[y:y + frame.shape[0]] = frame
+        frame = pad
+    if seg.get("layers") and not raw and not seg.get("panel"):   # the shot's colour layers, as the render has them
+        from . import nodes
+        frame = nodes.apply(np.ascontiguousarray(frame), seg["layers"], nodes.Masks(seg, CANVAS.size), still=True)
+    if mask:   # the editor's mask view: one region lit, the rest dimmed, no words
+        from . import nodes
+        Image.fromarray(nodes.mask_view(np.ascontiguousarray(frame), mask, seg)).save(out, quality=88)
+        return out
+    texts = TextTrack(plan, [float(b) for b in plan.get("beats") or []], fx=False)
+    frame = texts.draw(np.ascontiguousarray(frame).copy(), t, seg)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(frame).save(out, quality=88)
+    return out
+
+
 def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_text: bool = False,
             info: dict | None = None) -> Path:
     from . import encode
@@ -619,25 +749,10 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
     seg_dir.mkdir(parents=True, exist_ok=True)
     zoom = float(plan.get("photo_zoom", 1.12))
     files, jobs = [], []
-    for i, e in enumerate(segs):
-        n = dur_f[i] + lead_f[i] + tail_f[i]
-        length = n / fps
-        e2 = dict(e)
-        band = int((plan.get("frame") or {}).get("band") or 0)
-        if band and band < CANVAS.h and not e.get("panel"):
-            e2["_band"] = band
-        if e["kind"] == "video":
-            lead_speed = retime.speed_at(retime.seg_keys(e), 0.0) if e.get("ramp") else e.get("speed", 1.0)
-            e2["in"] = max(0.0, e["in"] - lead_f[i] / fps * lead_speed)
-        key = short_hash(repr(sorted((k, str(v)) for k, v in e2.items()
-                                    if k not in ("idx", "out_start", "note", "trans_out", "trans_dur", "trans_params",
-                                                 "level", "drop", "static", "score")))
-                         + f"{n}" + repr(plan.get("color")) + repr(plan.get("grade")) + str(zoom) + RENDER_VERSION
-                         + (f"{CANVAS.w}x{CANVAS.h}" if CANVAS.horizontal else ""), 14)
-        f = seg_dir / f"seg_{key}.mp4"
+    for e2, f, n, lead in segment_files(plan, work):
         files.append((f, n))
         if not f.exists():
-            jobs.append((e2, length, f, lead_f[i] / fps))
+            jobs.append((e2, n / fps, f, lead / fps))
     if jobs:
         log(f"rendering {len(jobs)} shots...")
         from concurrent.futures import ThreadPoolExecutor
@@ -674,7 +789,9 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
     if music.get("path") and Path(music["path"]).exists():
         inputs += ["-ss", f"{music['start']:.3f}", "-t", f"{total + 0.1:.3f}", "-i", music["path"]]
         fo = float(music.get("fade_out", 0.8))
-        fc.append(f"[{n_in}:a]aresample=48000,afade=t=in:d=0.05,afade=t=out:st={max(0, total - fo):.3f}:d={fo:.3f},"
+        gain = float(music.get("gain_db") or 0.0)  # the editor's music level
+        fc.append(f"[{n_in}:a]aresample=48000,{f'volume={gain:.1f}dB,' if gain else ''}afade=t=in:d=0.05,"
+                  f"afade=t=out:st={max(0, total - fo):.3f}:d={fo:.3f},"
                   f"atrim=duration={total:.4f}[aout]")
     else:
         inputs += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
@@ -699,9 +816,20 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         if info is not None:
             info["texts"] = texts
 
+        from . import nodes
+        masks = {i: nodes.Masks(e, CANVAS.size) for i, e in enumerate(segs) if e.get("layers") and not e.get("panel")}
+        graded: dict[tuple[int, int], np.ndarray] = {}
+
         def shot_frame(i: int, n: int) -> np.ndarray:
             local = n - (start_f[i] - lead_f[i])
             fr = readers[i].frame(local)
+            if i in masks:   # the shot's colour layers (secondary grading), once per source frame
+                key = (i, local)
+                if key not in graded:
+                    if len(graded) > 4:
+                        graded.clear()
+                    graded[key] = nodes.apply(fr, segs[i]["layers"], masks[i])
+                fr = graded[key]
             sc, ang, tx, ty = shot_motion(n / fps, segs[i], beats, mcfg)
             fr = affine(fr, sc, ang, tx, ty)
             k = pulse_amount(n / fps, segs[i], beats, mcfg)

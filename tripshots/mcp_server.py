@@ -168,7 +168,7 @@ async def find_footage(place: str | None = None, people: list[str] | None = None
                        date_to: str | None = None, near_lat: float | None = None, near_lon: float | None = None,
                        radius_km: float = 10, kinds: str = "both", any_people: bool = False,
                        whole_days: bool = True, text: str | None = None, folders: list[str] | None = None,
-                       label: str | None = None) -> list:
+                       label: str | None = None, camera: str | None = None) -> list:
     """Find photos/videos and save them as a selection for make_reel. Returns counts, days, places, people,
     a selection id ("sel:xxxx") and a contact sheet to check.
 
@@ -178,10 +178,12 @@ async def find_footage(place: str | None = None, people: list[str] | None = None
       this computer; unknown names need people_add / people_name first.
     date_from/date_to: YYYY-MM-DD. kinds: both | photo | video.
     whole_days: also include same-day files without GPS (phone clips) during the place's hours (default true).
-    text: words that must appear in the folder/file/place name."""
+    text: words that must appear in the folder/file/place name.
+    camera: drone | phone | action | camera: only footage from that kind of camera ("all my drone footage" ->
+      camera="drone"), told from the camera's make, its file names and what the AI saw in the shots."""
     from .commands import find_args
     args = find_args(place, people, date_from, date_to, near_lat, near_lon, radius_km, kinds, any_people,
-                     whole_days, text, folders, label)
+                     whole_days, text, folders, label, camera)
     st = await _run_job(args, "find", label or place or " ".join(people or []) or "find")
     return _finished(st)
 
@@ -375,10 +377,69 @@ async def edit_plan(plan: str, edits: list[dict]) -> list:
         (hit = seconds into the slot where it slams into slow motion; "points":[[0,1],[0.4,0.3],[1,1]] for a custom curve)
       {"op":"frame","segment":4,"subject_x":0.3}
       {"op":"set","path":"motion.beat_punch","value":0.04}
+    On-screen text by number (plan_texts lists them):
+      {"op":"add_text","text":"Day 3","start":4.0,"duration":2.0,"style":{"color":"#ffd23c","size":110,"position":"upper"}}
+      {"op":"edit_text","index":2,"text":"...","start":1.0,"duration":2.5,"style":{"font":"anton"|"gf:Playfair Display:700",
+        "size":120,"color":"#ffffff","position":"upper"|"center"|"lower","y":0.3,"x":0.5,"uppercase":true,
+        "anim":"pop"|"slide"|"fade"|"scale"|"typewriter"|"tracking"|"rise"|"cut"}}   (null drops a style key)
+      {"op":"delete_text","index":2}
+    Timeline (times snap to frames; later text moves with the cut):
+      {"op":"duration","segment":3,"dur":1.6,"snap":"beat"}  {"op":"slip","segment":3,"in":12.4}
+      {"op":"split","segment":3,"at":0.8}  {"op":"delete","segment":3}  {"op":"duplicate","segment":3}
+      {"op":"insert","after":2,"shot_id":"S040","dur":1.2}  {"op":"music","start":12.0,"gain_db":-3,"fade_out":1.2}
+    Colour: {"op":"grade","look":"teal-orange"|"none"|<list_looks name>,"strength":0.8,"grain":4,"vignette":true}
+      {"op":"adjust","segment":3|"all","exposure":0.3,"contrast":1.1,"saturation":1.2,"warmth":0.2,"tint":0,
+       "shadows":0.2,"highlights":-0.3,"graded":true}  (one shot's corrections on top of the look; "reset":true clears)
+      {"op":"layer","segment":3|"all","region":"sky"|"subject"|"skin"|"greens"|"water"|"ground"|"edges",
+       "exposure":-0.3,"contrast":1.1,"saturation":1.1,"warmth":0.1,"tint":0,"hue":-8}  (a correction on part of the
+       frame; "on":false turns it off, "remove":true drops it)  {"op":"layers_auto","segment":3|"all"}
     Returns the new storyboard. Then render_reel."""
     from . import planedit
     res = await asyncio.to_thread(planedit.apply, _plan(plan), edits)
     return _out(res, _img(res.get("storyboard")))
+
+
+@mcp.tool()
+async def plan_texts(plan: str) -> list:
+    """Every line of on-screen text in a plan, numbered for edit_plan's edit_text / delete_text, with its timing
+    and its own lettering (font, size, colour, position, animation); also the fonts that can be used."""
+    from . import planedit
+    from .util import read_json
+    from .typo import FONTS
+    from .fontlib import CATALOG, name
+    p = read_json(_plan(plan))
+    fonts = sorted(FONTS) + [name(f, w) for f, (_l, ws, _s) in CATALOG.items() for w in ws]
+    return [_txt({"texts": planedit.texts(p), "fonts": fonts})]
+
+
+@mcp.tool()
+async def colour_looks(action: str = "list", items: list[str] | None = None, pack: str | None = None) -> list:
+    """The colour looks a reel can use (make_reel look=..., edit_plan {"op":"grade","look":...}).
+    action: "list" (every look: built-in cinematic and travel looks, ones measured from reels, imported LUTs, with
+    what each does), "packs" (free LUT packs that can be fetched, with their licence notes), "fetch" (items = pack ids,
+    e.g. ["gmic-creative"]), "add" (items = .cube files, HaldCLUT images, folders, zips or links), "remove"
+    (items = [look name] or pack=...)."""
+    from . import grade, luts
+    if action == "list":
+        return [_txt({k: {"desc": v.get("desc"), "pack": v.get("pack"), "builtin": v.get("builtin", False)}
+                      for k, v in grade.list_looks().items() if not pack or v.get("pack") == pack})]
+    if action == "packs":
+        return [_txt(luts.packs())]
+    if action in ("fetch", "add"):
+        st = await _run_job(["looks", action, *(items or [])], "looks", f"looks {action}", wait=60)
+        return _finished(st)
+    if action == "remove":
+        return [_txt({"removed": await asyncio.to_thread(luts.remove, (items or [None])[0], pack)})]
+    return [_txt(f"unknown action {action}: list, packs, fetch, add or remove")]
+
+
+@mcp.tool()
+async def write_caption(plan: str, tone: str | None = None, extra: str | None = None) -> list:
+    """Write the Instagram post for a reel, aimed at reach: a hook first line, search keywords worked into the
+    caption, one ask (send / save / comment), 3-5 specific hashtags, alt text, a first comment and two other
+    opening lines. Saves NAME.caption.txt (ready to paste) and NAME.social.json."""
+    from .social import write
+    return [_txt(await asyncio.to_thread(write, _plan(plan), tone, extra))]
 
 
 @mcp.tool()

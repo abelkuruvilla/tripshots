@@ -66,3 +66,18 @@ def test_offline_means_no_place_lookups(monkeypatch):
     monkeypatch.setattr(geo.urllib.request, "urlopen", lambda *a, **k: (_ for _ in ()).throw(AssertionError("network")))
     assert geo.search("Somewhere Never Cached") is None
     assert geo.place_name(1.234, 5.678) is None
+
+
+def test_what_kind_of_camera_made_a_file():
+    from tripshots.catalog import camera_kind
+    k = lambda p, **kw: camera_kind({"path": p, **{a: b for a, b in kw.items() if a in ("make", "model")}}, kw.get("ai"))
+    assert k("/trip/Hover/HOVER_X1PROMAX_0064.mp4") == "drone"
+    assert k("/trip/drone/clip.mp4") == "drone"
+    assert k("/trip/DJI_0123.MP4") is None                          # a DJI name alone: drone or hand-held Osmo
+    assert k("/trip/DJI_0123.MP4", ai={"drone": True}) == "drone"   # what the AI saw settles it
+    assert k("/trip/DJI_0123.MP4", make="DJI", model="FC3582") == "drone"
+    assert k("/trip/Iphone photos/IMG_3821.MOV") == "phone"
+    assert k("/trip/10061009/DSC09926.JPG", ai={"drone": True}) == "camera"   # a lookout photo can look "aerial"
+    assert k("/trip/CLIPS/20261010_C0377.MP4") == "camera"
+    assert k("/trip/GOPR0042.MP4") == "action"
+    assert k("/trip/clip.mov", make="Apple", model="iPhone 16 Pro") == "phone"

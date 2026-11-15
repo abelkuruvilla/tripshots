@@ -1,37 +1,45 @@
 <script>
+  // One reel, laid out like an editor: the viewer, an inspector with tabs (Text, Colour, Post; in Expert also Shot
+  // and Sound), and the timeline along the bottom, all on one screen.
   import { onMount } from "svelte";
-  import { revealItemInDir, openUrl } from "@tauri-apps/plugin-opener";
-  import { app, api, media, startJob, toast, tc } from "../lib/store.svelte.js";
+  import { revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { app, api, media, startJob, tc } from "../lib/store.svelte.js";
   import Icon from "../lib/Icon.svelte";
+  import { ed, load, edit, undo, redo, setExpert, frames, select } from "./reel/editor.svelte.js";
+  import TextPanel from "./reel/TextPanel.svelte";
+  import PostPanel from "./reel/PostPanel.svelte";
+  import Timeline from "./reel/Timeline.svelte";
+  import ShotPanel from "./reel/ShotPanel.svelte";
+  import SoundPanel from "./reel/SoundPanel.svelte";
+  import ColourPanel from "./reel/ColourPanel.svelte";
 
-  let reel = $state(null);
-  let error = $state("");
-  let caption = $state("");
-  let savedCaption = $state("");
-  let picking = $state(null); // the slot being re-cast
-  let cands = $state([]);
   let video = $state(null);
   let bust = $state(Date.now());
-  let now = $state(0); // playhead, seconds
-  let slotEls = $state([]);
+  let picking = $state(null); // { mode: "swap", seg } | { mode: "insert", after }
+  let cands = $state([]);
+  let still = $state(""); // the edited frame's address
+  let stillBusy = $state(false);
+  let tabsEl = $state(null);
 
-  async function load() {
-    try {
-      reel = await api(`/api/reel?plan=${encodeURIComponent(app.reel)}`);
-      caption = savedCaption = reel.caption || "";
-      bust = Date.now();
-    } catch (e) {
-      error = String(e.message || e);
-    }
-  }
-  onMount(load);
+  onMount(() => {
+    ed.reel = null;
+    ed.sel = null;
+    ed.now = 0;
+    ed.preview = false;
+    ed.tab = ed.expert ? "shot" : "text";
+    load().then(() => (ed.preview = !ed.reel?.video));
+  });
+  let reel = $derived(ed.reel);
+  let tabs = $derived(ed.expert
+    ? [["shot", "Shot"], ["text", "Text"], ["colour", "Colour"], ["sound", "Sound"], ["post", "Post"]]
+    : [["text", "Text"], ["colour", "Colour"], ["post", "Post"]]);
 
   // a render of this plan finished: show the new video
   let lastRender = null;
   $effect(() => {
     const done = app.jobs.find((j) => j.kind === "render" && j.state === "done" && reel && j.label === reel.name + ".plan.json");
     if (done && done.id !== lastRender) {
-      if (lastRender !== null) load();
+      if (lastRender !== null) load().then(() => ((bust = Date.now()), (ed.preview = false)));
       lastRender = done.id;
     }
   });
@@ -41,7 +49,7 @@
     if (!video) return;
     let raf = 0;
     const tick = () => {
-      now = video.currentTime;
+      ed.now = video.currentTime;
       if (!video.paused) raf = requestAnimationFrame(tick);
     };
     const start = () => (raf = requestAnimationFrame(tick));
@@ -56,146 +64,253 @@
     };
   });
 
-  let rendering = $derived(app.jobs.some((j) => j.kind === "render" && j.state === "running" && reel && j.label === reel.name + ".plan.json"));
-  let current = $derived(reel ? reel.segments.findIndex((s) => now >= s.start && now < s.start + s.dur) : -1);
-  let playX = $derived.by(() => {
-    const el = slotEls[current];
-    if (!el || current < 0) return null;
-    const s = reel.segments[current];
-    return el.offsetLeft + ((now - s.start) / s.dur) * el.offsetWidth;
+  // the edited frame at the playhead, asked for a moment after the playhead or the plan last changed
+  $effect(() => {
+    if (!ed.preview || !reel || !app.engine) return;
+    const at = Math.max(0, Math.min(ed.now, reel.duration - 0.04)).toFixed(2);
+    const url = `${app.engine.url}/api/still?t=${app.engine.token}&plan=${encodeURIComponent(reel.plan)}&at=${at}&v=${ed.version}${ed.raw ? "&raw=1" : ""}${ed.mask && !ed.raw ? `&mask=${ed.mask}` : ""}`;
+    const id = setTimeout(() => {
+      if (url !== still) {
+        stillBusy = true;
+        still = url;
+      }
+    }, ed.raw ? 0 : 120);
+    return () => clearTimeout(id);
   });
 
-  async function saveCaption() {
-    await api("/api/caption", { plan: reel.plan, text: caption });
-    savedCaption = caption;
-    toast("Caption saved", "ok");
-  }
-  async function copyCaption() {
-    await navigator.clipboard.writeText(caption);
-    toast("Caption copied", "ok");
-  }
-  async function pick(slot) {
-    picking = slot;
-    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=48`);
-  }
-  async function swap(shot) {
-    const slot = picking.slot;
-    await api("/api/edit", { plan: reel.plan, edits: [{ op: "swap", segment: slot, shot_id: shot.id }] });
-    picking = null;
-    await load();
-    reel.stale = true;
-    toast(`Shot ${slot} replaced. Render to see it`, "info");
-  }
+  let renderJob = $derived(app.jobs.find((j) => j.kind === "render" && j.state === "running" && reel && j.label === reel.name + ".plan.json"));
+  let selText = $derived(ed.sel?.kind === "text" ? reel?.texts.find((t) => t.index === ed.sel.index) : null);
+
   async function render() {
-    await startJob("render", { plan: reel.plan }, `Render ${reel.name}`);
+    await startJob("render", { plan: reel.plan }, reel.name);
   }
-  function seek(s) {
-    if (!video) return;
-    video.currentTime = s.start + 0.04;
-    video.play();
+  function seek(t) {
+    ed.now = Math.max(0, Math.min(t, (reel?.duration || 0) - 0.02));
+    if (video && !ed.preview) video.currentTime = ed.now;
   }
-  const file = (p) => (p || "").split(/[\\/]/).pop();
+  function togglePlay() {
+    if (ed.preview) {
+      if (!reel.video) return;
+      ed.preview = false;
+      setTimeout(() => video?.play(), 0);
+      return;
+    }
+    if (video) video.paused ? video.play() : video.pause();
+  }
+  // click the preview: the selected text goes there
+  function place(e) {
+    if (!selText) return;
+    const img = e.currentTarget;
+    const r = img.getBoundingClientRect();
+    const k = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
+    const w = img.naturalWidth * k, h = img.naturalHeight * k;
+    const x = (e.clientX - r.left - (r.width - w) / 2) / w;
+    const y = (e.clientY - r.top - (r.height - h) / 2) / h;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    edit({ op: "edit_text", index: selText.index, style: { x: +x.toFixed(3), y: +y.toFixed(3) } }, true);
+  }
+
+  // the before/after divider: drag it, or move it with the arrow keys
+  let splitting = false;
+  function splitDown(e) {
+    splitting = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+  }
+  function splitMove(e) {
+    if (!splitting) return;
+    const r = e.currentTarget.parentElement.getBoundingClientRect();
+    ed.splitAt = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  }
+  function splitKeys(e) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    e.stopPropagation();
+    ed.splitAt = Math.max(0, Math.min(1, ed.splitAt + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 0.1 : 0.02)));
+  }
+
+  async function pick(seg) {
+    picking = { mode: "swap", seg };
+    cands = [];
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
+  }
+  async function insertAfter(slot) {
+    picking = { mode: "insert", after: slot };
+    cands = [];
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
+  }
+  async function choose(shot) {
+    const p = picking;
+    picking = null;
+    if (p.mode === "swap") await edit({ op: "swap", segment: p.seg.slot, shot_id: shot.id });
+    else {
+      const res = await edit({ op: "insert", after: p.after, shot_id: shot.id, dur: 1.5 });
+      if (res) select({ kind: "clip", slot: p.after + 1 });
+    }
+  }
+
+  // tabs: arrow keys move between them
+  function tabKeys(e) {
+    const i = tabs.findIndex(([id]) => id === ed.tab);
+    const j = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
+    if (j === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    ed.tab = tabs[(j + tabs.length) % tabs.length][0];
+    setTimeout(() => tabsEl?.querySelector(`[aria-selected="true"]`)?.focus(), 0);
+  }
+
+  // keys: space plays, ⌘Z / ⇧⌘Z undo and redo, S splits the selected shot, ⌫ removes the selection, ← → step
+  function keys(e) {
+    if (picking) {
+      if (e.key === "Escape") picking = null;
+      return;
+    }
+    if (e.key === "Escape") return void (ed.sel = null);
+    const el = e.target;
+    const typing = /^(TEXTAREA|SELECT)$/.test(el?.tagName) || el?.isContentEditable ||
+      (el?.tagName === "INPUT" && !["range", "checkbox", "radio", "color", "button"].includes(el.type));
+    if (typing || !reel || el?.getAttribute?.("role") === "tab") return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      e.shiftKey ? redo() : undo();
+    } else if (e.key === " " && el?.tagName !== "BUTTON") {
+      e.preventDefault();
+      togglePlay();
+    } else if (ed.expert && e.key.toLowerCase() === "s" && !mod && ed.sel?.kind === "clip") {
+      const s = reel.segments[ed.sel.slot - 1];
+      const at = ed.now - s.start;
+      if (at > 0.07 && at < s.dur - 0.07) edit({ op: "split", segment: s.slot, at: frames(at) });
+    } else if ((e.key === "Backspace" || e.key === "Delete") && ed.sel && !mod) {
+      e.preventDefault();
+      const sel = ed.sel;
+      if (sel.kind === "text") {
+        ed.sel = null;
+        edit({ op: "delete_text", index: sel.index });
+      } else if (ed.expert && reel.segments.length > 1) {
+        ed.sel = null;
+        edit({ op: "delete", segment: sel.slot });
+      }
+    } else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && el?.type !== "range") {
+      e.preventDefault();
+      seek(ed.now + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 1 : 1 / 30));
+    }
+  }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && (picking = null)} />
+<svelte:window onkeydown={keys} />
 
-<div class="page">
-  <div class="page-head">
+<div class="editor">
+  <header class="bar">
     <button class="btn ghost" onclick={() => (app.view = "reels")}><Icon name="back" /> Reels</button>
     {#if reel}
-      <h1 class="ellipsis">{reel.name}</h1>
-      <span class="meta">{[tc(reel.duration), `${reel.width}×${reel.height}`, reel.qa?.total ? `QA ${reel.qa.passed}/${reel.qa.total}` : ""].filter(Boolean).join(" · ")}</span>
+      <div class="title">
+        <h1 class="ellipsis">{reel.name}</h1>
+        <span class="meta">{[tc(reel.duration), reel.width > reel.height ? "16:9" : "9:16", reel.qa?.total ? `QA ${reel.qa.passed}/${reel.qa.total}` : ""].filter(Boolean).join(" · ")}</span>
+      </div>
       <div class="spacer"></div>
-      <button class="btn" onclick={() => revealItemInDir(reel.video || reel.plan)}><Icon name="folder" /> Show in folder</button>
-      <button class="btn primary" onclick={render} disabled={rendering}>
-        {#if rendering}<span class="spin"></span> Rendering{:else}<Icon name="play" /> {reel.rendered ? "Render again" : "Render"}{/if}
+      <div class="hist" role="group" aria-label="History">
+        <button class="btn ghost icon" onclick={undo} disabled={!reel.history?.undo} title="Undo (⌘Z)" aria-label="Undo"><Icon name="undo" /></button>
+        <button class="btn ghost icon" onclick={redo} disabled={!reel.history?.redo} title="Redo (⇧⌘Z)" aria-label="Redo"><Icon name="redo" /></button>
+      </div>
+      <label class="switch" title="Timeline editing: shot lengths and order, splits, speed, framing, music">
+        <input type="checkbox" role="switch" checked={ed.expert} onchange={(e) => setExpert(e.currentTarget.checked)} />
+        <span class="track" aria-hidden="true"><span class="knob"></span></span> Expert
+      </label>
+      <button class="btn ghost icon" onclick={() => revealItemInDir(reel.video || reel.plan)} title="Show in folder" aria-label="Show in folder"><Icon name="folder" /></button>
+      <button class="btn primary" onclick={render} disabled={!!renderJob}>
+        {#if renderJob}<span class="spin"></span> Rendering{:else}<Icon name="play" /> {reel.rendered ? (reel.stale ? "Render the changes" : "Render again") : "Render"}{/if}
       </button>
     {/if}
-  </div>
+  </header>
 
-  {#if error}<p class="muted">{error}</p>{/if}
+  {#if ed.error}<p class="err-text pad">{ed.error}</p>{/if}
   {#if reel}
-    {#if reel.stale}<p class="notice">This plan changed after its last render. Render again to see the changes</p>{/if}
-    <div class="layout" class:wide={reel.width > reel.height}>
-      <div class="player">
-        {#if reel.video}
-          <!-- svelte-ignore a11y_media_has_caption -->
-          <video bind:this={video} src={media(reel.video, bust)} controls playsinline poster={media(reel.cover, bust)}></video>
-        {:else if reel.storyboard}
-          <img src={media(reel.storyboard, bust)} alt="Storyboard" />
-        {/if}
-      </div>
-
-      <div class="side">
-        <section class="surface panel">
-          <h2>Post it</h2>
-          {#if reel.upload}
-            <p>Upload <button class="link" onclick={() => revealItemInDir(reel.upload)}>{file(reel.upload)}</button>{#if reel.sound}, then add the sound <b>{reel.sound}</b> in Instagram, starting at <span class="tc">0:00.0</span>{/if}</p>
-            {#if reel.sound_url}<button class="btn sm" onclick={() => openUrl(reel.sound_url)}><Icon name="music" size={14} /> Open the sound's reel</button>{/if}
-          {:else if reel.video}
-            <p>Upload <button class="link" onclick={() => revealItemInDir(reel.video)}>{file(reel.video)}</button></p>
-          {:else}
-            <p class="muted">Planned, not rendered yet</p>
-          {/if}
-        </section>
-
-        <section class="surface panel">
-          <div class="row">
-            <h2>Caption</h2>
-            <div class="spacer"></div>
-            <button class="btn sm ghost" onclick={copyCaption}><Icon name="copy" size={14} /> Copy</button>
-            <button class="btn sm" disabled={caption === savedCaption} onclick={saveCaption}>Save</button>
+    <div class="main">
+      <div class="stage">
+        <div class="screen">
+          <div class="player" style="--ar: {reel.width / reel.height}">
+            {#if reel.video}
+              <!-- svelte-ignore a11y_media_has_caption -->
+              <video bind:this={video} class:hidden={ed.preview} src={media(reel.video, bust)} controls playsinline poster={media(reel.cover, bust)}></video>
+            {/if}
+            {#if (ed.preview || !reel.video) && still}
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions (text is also placed with the Place buttons) -->
+              <img class="still" class:placing={!!selText} src={still} alt="The reel as edited, at the playhead"
+                   onload={() => (stillBusy = false)} onerror={() => (stillBusy = false)} onclick={place} />
+              {#if ed.mask}<span class="badge">Mask: {ed.mask}</span>{/if}
+              {#if ed.split && !ed.raw && !ed.mask}
+                <!-- before | after: the shot as filmed on the left of the divider, your edit on the right -->
+                <img class="still before" src={still + "&raw=1"} alt="" style="clip-path: inset(0 {(1 - ed.splitAt) * 100}% 0 0)" />
+                <div class="divider" style="left: {ed.splitAt * 100}%" role="slider" tabindex="0" aria-label="Before and after divider"
+                     aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(ed.splitAt * 100)}
+                     onpointerdown={splitDown} onpointermove={splitMove} onpointerup={() => (splitting = false)}
+                     onkeydown={splitKeys}><span class="grip"><Icon name="split" size={14} /></span></div>
+                <span class="badge">As filmed</span><span class="badge right">Your edit</span>
+              {/if}
+              {#if stillBusy}<span class="spin loading" aria-label="Loading the frame"></span>{/if}
+              {#if ed.raw}<span class="badge">As filmed</span>{/if}
+            {/if}
           </div>
-          <textarea rows="7" bind:value={caption} aria-label="Caption"></textarea>
-        </section>
-
-        {#if reel.texts.length}
-          <section class="surface panel">
-            <h2>On screen</h2>
-            <ul class="texts">
-              {#each reel.texts as t}<li><span class="meta">{tc(t.start)}</span><span>{t.text}</span></li>{/each}
-            </ul>
-          </section>
-        {/if}
-      </div>
-    </div>
-
-    <div class="tl-head">
-      <h2>Timeline</h2>
-      <span class="meta">{[`${reel.segments.length} shots`, reel.recipe && `recipe ${reel.recipe}`, reel.style].filter(Boolean).join(" · ")}</span>
-    </div>
-    <div class="timeline">
-      {#each reel.segments as s, i}
-        <div class="slot" bind:this={slotEls[i]} style="flex-grow: {s.dur}" class:current={i === current}>
-          <button class="shot" onclick={() => seek(s)} title={`${s.slot}. ${s.file}${s.note ? ": " + s.note : ""}`}>
-            {#if s.thumb}<img src={media(s.thumb)} alt="" loading="lazy" />{/if}
-          </button>
-          <button class="swapbtn" onclick={() => pick(s)} aria-label={`Replace shot ${s.slot}`} title="Replace this shot"><Icon name="swap" size={14} /></button>
-          <div class="cut meta">{tc(s.start)}</div>
         </div>
-      {/each}
-      {#if playX !== null}<div class="playhead" style="transform: translateX({playX}px)"></div>{/if}
+        <div class="under">
+          <div class="seg" role="radiogroup" aria-label="The viewer shows">
+            <button role="radio" aria-checked={ed.preview} onclick={() => (video?.pause(), (ed.preview = true))}><Icon name="eye" size={14} /> Your edit</button>
+            <button role="radio" aria-checked={!ed.preview} disabled={!reel.video} onclick={() => (ed.preview = false)}><Icon name="play" size={14} /> Last render</button>
+          </div>
+          <span class="meta now">{tc(ed.now)} / {tc(reel.duration)}</span>
+          <span class="quiet small hint-line">{ed.preview ? (ed.split ? "Drag the divider to compare" : selText ? "Click the picture to place the text" : "A still of your edit, without motion") : reel.stale ? "Older than your edits" : ""}</span>
+        </div>
+      </div>
+
+      <aside class="inspector surface" aria-label="Inspector">
+        <!-- svelte-ignore a11y_interactive_supports_focus -->
+        <div class="tabs" role="tablist" aria-label="Edit" bind:this={tabsEl} onkeydown={tabKeys}>
+          {#each tabs as [id, label]}
+            <button role="tab" id={`tab-${id}`} aria-selected={ed.tab === id} aria-controls="tabpanel" tabindex={ed.tab === id ? 0 : -1}
+                    onclick={() => (ed.tab = id)}>{label}</button>
+          {/each}
+        </div>
+        <div class="pane" id="tabpanel" role="tabpanel" aria-labelledby={`tab-${ed.tab}`}>
+          {#if ed.tab === "shot"}<ShotPanel onpick={pick} oninsert={insertAfter} />
+          {:else if ed.tab === "text"}<TextPanel />
+          {:else if ed.tab === "colour"}<ColourPanel />
+          {:else if ed.tab === "sound"}<SoundPanel />
+          {:else}<PostPanel />{/if}
+        </div>
+      </aside>
     </div>
+
+    <section class="tl" aria-label="Timeline">
+      <Timeline onseek={seek} onpick={pick} />
+      <p class="quiet keys">
+        <kbd>Space</kbd> play · <kbd>⌘Z</kbd> undo · <kbd>⌫</kbd> remove · <kbd>←</kbd><kbd>→</kbd> a frame{#if ed.expert} · <kbd>S</kbd> split · drag a shot to move it, its edge to change its length{/if}
+      </p>
+    </section>
+  {:else if !ed.error}
+    <div class="empty"><span class="spin"></span></div>
   {/if}
 </div>
 
 {#if picking}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (Escape closes it too) -->
   <div class="overlay" onclick={(e) => e.target === e.currentTarget && (picking = null)}>
-    <div class="drawer" role="dialog" aria-modal="true" aria-label="Replace a shot" tabindex="-1">
+    <div class="drawer" role="dialog" aria-modal="true" aria-label="Choose a shot" tabindex="-1">
       <div class="row">
-        <h2>Replace shot {picking.slot}</h2>
-        <span class="meta">{tc(picking.dur)}</span>
+        <h2>{picking.mode === "swap" ? `Replace shot ${picking.seg.slot}` : `Add a shot after shot ${picking.after}`}</h2>
+        {#if picking.mode === "swap"}<span class="meta">{tc(picking.seg.dur)}</span>{/if}
         <div class="spacer"></div>
-        <button class="btn ghost" onclick={() => (picking = null)} aria-label="Close"><Icon name="x" /></button>
+        <button class="btn ghost icon" onclick={() => (picking = null)} aria-label="Close"><Icon name="x" /></button>
       </div>
-      <p class="muted">The best shots from this reel's footage. The slot keeps its length and its place on the beat</p>
+      <p class="muted">{picking.mode === "swap" ? "The best shots of this reel's footage. The slot keeps its length and its place on the beat" : "It comes in for 1.5 s; change its length in the Shot tab"}</p>
+      {#if !cands.length}<div class="empty"><span class="spin"></span></div>{/if}
       <div class="cands">
         {#each cands as c}
-          <button class="cand" onclick={() => swap(c)} disabled={c.used}>
+          <button class="cand" onclick={() => choose(c)} disabled={c.used && picking.mode === "swap"}>
             {#if c.thumb}<img src={media(c.thumb)} alt="" loading="lazy" />{/if}
-            <div class="row"><span class="tc score">{c.score.toFixed(1)}</span>{#if c.used}<span class="meta">in this reel</span>{/if}</div>
-            <div class="note">{c.note}</div>
+            <span class="row"><span class="tc score">{c.score.toFixed(1)}</span>{#if c.len_s}<span class="meta">{c.len_s}s</span>{/if}{#if c.used}<span class="meta">in this reel</span>{/if}</span>
+            <span class="note">{c.note}</span>
           </button>
         {/each}
       </div>
@@ -204,53 +319,69 @@
 {/if}
 
 <style>
-  .spacer { flex: 1; }
-  .notice { margin: -8px 0 16px; padding: 8px 12px; border-radius: var(--r-ctl); background: var(--accent-soft); color: var(--text); font-size: 13px; }
-  .layout { display: grid; grid-template-columns: minmax(280px, 360px) minmax(320px, 1fr); gap: 24px; align-items: start; }
-  .layout.wide { grid-template-columns: minmax(440px, 1.5fr) minmax(320px, 1fr); }
-  .player { border-radius: var(--r-panel); overflow: hidden; background: var(--player); box-shadow: inset 0 0 0 1px var(--line); }
-  .player video, .player img { width: 100%; display: block; max-height: 64vh; object-fit: contain; background: var(--player); }
-  .side { display: flex; flex-direction: column; gap: 16px; }
-  .panel { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
-  .panel p { margin: 0; color: var(--text-2); }
-  .panel p b { color: var(--text); }
-  .panel > .btn { align-self: flex-start; }
-  .texts { margin: 0; padding: 0; list-style: none; max-height: 160px; overflow: auto; }
-  .texts li { display: grid; grid-template-columns: 56px 1fr; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
-  .texts li:first-child { border-top: 0; }
-  .texts .meta { line-height: 20px; }
-  .tl-head { display: flex; align-items: baseline; gap: 12px; margin: 40px 0 12px; }
-  .timeline { position: relative; display: flex; gap: 2px; overflow-x: auto; padding-bottom: 8px; }
-  .slot { position: relative; flex-basis: 0; min-width: 44px; display: flex; flex-direction: column; }
-  .shot { height: 80px; border: 0; padding: 0; border-radius: 4px; overflow: hidden; cursor: pointer; background: var(--raised); }
-  .shot img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity 150ms var(--ease); }
-  .slot.current .shot { box-shadow: inset 0 0 0 2px var(--accent); }
-  .swapbtn {
-    position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; display: grid; place-items: center;
-    border: 0; border-radius: var(--r-sm); background: rgba(15, 15, 16, 0.72); color: #ededed; cursor: pointer;
-    opacity: 0; transition: opacity 150ms var(--ease);
+  .editor { height: 100%; display: flex; flex-direction: column; padding: 40px 24px 12px; gap: 16px; min-height: 0; }
+  .bar { display: flex; align-items: center; gap: 8px; min-height: 40px; flex: none; }
+  .title { display: flex; align-items: baseline; gap: 12px; min-width: 0; margin-left: 4px; }
+  .title h1 { font-size: 22px; line-height: 28px; }
+  .hist { display: flex; }
+  .switch { display: flex; align-items: center; gap: 8px; margin: 0 8px; font-size: 13px; font-weight: 500; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .track { width: 32px; height: 20px; border-radius: 10px; background: var(--line-strong); position: relative; transition: background-color var(--fast) var(--ease); }
+  .knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--card); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); transition: transform 200ms var(--ease); }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track .knob { transform: translateX(12px); }
+  .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .pad { padding: 0 4px; }
+
+  .main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; }
+  .stage { min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+  .screen { flex: 1; min-height: 0; display: grid; place-items: center; container-type: size; }
+  .player {
+    position: relative; aspect-ratio: var(--ar); width: min(100cqw, calc(100cqh * var(--ar)));
+    border-radius: var(--r-panel); overflow: hidden; background: var(--player); box-shadow: inset 0 0 0 1px var(--line);
   }
-  .slot:hover .swapbtn, .swapbtn:focus-visible { opacity: 1; }
-  .cut { margin-top: 4px; padding-left: 4px; border-left: 1px solid var(--line-strong); overflow: hidden; white-space: nowrap; }
-  .playhead { position: absolute; top: -4px; left: 0; width: 2px; height: 88px; margin-left: -1px; background: var(--accent); border-radius: 1px; pointer-events: none; }
-  .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.32); display: flex; justify-content: flex-end; z-index: 40; animation: fade 200ms var(--ease); }
+  .player video, .player .still { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; background: var(--player); }
+  .player video.hidden { visibility: hidden; }
+  .still.placing { cursor: crosshair; }
+  .loading { position: absolute; bottom: 12px; right: 12px; color: #ededed; }
+  .before { pointer-events: none; }
+  .divider { position: absolute; top: 0; bottom: 0; width: 24px; margin-left: -12px; cursor: ew-resize; touch-action: none; outline: none; }
+  .divider::before { content: ""; position: absolute; left: 11px; top: 0; bottom: 0; width: 2px; background: #ededed; box-shadow: 0 0 0 1px rgba(15, 15, 16, 0.3); }
+  .grip {
+    position: absolute; top: 50%; left: 50%; width: 32px; height: 32px; margin: -16px 0 0 -16px; border-radius: 50%;
+    display: grid; place-items: center; background: #ededed; color: #171717; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  }
+  .divider:focus-visible .grip { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .badge.right { left: auto; right: 12px; }
+  .badge { position: absolute; left: 12px; top: 12px; padding: 2px 8px; border-radius: 4px; background: rgba(15, 15, 16, 0.72); color: #ededed; font-size: 12px; }
+  .under { display: flex; align-items: center; gap: 12px; flex: none; min-width: 0; }
+  .now { flex: none; }
+  .hint-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .inspector { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .tabs { padding: 0 8px; flex: none; }
+  .pane { flex: 1; min-height: 0; overflow: auto; }
+
+  .tl { flex: none; }
+  .keys { font-size: 12px; margin-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .keys kbd { height: 18px; min-width: 18px; font-size: 10px; }
+
+  .overlay { position: fixed; inset: 0; background: var(--scrim); display: flex; justify-content: flex-end; z-index: 40; animation: fade var(--menu) var(--ease); }
   .drawer {
     width: min(640px, 92vw); height: 100%; overflow: auto; padding: 40px 24px 24px;
     background: var(--card); border-left: 1px solid var(--line); box-shadow: var(--float);
-    display: flex; flex-direction: column; gap: 12px; animation: slide 300ms var(--ease);
+    display: flex; flex-direction: column; gap: 12px; animation: slide-in var(--enter) var(--ease);
   }
-  .drawer p { margin: 0 0 8px; }
   .cands { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 12px; }
   .cand {
-    display: flex; flex-direction: column; gap: 4px; padding: 6px; text-align: left; cursor: pointer;
+    display: flex; flex-direction: column; gap: 4px; padding: 6px; text-align: left;
     border: 1px solid var(--line); border-radius: var(--r-card); background: var(--card); color: inherit;
-    transition: border-color 150ms var(--ease);
+    transition: border-color var(--fast) var(--ease);
   }
   .cand:hover:not(:disabled) { border-color: var(--accent); }
-  .cand:disabled { opacity: 0.45; cursor: default; }
+  .cand:disabled { opacity: 0.45; }
   .cand img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-sm); display: block; margin-bottom: 4px; }
   .score { font-size: 13px; }
-  .note { font-size: 12px; line-height: 16px; color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  @keyframes fade { from { opacity: 0; } }
-  @keyframes slide { from { transform: translateX(12px); opacity: 0.6; } }
+  .note { font-size: 12px; line-height: 16px; color: var(--text-3); display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  @media (max-width: 1080px) { .main { grid-template-columns: minmax(0, 1fr) 340px; } }
 </style>

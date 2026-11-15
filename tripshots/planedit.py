@@ -16,6 +16,32 @@ ops:
                                                          for a custom curve; "ramp": null removes it
   {"op": "frame", "segment": 4, "subject_x": 0.3, "layout": "crop"}   reframe (0 = left, 1 = right)
   {"op": "set", "path": "motion.beat_punch", "value": 0.04}          anything else, by dotted path
+
+On-screen text, by its number in plan["overlays"] (from 1; `texts` lists them):
+  {"op": "add_text", "text": "Day 3", "start": 4.0, "duration": 2.0, "style": {"color": "#ffd23c", "size": 110}}
+  {"op": "edit_text", "index": 2, "text": "...", "start": 1.0, "duration": 2.5,
+   "style": {"font": "gf:Playfair Display:700", "size": 120, "color": "#ffffff", "position": "upper",
+             "y": 0.3, "x": 0.5, "uppercase": true, "anim": "pop", "shadow": 0.8}}   a null style value drops it
+  {"op": "delete_text", "index": 2}
+
+The timeline (expert mode; times snap to whole frames, later text moves with the cut):
+  {"op": "duration", "segment": 3, "dur": 1.6, "snap": "beat"}   lengthen / shorten a slot ("frame" or "beat")
+  {"op": "slip", "segment": 3, "in": 12.4}                       which part of the clip plays (video)
+  {"op": "split", "segment": 3, "at": 0.8}                       two slots, at seconds into the slot
+  {"op": "delete", "segment": 3}
+  {"op": "duplicate", "segment": 3}
+  {"op": "insert", "after": 2, "shot_id": "S040", "dur": 1.2}    a new slot (after 0 = at the start)
+  {"op": "music", "start": 12.0, "gain_db": -3, "fade_out": 1.2}  where the song starts, its level
+
+Colour:
+  {"op": "grade", "look": "teal-orange", "strength": 0.8, "grain": 4, "vignette": true}   the reel's look ("none" = off)
+  {"op": "adjust", "segment": 3, "exposure": 0.3, "contrast": 1.1, "saturation": 1.2, "warmth": 0.2, "tint": 0,
+   "shadows": 0.2, "highlights": -0.3}   one shot's corrections on top of the look ("segment": "all" for every
+   shot; a neutral or null value drops it; "graded": false shows the shot as filmed; "reset": true clears them)
+  {"op": "layer", "segment": 3, "region": "sky", "exposure": -0.3, "saturation": 1.1, "hue": -8}
+     a secondary on part of the frame (sky, subject, skin, greens, water, ground, edges); "on": false turns it off,
+     "remove": true drops it; "segment": "all" for every shot
+  {"op": "layers_auto", "segment": 3}            a shot's layers back to automatic ("all" for every shot)
 """
 from __future__ import annotations
 
@@ -78,11 +104,234 @@ def _refit(seg: dict, plan: dict, style: dict) -> None:
         seg.pop("ramp", None)
 
 
-def apply(plan_path: Path, edits: list[dict]) -> dict:
+def json_copy(d):
+    import copy
+    return copy.deepcopy(d)
+
+
+def _refit_keep_in(seg: dict, plan: dict, style: dict) -> None:
+    """A slot changed length: keep where its clip starts while the clip has enough footage, else slide back,
+    else slow it down a little."""
+    sh = _shots(plan).get(seg.get("shot_id"))
+    if not sh or seg.get("kind") != "video" or "in" not in seg:
+        return
+    t0, t1 = float(sh["t0"]), float(sh["t1"])
+    speed = float(seg.get("speed", 1.0))
+    use = float(seg["dur"]) * speed
+    if float(seg["in"]) + use <= t1:
+        return
+    if t1 - t0 >= use:
+        seg["in"] = round(t1 - use, 3)
+        return
+    from .retime import SPEED_MIN
+    seg["speed"] = round(max(SPEED_MIN, (t1 - t0) / float(seg["dur"])), 3)
+    seg["in"] = round(t0, 3)
+
+
+FPS = 30
+TEXT_TYPES = ("hook", "location", "cta", "label", "caption", "text")
+ANIMS = ("pop", "slide", "fade", "scale", "typewriter", "tracking", "rise", "cut")
+POSITIONS = ("auto", "upper", "center", "lower")
+
+
+def _frames(sec: float, least: int = 1) -> float:
+    return round(max(least, round(float(sec) * FPS)) / FPS, 4)
+
+
+def _color(v) -> list[int]:
+    """'#ffd23c', 'ffd23c' or [255, 210, 60] -> [r, g, b]."""
+    if isinstance(v, (list, tuple)) and len(v) >= 3:
+        return [max(0, min(255, int(c))) for c in v[:3]]
+    s = str(v).strip().lstrip("#")
+    if len(s) == 3:
+        s = "".join(c * 2 for c in s)
+    try:
+        return [int(s[i:i + 2], 16) for i in (0, 2, 4)]
+    except ValueError:
+        raise ReelError(f"not a colour: {v} (use #rrggbb)")
+
+
+def font_ok(name: str) -> bool:
+    from . import fontlib
+    from .typo import FONTS
+    fam = fontlib.parse(name)
+    return str(name).lower() in FONTS or bool(fam and fam[0] in fontlib.CATALOG)
+
+
+def _text_style(cur: dict, new: dict) -> dict:
+    """A text's own lettering with the asked changes, checked (a null value drops the key: the style's default)."""
+    out = dict(cur or {})
+    for k, v in (new or {}).items():
+        if v is None or v == "":
+            out.pop(k, None)
+            continue
+        if k == "font":
+            if not font_ok(v):
+                raise ReelError(f"unknown font {v} (a bundled name, or gf:Family:weight from the font list)")
+            out[k] = str(v)
+        elif k in ("color", "lead_color"):
+            out[k] = _color(v)
+        elif k == "colors":
+            out[k] = [_color(c) for c in v] if isinstance(v, list) and v else None
+        elif k in ("size", "lead_size"):
+            out[k] = max(24, min(400, int(v)))
+        elif k in ("x", "y"):
+            out[k] = round(max(0.0, min(1.0, float(v))), 4)
+        elif k == "position":
+            if v not in POSITIONS:
+                raise ReelError(f"position is one of {', '.join(POSITIONS)}")
+            out[k] = v
+            out.pop("y", None)   # a band, not a height
+        elif k == "anim":
+            if v not in ANIMS:
+                raise ReelError(f"animation is one of {', '.join(ANIMS)}")
+            out[k] = v
+        elif k in ("uppercase", "fixed"):
+            out[k] = bool(v)
+        elif k in ("line_gap", "shadow", "fit", "exit"):
+            out[k] = round(float(v), 3)
+        elif k == "fill":
+            out[k] = "picture" if v in ("picture", True) else None
+        elif k == "lead_font":
+            if not font_ok(v):
+                raise ReelError(f"unknown font {v}")
+            out[k] = str(v)
+        else:
+            raise ReelError(f"text style has no {k}")
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def _overlay(plan: dict, n) -> int:
+    ovs = plan.get("overlays") or []
+    i = int(n) - 1
+    if not 0 <= i < len(ovs) or ovs[i].get("type") not in TEXT_TYPES:
+        raise ReelError(f"text {n} doesn't exist")
+    return i
+
+
+def texts(plan: dict) -> list[dict]:
+    """Every line of on-screen text with its number (for edit_text / delete_text)."""
+    out = []
+    for i, o in enumerate(plan.get("overlays") or []):
+        if o.get("type") not in TEXT_TYPES:
+            continue
+        text = o.get("text") or " ".join(x for x in (o.get("main"), o.get("sub")) if x)
+        out.append({"index": i + 1, "type": o["type"], "text": text, "start": round(float(o.get("start", 0)), 3),
+                    "duration": round(float(o.get("duration", 0)), 3), "style": o.get("style") or {},
+                    "lead": o.get("lead"), "recipe": o.get("recipe"), "motion": o.get("motion")})
+    return out
+
+
+def retime(plan: dict) -> None:
+    """Slots back to back from 0 (after a slot was added, removed or changed length); text past the end is cut."""
+    t = 0.0
+    for k, s in enumerate(plan["segments"]):
+        s["out_start"], s["idx"] = round(t, 4), k
+        t += float(s["dur"])
+    plan["duration"] = round(t, 4)
+    keep = []
+    for o in plan.get("overlays") or []:
+        st = float(o.get("start", 0))
+        if st >= t - 0.1:
+            continue
+        if "duration" in o:
+            o["duration"] = round(min(float(o["duration"]), t - st), 4)
+        keep.append(o)
+    plan["overlays"] = keep
+    if plan.get("freeze") and float(plan["freeze"].get("t", 0)) >= t:
+        plan.pop("freeze")
+    if plan["segments"]:
+        plan["segments"][-1]["trans_out"] = None
+
+
+def _shift_text(plan: dict, after: float, by: float) -> None:
+    """Text that starts after a cut moves with it. Subtitles and lyrics stay with the song, which doesn't move."""
+    for o in plan.get("overlays") or []:
+        if o.get("type") == "caption" or o.get("recipe") in ("lyric", "subtitles"):
+            continue
+        if o.get("type") == "hook" and after < 0.5 and float(o.get("start", 0)) < 0.5:
+            continue  # a shot put in front: the hook still opens the reel
+        if float(o.get("start", 0)) >= after - 0.02:
+            o["start"] = round(max(0.0, float(o["start"]) + by), 4)
+
+
+def _snap_beat(plan: dict, t: float) -> float:
+    beats = [float(b) for b in plan.get("beats") or []]
+    return min(beats, key=lambda b: abs(b - t)) if beats else t
+
+
+def _regrade(plan: dict, shots: dict) -> None:
+    """New grading LUTs for every shot in the plan's look (cached per-shot colourist notes, no new AI calls);
+    grain and vignette set by hand stay."""
+    from . import grade
+    g = dict(plan.get("grade") or {})
+    if g.get("look") in (None, "none", "off"):
+        return
+    grade.grade_plan(plan, shots, {"look": g.get("look"), "strength": g.get("strength", 0.75), "ai": False,
+                                   "match": g.get("match")}, None, Path(plan.get("work") or "."))
+    for k in ("grain", "vignette"):
+        if g.get(f"{k}_set"):
+            plan["grade"][k], plan["grade"][f"{k}_set"] = g[k], True
+    if g.get("why") and not plan["grade"].get("why"):
+        plan["grade"]["why"] = g["why"]
+
+
+UNDO_KEEP = 60
+
+
+def _history(plan_path: Path) -> Path:
+    from .config import HOME
+    from .util import short_hash
+    return HOME / "undo" / short_hash(str(Path(plan_path).resolve()), 16)
+
+
+def _push(d: Path, text: str) -> None:
+    d.mkdir(parents=True, exist_ok=True)
+    have = sorted(d.glob("*.json"))
+    n = int(have[-1].stem) + 1 if have else 1
+    (d / f"{n:06d}.json").write_text(text)
+    for old in have[:max(0, len(have) + 1 - UNDO_KEEP)]:
+        old.unlink(missing_ok=True)
+
+
+def _pop(d: Path) -> str | None:
+    have = sorted(d.glob("*.json")) if d.exists() else []
+    if not have:
+        return None
+    text = have[-1].read_text()
+    have[-1].unlink()
+    return text
+
+
+def history(plan_path: Path) -> dict:
+    h = _history(plan_path)
+    return {"undo": len(list((h / "undo").glob("*.json"))) if (h / "undo").exists() else 0,
+            "redo": len(list((h / "redo").glob("*.json"))) if (h / "redo").exists() else 0}
+
+
+def step(plan_path: Path, back: bool = True) -> dict:
+    """Undo (back) or redo the last edit of a plan."""
+    plan_path = Path(plan_path)
+    h = _history(plan_path)
+    text = _pop(h / ("undo" if back else "redo"))
+    if text is None:
+        raise ReelError("nothing to undo" if back else "nothing to redo")
+    _push(h / ("redo" if back else "undo"), plan_path.read_text())
+    plan_path.write_text(text)
+    plan = read_json(plan_path)
+    from .framing import use_plan
+    from .text import storyboard
+    use_plan(plan)
+    storyboard(plan, _shots(plan), plan_path.with_name(plan_path.name.replace(".plan.json", ".storyboard.jpg")))
+    return {"plan": str(plan_path), "changes": ["undone" if back else "redone"], **history(plan_path)}
+
+
+def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
     plan_path = Path(plan_path)
     plan = read_json(plan_path)
     if not plan:
         raise ReelError(f"could not read {plan_path}")
+    as_was = plan_path.read_text()   # for undo
     style = load_style(plan.get("style"))
     from .framing import use_plan
     use_plan(plan)     # a horizontal or letterboxed plan: new shots are framed for its picture
@@ -215,18 +464,276 @@ def apply(plan_path: Path, edits: list[dict]) -> dict:
             else:
                 cur[last] = ed["value"]
             done.append(f"{ed['path']} = {ed['value']}")
+        elif op == "add_text":
+            text = str(ed.get("text") or "").strip()
+            if not text:
+                raise ReelError("add_text needs some text")
+            total = sum(float(s["dur"]) for s in segs)
+            start = max(0.0, min(float(ed.get("start", 0.0)), total - 0.2))
+            o = {"type": ed.get("type") if ed.get("type") in TEXT_TYPES else "text", "text": text,
+                 "start": round(start, 4), "duration": round(min(float(ed.get("duration", 2.0)), total - start), 4),
+                 "style": _text_style({}, ed.get("style") or {"position": "center"}), "user": True}
+            plan.setdefault("overlays", []).append(o)
+            done.append(f"text {len(plan['overlays'])} added: {text}")
+        elif op == "edit_text":
+            i = _overlay(plan, ed["index"])
+            o = plan["overlays"][i]
+            if "style" in ed or "motion" in ed:
+                if o["type"] == "location":   # its own lettering: drawn as a plain title from now on
+                    o["text"] = o.get("text") or " ".join(x for x in (o.get("main"), o.get("sub")) if x)
+                    o["type"] = "text"
+                    for k in ("main", "sub", "coords", "gps"):
+                        o.pop(k, None)
+                o["style"] = _text_style(o.get("style") or {}, ed.get("style") or {})
+            if "motion" in ed:
+                if ed["motion"]:
+                    o["motion"] = str(ed["motion"])
+                else:
+                    o.pop("motion", None)
+            if "text" in ed:
+                t = str(ed["text"]).strip()
+                if not t:
+                    raise ReelError("a text can't be empty: delete it instead")
+                o["text"] = t
+                for k in ("main", "sub"):
+                    o.pop(k, None)
+                o.pop("clone_of", None)
+            total = sum(float(s["dur"]) for s in segs)
+            if "start" in ed:
+                o["start"] = round(max(0.0, min(float(ed["start"]), total - 0.2)), 4)
+            if "duration" in ed or "start" in ed:
+                o["duration"] = round(max(0.2, min(float(ed.get("duration", o.get("duration", 2.0))),
+                                                   total - float(o["start"]))), 4)
+            if "lead" in ed:
+                if ed["lead"]:
+                    o["lead"] = str(ed["lead"])
+                else:
+                    o.pop("lead", None)
+            o["user"] = True
+            done.append(f"text {i + 1} changed")
+        elif op == "delete_text":
+            i = _overlay(plan, ed["index"])
+            gone = plan["overlays"].pop(i)
+            done.append(f"text {i + 1} removed: {gone.get('text') or gone.get('main')}")
+        elif op == "duration":
+            i = _slot(plan, ed["segment"])
+            s = segs[i]
+            if s.get("panel"):
+                raise ReelError(f"slot {i + 1} is a split screen: its panels are timed to its length")
+            dur = _frames(ed["dur"], 4)
+            if ed.get("snap") == "beat":
+                end = _snap_beat(plan, float(s.get("out_start", 0)) + dur)
+                dur = _frames(end - float(s.get("out_start", 0)), 4)
+            old = float(s["dur"])
+            s["dur"] = dur
+            if s.get("ramp"):
+                from .planner import _set_ramp
+                sh = shots.get(s.get("shot_id"))
+                if not sh or not _set_ramp(s, sh, s["ramp"], min(float(s.get("ramp_hit") or dur / 2), dur * 0.8)):
+                    for k in ("ramp", "ramp_hit", "ramp_points"):
+                        s.pop(k, None)
+                    s["speed"] = 1.0
+                    _refit(s, plan, style)
+            else:
+                _refit_keep_in(s, plan, style)
+            _shift_text(plan, float(s.get("out_start", 0)) + old, dur - old)
+            retime(plan)
+            done.append(f"slot {i + 1} lasts {dur:.2f}s (was {old:.2f}s)")
+        elif op == "slip":
+            i = _slot(plan, ed["segment"])
+            s = segs[i]
+            sh = shots.get(s.get("shot_id"))
+            if s.get("kind") != "video" or not sh:
+                raise ReelError(f"slot {i + 1} isn't a video clip")
+            use = float(s["dur"]) * float(s.get("speed", 1.0))
+            lo, hi = float(sh["t0"]), max(float(sh["t0"]), float(sh["t1"]) - use)
+            s["in"] = round(max(lo, min(hi, float(ed["in"]))), 3)
+            s["track"] = False
+            done.append(f"slot {i + 1} plays from {s['in']:.2f}s of its clip")
+        elif op == "split":
+            i = _slot(plan, ed["segment"])
+            s = segs[i]
+            if s.get("panel") or s.get("ramp"):
+                raise ReelError(f"slot {i + 1} has a split screen or a speed ramp: it can't be cut in two")
+            at = _frames(ed["at"], 2)
+            if not 2 / FPS <= at <= float(s["dur"]) - 2 / FPS:
+                raise ReelError(f"cut slot {i + 1} somewhere between 0.07 and {float(s['dur']) - 0.07:.2f}s")
+            b = json_copy(s)
+            s["dur"], b["dur"] = at, _frames(float(s["dur"]) - at, 2)
+            if s.get("kind") == "video" and "in" in s:
+                b["in"] = round(float(s["in"]) + at * float(s.get("speed", 1.0)), 3)
+            s.update({"trans_out": None, "trans_dur": 0.0, "trans_params": {}})
+            s.pop("incam_out", None)
+            b.pop("incam_in", None)
+            b.pop("hold", None)
+            segs.insert(i + 1, b)
+            retime(plan)
+            done.append(f"slot {i + 1} cut in two at {at:.2f}s")
+        elif op == "delete":
+            i = _slot(plan, ed["segment"])
+            if len(segs) == 1:
+                raise ReelError("a reel needs at least one shot")
+            gone = segs.pop(i)
+            if i > 0 and segs[i - 1].pop("incam_out", None) is not None:
+                segs[i - 1]["trans_out"] = None   # its swing led into the slot that's gone
+            if i < len(segs):
+                segs[i].pop("incam_in", None)
+            _shift_text(plan, float(gone.get("out_start", 0)) + float(gone["dur"]), -float(gone["dur"]))
+            retime(plan)
+            done.append(f"slot {i + 1} removed")
+        elif op == "duplicate":
+            i = _slot(plan, ed["segment"])
+            c = json_copy(segs[i])
+            c.pop("incam_in", None)
+            segs[i].pop("incam_out", None)
+            segs.insert(i + 1, c)
+            _shift_text(plan, float(segs[i].get("out_start", 0)) + float(c["dur"]), float(c["dur"]))
+            retime(plan)
+            done.append(f"slot {i + 1} repeated")
+        elif op == "insert":
+            after = int(ed.get("after", len(segs)))
+            if not 0 <= after <= len(segs):
+                raise ReelError(f"after must be 0..{len(segs)}")
+            sh = shots.get(ed.get("shot_id"))
+            if not sh:
+                raise ReelError(f"unknown shot {ed.get('shot_id')} (see the plan's shot candidates)")
+            from .planner import _shot_fields
+            dur = _frames(ed.get("dur", 1.5), 4)
+            e, _ = _shot_fields(sh, dur, "mid", style, after)
+            new = {**e, "dur": dur, "level": "mid", "drop": False, "trans_out": None, "trans_dur": 0.0,
+                   "trans_params": {}, "role": None}
+            at = sum(float(s["dur"]) for s in segs[:after])
+            segs.insert(after, new)
+            _shift_text(plan, at, dur)
+            retime(plan)
+            regrade = True
+            done.append(f"{sh['id']} added as slot {after + 1}")
+        elif op == "grade":   # the whole reel's look
+            g = dict(plan.get("grade") or {})
+            look = ed.get("look", g.get("look"))
+            if look in (None, "none", "off"):
+                plan["grade"] = {"look": "none"}
+                for sg in segs:
+                    for c in (sg.get("clips") or [sg]):
+                        c.pop("lut", None)
+                done.append("no colour grade")
+                continue
+            from .grade import list_looks
+            if look not in list_looks():
+                raise ReelError(f"unknown look {look} ({', '.join(list_looks())}, or none)")
+            g["look"] = look
+            if "strength" in ed:
+                g["strength"] = round(max(0.0, min(1.0, float(ed["strength"]))), 2)
+            if look != (plan.get("grade") or {}).get("look"):
+                g.pop("grain_set", None)
+                g.pop("vignette_set", None)
+                g.pop("why", None)
+                if list_looks()[look].get("builtin"):
+                    g.pop("match", None)   # "take every shot fully into it" belongs to a learned look
+            if "grain" in ed:
+                g["grain"], g["grain_set"] = max(0, min(12, int(ed["grain"]))), True
+            if "vignette" in ed:
+                g["vignette"], g["vignette_set"] = bool(ed["vignette"]), True
+            plan["grade"] = g
+            _regrade(plan, shots)
+            done.append(f"look {look} at {int(round(float(plan['grade'].get('strength', 0.75)) * 100))}%")
+        elif op == "adjust":  # one shot's own colour (or every shot's: "segment": "all")
+            from .fx import ADJUST
+            targets = range(len(segs)) if ed.get("segment") == "all" else [_slot(plan, ed["segment"])]
+            for i in targets:
+                for c in (segs[i].get("clips") or [segs[i]]):
+                    adj = dict(c.get("adjust") or {})
+                    for k, (lo, hi, neutral) in ADJUST.items():
+                        if k in ed:
+                            v = ed[k]
+                            if v is None or abs(float(v) - neutral) < 1e-3:
+                                adj.pop(k, None)
+                            else:
+                                adj[k] = round(max(lo, min(hi, float(v))), 3)
+                    if adj:
+                        c["adjust"] = adj
+                    else:
+                        c.pop("adjust", None)
+                    if "graded" in ed:
+                        if ed["graded"]:
+                            c.pop("no_grade", None)
+                        else:
+                            c["no_grade"] = True
+            if ed.get("reset"):
+                for i in targets:
+                    for c in (segs[i].get("clips") or [segs[i]]):
+                        c.pop("adjust", None)
+                        c.pop("no_grade", None)
+            done.append(("every shot's" if ed.get("segment") == "all" else f"slot {targets[0] + 1}'s") + " colour")
+        elif op == "layer":   # a secondary correction on part of the frame (nodes.py)
+            from .nodes import REGIONS, RANGES, clean
+            region = ed.get("region")
+            if region not in REGIONS:
+                raise ReelError(f"region is one of {', '.join(REGIONS)}")
+            targets = range(len(segs)) if ed.get("segment") == "all" else [_slot(plan, ed["segment"])]
+            for i in targets:
+                sg = segs[i]
+                if sg.get("panel"):
+                    continue
+                layers = [dict(l) for l in sg.get("layers") or []]
+                cur = next((l for l in layers if l["region"] == region), None)
+                if ed.get("remove"):
+                    layers = [l for l in layers if l["region"] != region]
+                else:
+                    if cur is None:
+                        cur = {"region": region}
+                        layers.append(cur)
+                    for k in RANGES:
+                        if k in ed:
+                            cur[k] = ed[k]
+                    if "on" in ed:
+                        cur["on"] = bool(ed["on"])
+                    cur["auto"] = False
+                    cur.pop("why", None)
+                    layers = [clean(l) if l["region"] == region else l for l in layers]
+                if layers:
+                    sg["layers"] = layers
+                else:
+                    sg.pop("layers", None)
+            done.append(f"{region} layer " + ("removed" if ed.get("remove") else "set") +
+                        (" on every shot" if ed.get("segment") == "all" else f" on slot {targets[0] + 1}"))
+        elif op == "layers_auto":   # a shot's layers back to what the colourist decided
+            from .grade import ai_notes, get_look, set_layers, shot_stats
+            targets = range(len(segs)) if ed.get("segment") == "all" else [_slot(plan, ed["segment"])]
+            look = get_look((plan.get("grade") or {}).get("look")) if (plan.get("grade") or {}).get("look") not in (None, "none") else None
+            for i in targets:
+                sg = segs[i]
+                if sg.get("panel") or sg.get("shot_id") not in shots:
+                    continue
+                sg.pop("layers", None)
+                sh = shots[sg["shot_id"]]
+                note, _ = ai_notes([sh], {sh["id"]: shot_stats(sh)}, None, Path(plan.get("work") or "."), False)
+                set_layers(sg, sh, note.get(sh["id"]) or {}, look)   # the colourist's remembered verdict, or the rules
+            done.append("layers back to automatic")
+        elif op == "music":
+            m = plan.setdefault("music", {})
+            if "start" in ed:
+                m["start"] = round(max(0.0, float(ed["start"])), 3)
+            if "gain_db" in ed:
+                m["gain_db"] = round(max(-30.0, min(12.0, float(ed["gain_db"]))), 1)
+            if "fade_out" in ed:
+                m["fade_out"] = round(max(0.0, min(8.0, float(ed["fade_out"]))), 2)
+            done.append("music " + ", ".join(f"{k} {m[k]}" for k in ("start", "gain_db", "fade_out") if k in ed))
         else:
             raise ReelError(f"unknown op {op}")
     if regrade and plan.get("grade"):
-        from . import grade
-        grade.grade_plan(plan, shots, {"look": plan["grade"].get("look"), "strength": plan["grade"].get("strength"),
-                                       "ai": False}, None, Path(plan.get("work") or "."))
+        _regrade(plan, shots)
     write_json(plan_path, plan)
+    if undo:
+        h = _history(plan_path)
+        _push(h / "undo", as_was)
+        import shutil
+        shutil.rmtree(h / "redo", ignore_errors=True)
     from .export import export
     from .text import storyboard
     sb = storyboard(plan, shots, plan_path.with_name(plan_path.name.replace(".plan.json", ".storyboard.jpg")))
     ex = export(plan_path, edl=True, otio=False, md=True, quiet=True)
-    return {"plan": str(plan_path), "changes": done, "storyboard": str(sb), **ex}
+    return {"plan": str(plan_path), "changes": done, "storyboard": str(sb), **ex, **history(plan_path)}
 
 
 def candidates(plan_path: Path, top: int = 30) -> list[dict]:

@@ -898,19 +898,24 @@ def mix_into(video: Path, plan: dict, text_events: list[dict] | None, work: Path
     m = loudness(meas_wav)
     # master: one static gain to -14 LUFS, then a look-ahead limiter at -2 dBFS (AAC adds ~0.5 dB of
     # overs), so the dynamics of the edit (the drop louder than the intro) survive
-    gain = min(6.0, (-14.0 - m["I"])) if m and m["I"] > -70 else 0.0
-    trim = 0.0
-    for attempt in range(3):  # AAC adds overs to limited peaks: measure the encoded file, trim if needed
-        ln = f"volume={gain:.2f}dB,alimiter=limit=0.71:attack=2:release=80:level=false,volume={trim:.2f}dB"
+    # music turned down in the editor is a balance against the effects, not a quieter reel: room to lift it back
+    cap = 6.0 + max(0.0, -float((plan.get("music") or {}).get("gain_db") or 0.0))
+    gain = min(cap, (-14.0 - m["I"])) if m and m["I"] > -70 else 0.0
+    trim, limit = 0.0, 0.71
+    for attempt in range(4):  # AAC adds overs to limited peaks: measure the encoded file, adjust if needed
+        ln = (f"volume={gain:.2f}dB,alimiter=limit={limit:.3f}:attack=2:release=80:level=false,"
+              f"volume={trim:.2f}dB")
         run(ffmpeg_base() + ["-i", str(video), "-i", str(meas_wav), "-map", "0:v", "-map", "1:a", "-c:v", "copy",
                              "-af", ln + f",aresample={SR}", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
                              "-shortest", str(tmp)])
         got = loudness(tmp)
         tp, li = got.get("TP", -99), got.get("I", -14.0)
-        if (tp <= -1.0 and li >= -15.0) or (attempt and tp <= -1.0) or attempt == 2:
+        if (tp <= -1.0 and li >= -15.0) or attempt == 3 or (tp <= -1.0 and -1.5 - tp < 0.3):
             break
-        # AAC overs: trim once. A peaky song the limiter held down came out quiet: lift it into the headroom left
-        trim += -(tp + 1.3) if tp > -1.0 else min(-14.0 - li, -1.5 - tp)
+        if tp > -1.0:  # overs: a lower ceiling for the limiter, so the reel keeps its loudness
+            limit = max(0.25, limit * 10 ** (-(tp + 1.3) / 20))
+        else:  # a peaky song the limiter held down came out quiet: lift it into the headroom left
+            trim += min(-14.0 - li, -1.5 - tp)
     tmp.replace(video)
     meas_wav.unlink(missing_ok=True)
     final = loudness(video)

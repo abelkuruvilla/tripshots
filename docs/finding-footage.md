@@ -39,6 +39,7 @@ refers to.
 | `--since / --until YYYY-MM-DD` | Date range (inclusive) |
 | `--kind photo\|video` | Only photos or only videos |
 | `--text WORDS` | Words that must appear in the folder, file or place name ("wedding", "day 3") |
+| `--camera drone\|phone\|action\|camera` | Only footage from that kind of camera. Told from the camera's make and model (when `tripshots analyze` has read it), what the AI saw in the shots (drone and aerial footage) and the names cameras give their files (`HOVER_…`, `IMG_…`, `GOPR…`, `DSC…`); a `DJI_` name alone needs the AI or the model, since DJI hand-held cameras use it too |
 | `--only-matching` | Don't add same-day clips without GPS (see below) |
 | `--sheet` | Also draw a contact sheet of what was found |
 | `--list` | Also print every file |

@@ -49,6 +49,7 @@ def color_chain(color: dict) -> list[str]:
     lut = color.get("lut")
     if lut and Path(str(lut)).expanduser().exists():
         f.append(f"lut3d=file='{Path(str(lut)).expanduser()}'")
+    f += adjust_chain(color.get("adjust"))
     sh = float(color.get("sharpen", 0.0) or 0.0)
     if sh > 0:
         f.append(f"unsharp=5:5:{min(sh, 1.5):.2f}:5:5:0")
@@ -60,12 +61,47 @@ def color_chain(color: dict) -> list[str]:
     return f
 
 
+ADJUST = {  # a shot's own corrections in the editor, on top of the grade: (low, high, neutral)
+    "exposure": (-2.0, 2.0, 0.0),     # stops
+    "contrast": (0.4, 1.6, 1.0),
+    "saturation": (0.0, 2.0, 1.0),
+    "warmth": (-1.0, 1.0, 0.0),       # cool .. warm
+    "tint": (-1.0, 1.0, 0.0),         # green .. magenta
+    "shadows": (-1.0, 1.0, 0.0),      # crush .. lift
+    "highlights": (-1.0, 1.0, 0.0),   # recover .. brighten
+}
+
+
+def adjust_chain(adj: dict | None) -> list[str]:
+    """ffmpeg filters for a shot's own corrections (segment `adjust`), applied after its grading LUT."""
+    if not adj:
+        return []
+    v = {k: float(adj.get(k, n)) for k, (_lo, _hi, n) in ADJUST.items()}
+    f = []
+    if v["exposure"]:
+        f.append(f"exposure=exposure={max(-2.0, min(2.0, v['exposure'])):.3f}")
+    if v["shadows"] or v["highlights"]:
+        s, h = 0.25 * v["shadows"], 0.18 * v["highlights"]
+        pts = f"0/{max(0.0, s * 0.4):.3f} 0.25/{0.25 + s:.3f} 0.75/{0.75 + h:.3f} 1/{min(1.0, 1 + h * 0.3):.3f}"
+        f.append(f"curves=all='{pts}'")
+    if (v["contrast"], v["saturation"]) != (1.0, 1.0):
+        f.append(f"eq=contrast={v['contrast']:.3f}:saturation={v['saturation']:.3f}")
+    w, t = 0.25 * v["warmth"], 0.2 * v["tint"]
+    if w or t:
+        f.append(f"colorbalance=rm={w:.3f}:gm={-t:.3f}:bm={-w:.3f}:rh={w / 2:.3f}:gh={-t / 2:.3f}:bh={-w / 2:.3f}")
+    return f
+
+
 def seg_color(color: dict, e: dict) -> dict:
     """Colour settings for one shot. With a per-shot grading LUT (`e["lut"]`, see grade.py) the
-    LUT replaces the style's global saturation/contrast/warmth and the look adds its finishing."""
-    lut = e.get("lut")
+    LUT replaces the style's global saturation/contrast/warmth and the look adds its finishing.
+    `no_grade` shows the shot as filmed (the style's light touch only); `adjust` is the editor's own
+    corrections on top (adjust_chain)."""
+    lut = None if e.get("no_grade") else e.get("lut")
+    adj = e.get("adjust") or None
     if not lut or not Path(str(lut)).exists():
-        return color
+        out = {k: v for k, v in color.items() if k != "lut"} if e.get("no_grade") else color
+        return {**out, "adjust": adj} if adj else out
     g = color.get("grade") or {}
-    return {"lut": lut, "sharpen": color.get("sharpen", 0.0),
+    return {"lut": lut, "sharpen": color.get("sharpen", 0.0), "adjust": adj,
             "vignette": bool(g.get("vignette")) or bool(color.get("vignette")), "grain": g.get("grain", 0)}

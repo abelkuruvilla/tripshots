@@ -38,18 +38,25 @@ your footage ─► find shots ─► AI judges each shot ─► beats of the so
 A small native app (no bundled browser; about 5 MB) with light and dark themes. The engine that analyses footage and
 renders reels downloads once on first launch, checked against TripShots' signature, and keeps itself up to date.
 
-![A reel in the desktop app: player, caption, the sound to add, and a timeline with the playhead](docs/images/desktop-reel.jpg)
+![A reel in the desktop app's editor, in Expert mode: the viewer showing your edit, the Shot tab with timing and transition, and the timeline with the beats](docs/images/desktop-reel.jpg)
 
 - **Reels:** every reel you've made, grouped by folder, upright and wide side by side.
-- **A reel:** play it, copy or edit the caption, see which sound to add in Instagram (and open the reel it comes
-  from), the words on screen, and a timeline in timecode. Click a shot to jump to it, **Swap** it for one of the
-  best shots from the same footage without moving the cuts, then **Render again**.
-- **New reel:** folders or files, a reel link or an audio file, a style, upright or wide, up to four versions to
-  compare, or a quick plan with its storyboard first.
-- **Ask:** describe the reel; TripShots finds the footage and makes it.
-- **Styles:** learn a style from reel links.
-- **Activity:** everything being made, rendered or learned, with its log, including jobs started from the command
-  line or an AI agent.
+- **Make:** describe the reel ("a reel with all my drone footage") and TripShots finds the footage, picks a style
+  and a sound and makes it, or choose the footage, sound, style, shape and versions yourself; progress shows step
+  by step.
+- **A reel:** an editor on one screen: the viewer, tabs for the words on screen (font, size, colour, place,
+  animation), the colour (looks previewed on your own shot, per-shot corrections) and the post (a caption
+  written for reach, hashtags, keywords, alt text), and the timeline. **Expert** adds shot-by-shot editing:
+  lengths on the beat, order, splits, speed, transitions, framing and the music.
+- **Styles:** yours and the built-in ones, each a click from a new reel; learn one from reel links.
+- **Activity:** everything being made, rendered or learned, with its state, its steps and its log, including jobs
+  started from the command line or an AI agent.
+
+| Words on screen | Colour, before and after |
+|---|---|
+| ![The Text tab: a line's words, timing, font shown in its own face, size and colour, with the preview of the edit](docs/images/desktop-text.jpg) | ![The Colour tab: each look shown on the shot itself, and the viewer split between the shot as filmed and the graded edit](docs/images/desktop-colour.jpg) |
+
+![Make: describe the reel in a sentence, or choose the footage, sound and style yourself](docs/images/desktop-make.jpg)
 - **Settings:** footage, reels and music folders, the browser to borrow your Instagram login from, light or dark,
   updates, the `tripshots` command for your terminal, and a one-click connection to Claude (MCP).
 

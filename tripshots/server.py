@@ -26,7 +26,7 @@ from . import __version__, jobs
 from .config import HOME, list_styles, load_env
 from .util import ReelError, read_json
 
-SECRETS = ("GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY")
+SECRETS = ("GEMINI_API_KEY", "ANTHROPIC_API_KEY", "MINIMAX_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY")
 SETTINGS = ("TRIPSHOTS_BACKEND", "TRIPSHOTS_MODEL", "TRIPSHOTS_COOKIES_BROWSER", "TRIPSHOTS_ENCODER") + SECRETS
 PLAIN = re.compile(r"^[^\x00-\x1f]{0,4000}$")
 
@@ -153,10 +153,75 @@ def save_settings(body: dict) -> dict:
     for k, v in (body.get("env") or {}).items():
         if k in SETTINGS and isinstance(v, str) and PLAIN.match(v):
             upd[k] = v.strip()
+    if body.get("backend") in BACKENDS:
+        upd["TRIPSHOTS_BACKEND"] = body["backend"]
     if upd:
-        write_env(upd)
-        os.environ.update({k: v for k, v in upd.items() if v})
+        write_env(upd)  # (an empty value removes the setting)
     return status()
+
+
+# ------------------------------------------------------------------ AI setup
+BACKENDS = ("auto", "claude-cli", "minimax", "api", "none")
+PING = "Reply with the single word OK."
+
+
+def ai_status() -> dict:
+    """What the app's AI page shows: each AI, whether it's ready, and which one makes the creative calls now.
+    Local checks only (`claude auth status` reads the saved login, nothing is sent)."""
+    from .ai import ClaudeCLI
+    from .util import which
+    claude = which("claude")
+    login = ClaudeCLI.login_status() if claude else None
+    token = bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
+    if not claude:
+        c_state = "missing"
+    elif token or (login or {}).get("loggedIn") or login is None:
+        c_state = "ready"
+    else:
+        c_state = "logged_out"
+    try:
+        import google.genai  # noqa: F401
+        sdk = True
+    except ImportError:
+        sdk = False
+    gem_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+    providers = {
+        "claude": {"state": c_state, "path": claude, "account": (login or {}).get("email") or (login or {}).get("account"),
+                   "plan": (login or {}).get("subscriptionType") or (login or {}).get("plan"), "token": token},
+        "minimax": {"state": "ready" if os.environ.get("MINIMAX_API_KEY") else "no_key",
+                    "model": os.environ.get("TRIPSHOTS_MINIMAX_MODEL") or "MiniMax-M3"},
+        "anthropic": {"state": "ready" if os.environ.get("ANTHROPIC_API_KEY") else "no_key"},
+        "gemini": {"state": "ready" if gem_key and sdk else ("no_sdk" if gem_key else "no_key"),
+                   "model": os.environ.get("TRIPSHOTS_GEMINI_MODEL") or "gemini-flash-latest"},
+    }
+    backend = (os.environ.get("TRIPSHOTS_BACKEND") or "auto").lower()
+    order = [n for n, ok in (("claude-cli", c_state == "ready"), ("minimax", providers["minimax"]["state"] == "ready"),
+                             ("api", providers["anthropic"]["state"] == "ready")) if ok]
+    using = None if backend == "none" else (order[0] if backend == "auto" and order else
+                                            backend if backend in order else None)
+    return {"backend": backend, "order": order, "using": using, "providers": providers}
+
+
+def ai_test(provider: str) -> dict:
+    """Send one tiny request to an AI to prove the login or key works: {"ok", "message"}."""
+    import time
+    t = time.time()
+    try:
+        if provider == "gemini":
+            from .watch import api_key
+            from google import genai
+            names = [m.name for m in genai.Client(api_key=api_key()).models.list()]
+            flash = [n for n in names if "flash" in n]
+            return {"ok": True, "message": f"Gemini answered: {len(names)} models available to this key"
+                                           + (f", including {flash[0].split('/')[-1]}" if flash else "")}
+        from .ai import AnthropicAPI, ClaudeCLI, _minimax
+        be = {"claude": ClaudeCLI, "minimax": _minimax, "anthropic": AnthropicAPI}.get(provider)
+        if be is None:
+            raise ReelError(f"unknown AI: {provider}")
+        reply = be().ask(PING, max_tokens=16).strip()
+        return {"ok": True, "message": f"{provider} answered in {time.time() - t:.0f} s: {reply[:40]}"}
+    except Exception as e:
+        return {"ok": False, "message": " ".join(str(e).split())[:400] or type(e).__name__}
 
 
 # ------------------------------------------------------------------ jobs the app can start
@@ -292,6 +357,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(reel_detail(_plan(arg("plan"))))
                 if path == "/api/styles":
                     return self._json(styles())
+                if path == "/api/ai":
+                    return self._json(ai_status())
                 if path == "/api/looks":
                     from .grade import list_looks
                     return self._json([{"name": k, "description": v.get("desc", "")} for k, v in list_looks().items()])
@@ -325,6 +392,8 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/edit":
                     from .planedit import apply
                     return self._json(apply(_plan(str(b.get("plan"))), list(b.get("edits") or [])))
+                if path == "/api/ai/test":
+                    return self._json(ai_test(str(b.get("provider"))))
                 if path == "/api/caption":
                     plan = _plan(str(b.get("plan")))
                     Path(f"{_base(plan)}.caption.txt").write_text(str(b.get("text") or ""))

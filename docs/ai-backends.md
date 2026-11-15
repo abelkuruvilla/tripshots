@@ -9,7 +9,8 @@ Pick one:
 * **Claude API key.** Set `ANTHROPIC_API_KEY` and use `--backend api`.
 * **None.** `--backend none` uses only technical measures (sharpness, exposure, shake). It's quick and free, but has no taste.
 
-Check everything with `tripshots doctor`.
+Check everything with `tripshots doctor`, or in the desktop app under Settings > AI, which walks through each one
+(install and log in to Claude Code from a Terminal it opens, paste a MiniMax, Anthropic or Gemini key) and tests it.
 
 **Automatic mode** (`TRIPSHOTS_BACKEND=auto`, the default) uses every AI you have set up, in this order: Claude Code (if installed and logged in), then MiniMax (if `MINIMAX_API_KEY` is set), then the Anthropic API (if `ANTHROPIC_API_KEY` is set). If one stops working during a run (logged out, key refused, out of credit), the next one takes over for the rest of the run, and each verdict is stored under the AI that gave it. Naming a backend (`-b claude-cli`, `-b minimax`, `-b api`) uses only that one. `tripshots doctor` shows the order.
 

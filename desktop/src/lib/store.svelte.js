@@ -6,6 +6,8 @@ export const app = $state({
   engine: null, // { url, token, version, path, source }
   engineState: null, // what the Rust side reports: status, error, installed_version, platform, app_version
   status: null, // /api/status
+  ai: null, // /api/ai: which AI is ready
+  focus: null, // a section a view should scroll to when it opens
   view: "reels",
   reel: null, // plan path of the open reel
   reels: [],
@@ -41,6 +43,10 @@ export function media(path, bust) {
 
 export async function refreshStatus() {
   app.status = await api("/api/status");
+}
+
+export async function refreshAi() {
+  app.ai = await api("/api/ai").catch(() => app.ai);
 }
 
 export async function refreshReels() {

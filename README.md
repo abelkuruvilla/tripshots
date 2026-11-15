@@ -1,14 +1,17 @@
+<img src="docs/images/logo.png" width="96" height="96" alt="TripShots logo: a striped setting sun over a mountain ridge with a road">
+
 # TripShots
 
 **Turn your own travel photos and clips into beat-synced Instagram Reels, by hand or by asking an AI.**
 
 Point TripShots at a trip folder and a song, or just say *"make a reel about my days in Yellowstone"*. It finds the
 right footage, picks the strongest shots, cuts them on the beat, grades the colour, adds text, motion and sound
-effects, and renders a 1080×1920 reel ready to post.
+effects, and renders a reel ready to post: upright 1080×1920, or a real 1920×1080 when your footage is wide.
 
-Nothing is generated: every frame is your own footage.
+Nothing is generated: every frame is your own footage. Use it as a desktop app for macOS, Windows and Linux, from the
+command line, or through an AI agent.
 
-![The TripShots app: the Ask tab](docs/images/app-ask.png)
+![The TripShots desktop app: your reels, newest first](docs/images/desktop-reels.jpg)
 
 ```
 your footage ─► find shots ─► AI judges each shot ─► beats of the song ─► edit plan ─► 1080×1920 reel
@@ -19,6 +22,7 @@ your footage ─► find shots ─► AI judges each shot ─► beats of the so
 
 ## Highlights
 
+- **Learns from reels you like:** give it Instagram reel links and it learns each one's cut, picture shape, words and lettering; a reel made on one of those sounds follows that reel's recipe, with its exact on-screen words in the closest matching font ([how](docs/storytelling.md#recipes-from-reference-reels)).
 - **Ask for footage the way you'd describe it:** by place ("Yellowstone National Park", matched by GPS inside its real outline), dates, or who's in it ("the pictures I'm in", "Lisbon with mom"), using face recognition that runs on your computer.
 - **Works with AI agents:** an [MCP server](docs/agents.md) for Claude Code, Claude Desktop, OpenClaw and any MCP agent, plus a portable [agent skill](skills/tripshots/SKILL.md) and `tripshots ask "…"`.
 - **Tells a story, not a slideshow:** every reel gets a hook in the first second, a build, a payoff on the drop and a looping ending; formats (POV, numbered places, Day N, reveal), cuts that follow dialogue and lyrics, match cuts, photos in depth, and a critic that checks the plan before rendering ([how](docs/storytelling.md)).
@@ -27,7 +31,39 @@ your footage ─► find shots ─► AI judges each shot ─► beats of the so
 - **Yours to change:** every reel is a readable `plan.json` with a storyboard. Swap a shot, change the hook, re-render; or open it in DaVinci Resolve / Premiere (EDL, OpenTimelineIO).
 - **Finish in Instagram's Edits:** hand the reel to the Edits Mac app with the hard parts baked in and the text, sound effects and song left editable, so you post with Instagram's licensed music ([how](docs/edits.md)).
 - **Analyses footage on its own:** `tripshots analyze` describes every photo and clip (caption, tags, subjects, scene, light, people, text, landmark, aesthetic, focus, colours, near-duplicates, camera, place, trip) into documented JSON that reels, other apps (collages, albums) and other AI tasks reuse ([format](docs/analysis.md)).
-- **Remembers your footage:** each file is analysed and judged once, by content, so later reels from the same footage are quick.
+- **Remembers your footage:** each file is analysed and judged once, by content, so later reels from the same footage are quick, and a series of reels from one trip uses different shots each time.
+
+## The desktop app
+
+A small native app (no bundled browser; about 5 MB) with light and dark themes. The engine that analyses footage and
+renders reels downloads once on first launch, checked against TripShots' signature, and keeps itself up to date.
+
+![A reel in the desktop app: player, caption, the sound to add, and a timeline with the playhead](docs/images/desktop-reel.jpg)
+
+- **Reels:** every reel you've made, grouped by folder, upright and wide side by side.
+- **A reel:** play it, copy or edit the caption, see which sound to add in Instagram (and open the reel it comes
+  from), the words on screen, and a timeline in timecode. Click a shot to jump to it, **Swap** it for one of the
+  best shots from the same footage without moving the cuts, then **Render again**.
+- **New reel:** folders or files, a reel link or an audio file, a style, upright or wide, up to four versions to
+  compare, or a quick plan with its storyboard first.
+- **Ask:** describe the reel; TripShots finds the footage and makes it.
+- **Styles:** learn a style from reel links.
+- **Activity:** everything being made, rendered or learned, with its log, including jobs started from the command
+  line or an AI agent.
+- **Settings:** footage, reels and music folders, the browser to borrow your Instagram login from, light or dark,
+  updates, the `tripshots` command for your terminal, and a one-click connection to Claude (MCP).
+
+**Setting up the AI** takes a minute in Settings > AI: step-by-step instructions for each AI, with buttons that open
+the right page or a Terminal, a key field, and a **Test** that sends one short message. Claude uses your Pro or Max
+plan (install Claude Code and log in, no key); MiniMax and the Claude API take a key; Gemini is an optional free key
+that lets TripShots watch your clips and hear dialogue.
+
+![Settings > AI: status, steps and a Test for Claude, MiniMax, Gemini and the Claude API](docs/images/desktop-ai.png)
+
+**Install:** download the installer for your computer from the
+[latest release](https://github.com/abelkuruvilla/tripshots/releases/latest): `.dmg` (Mac with Apple Silicon),
+`.msi`/`.exe` (Windows), `.deb`/`.rpm`/`.AppImage` (Linux). On a Mac, also `brew install ffmpeg`. More in
+[docs/desktop.md](docs/desktop.md); building and releasing in [desktop/README.md](desktop/README.md).
 
 ## Quick start
 
@@ -36,8 +72,10 @@ git clone <this repository> tripshots && cd tripshots
 ./install.sh                    # macOS: ffmpeg, Python 3.12 and TripShots (Linux: see docs/getting-started.md)
 tripshots doctor                # checks everything
 
-tripshots                       # the app: Ask, Make, Clone, Reels, Styles, Music, Frames, Colour, Library, Settings
+tripshots                       # the terminal app: Ask, Make, Clone, Reels, Styles, Music, Frames, Colour, Library, Settings
 ```
+
+![The terminal app: the Ask tab](docs/images/app-ask.png)
 
 Or from the command line:
 
@@ -71,6 +109,7 @@ contact sheets and storyboards come back as images so the agent can see what it 
 
 | | |
 |---|---|
+| [The desktop app](docs/desktop.md) | Install, what each screen does, AI setup, the command line and Claude from the app |
 | [Getting started](docs/getting-started.md) | Install (macOS, Linux), first reel, first search, first agent |
 | [Making reels](docs/making-reels.md) | Commands, outputs, styles, variants, learning a style, editing, exporting |
 | [Finding footage](docs/finding-footage.md) | Search by place, dates and people; trips; face recognition |
@@ -84,10 +123,14 @@ contact sheets and storyboards come back as images so the agent can see what it 
 
 ## Requirements
 
-Python 3.10+, ffmpeg 6+, and (recommended) an AI backend: [Claude Code](https://docs.claude.com/en/docs/claude-code)
-logged in with a Claude subscription, a MiniMax key, or an Anthropic API key. Without one, TripShots still works on
-technical measures alone. Node.js 22+ only for route maps. macOS is the main target; Linux works; Windows is
-untested.
+**Desktop app:** a Mac with Apple Silicon (macOS 11+), Windows 10+ or a recent Linux; on a Mac, ffmpeg from Homebrew.
+The app brings its own engine.
+
+**Command line:** Python 3.10+ and ffmpeg 6+. macOS is the main target; Linux works; Windows is untested.
+
+Both: (recommended) an AI: [Claude Code](https://docs.claude.com/en/docs/claude-code) logged in with a Claude
+subscription, a MiniMax key, or an Anthropic API key. Without one, TripShots still works on technical measures alone.
+Node.js 22+ only for route maps.
 
 ## Privacy
 

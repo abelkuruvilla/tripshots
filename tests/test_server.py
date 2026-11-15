@@ -80,3 +80,31 @@ def test_a_key_pasted_into_the_wrong_setting_is_not_shown(monkeypatch):
     assert server._shown("TRIPSHOTS_MODEL").startswith("(hidden") and server._shown("GEMINI_API_KEY") is True
     monkeypatch.setenv("TRIPSHOTS_MODEL", "claude-sonnet")
     assert server._shown("TRIPSHOTS_MODEL") == "claude-sonnet"
+
+
+def test_ai_page_shows_what_is_ready_and_never_a_key(api, monkeypatch):
+    call, _ = api
+    monkeypatch.setattr(server, "which", lambda n: None, raising=False)
+    import tripshots.util as util
+    monkeypatch.setattr(util, "which", lambda n: None)
+    monkeypatch.setenv("MINIMAX_API_KEY", "mm-secret-123")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("TRIPSHOTS_BACKEND", "auto")
+    code, st = call("/api/ai")
+    assert code == 200 and st["providers"]["claude"]["state"] == "missing"
+    assert st["providers"]["minimax"]["state"] == "ready" and st["order"] == ["minimax"] and st["using"] == "minimax"
+    assert "mm-secret-123" not in json.dumps(st)
+    assert call("/api/ai/test", {"provider": "nope"})[1]["ok"] is False
+
+
+def test_keys_are_saved_and_removed(tmp_path, monkeypatch):
+    from tripshots import config
+    monkeypatch.setattr(config, "ENV_PATH", tmp_path / ".env")
+    monkeypatch.setenv("TRIPSHOTS_BACKEND", "auto")      # (registered so they're put back after the test)
+    monkeypatch.setenv("MINIMAX_API_KEY", "x")
+    server.save_settings({"env": {"MINIMAX_API_KEY": "mm-1"}, "backend": "minimax"})
+    assert "MINIMAX_API_KEY=mm-1" in (tmp_path / ".env").read_text() and server.os.environ["TRIPSHOTS_BACKEND"] == "minimax"
+    server.save_settings({"env": {"MINIMAX_API_KEY": ""}})
+    assert "MINIMAX_API_KEY" not in server.os.environ and "MINIMAX_API_KEY=mm-1" not in (tmp_path / ".env").read_text()
+    server.save_settings({"backend": "rm -rf"})          # only known backends
+    assert server.os.environ["TRIPSHOTS_BACKEND"] == "minimax"

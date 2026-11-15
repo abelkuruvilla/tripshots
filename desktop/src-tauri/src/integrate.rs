@@ -68,6 +68,54 @@ pub fn install_cli(engine: &Path) -> Result<CliResult, String> {
     }
 }
 
+/// The commands the app may open a terminal for: installing Claude Code and logging it in. Fixed strings only,
+/// so the page can't run anything else.
+fn terminal_command(action: &str) -> Option<&'static str> {
+    match action {
+        "claude-install" if cfg!(windows) => Some("irm https://claude.ai/install.ps1 | iex"),
+        "claude-install" => Some("curl -fsSL https://claude.ai/install.sh | bash"),
+        "claude-login" => Some("claude auth login"),
+        "claude-token" => Some("claude setup-token"),
+        _ => None,
+    }
+}
+
+/// Open the system terminal running one of those commands (the login needs a browser and a terminal of its own).
+pub fn open_terminal(action: &str) -> Result<String, String> {
+    let cmd = terminal_command(action).ok_or("unknown action")?;
+    #[cfg(target_os = "macos")]
+    {
+        // Terminal runs the user's login shell, so a fresh install in ~/.local/bin is found
+        let script = format!(
+            "tell application \"Terminal\"\n activate\n do script \"{}\"\nend tell",
+            cmd.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        std::process::Command::new("osascript").args(["-e", &script]).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "powershell", "-NoExit", "-Command", cmd])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let line = format!("{cmd}; exec $SHELL");
+        let tries: [(&str, Vec<&str>); 4] = [
+            ("x-terminal-emulator", vec!["-e", "bash", "-lc", &line]),
+            ("gnome-terminal", vec!["--", "bash", "-lc", &line]),
+            ("konsole", vec!["-e", "bash", "-lc", &line]),
+            ("xterm", vec!["-e", "bash", "-lc", &line]),
+        ];
+        let ok = tries.iter().any(|(t, a)| std::process::Command::new(t).args(a).spawn().is_ok());
+        if !ok {
+            return Err(format!("no terminal found: run `{cmd}` yourself"));
+        }
+    }
+    Ok(cmd.to_string())
+}
+
 #[derive(Serialize)]
 pub struct ClaudeResult {
     pub desktop_config: String,

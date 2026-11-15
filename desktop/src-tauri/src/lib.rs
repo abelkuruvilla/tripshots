@@ -114,6 +114,11 @@ fn connect_claude(app: AppHandle, state: State<'_, AppState>) -> Result<integrat
     integrate::connect_claude(&engine_path(&app, &state)?)
 }
 
+#[tauri::command]
+fn open_terminal(action: String) -> Result<String, String> {
+    integrate::open_terminal(&action)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -128,7 +133,8 @@ pub fn run() {
             engine_install,
             engine_check_update,
             install_cli,
-            connect_claude
+            connect_claude,
+            open_terminal
         ])
         .build(tauri::generate_context!())
         .expect("error while building TripShots");

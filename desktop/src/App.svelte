@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app, startEngine, refreshReels, watchJobs } from "./lib/store.svelte.js";
+  import { app, startEngine, refreshReels, refreshAi, watchJobs } from "./lib/store.svelte.js";
   import { theme, applyTheme } from "./lib/theme.svelte.js";
   import Icon from "./lib/Icon.svelte";
   import Mark from "./lib/Mark.svelte";
@@ -36,6 +36,7 @@
       if (st.status === "ready") {
         await refreshReels();
         watchJobs();
+        refreshAi();
       }
     } finally {
       booting = false;

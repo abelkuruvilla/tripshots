@@ -6,6 +6,8 @@
   import { app, api, startEngine, toast } from "../lib/store.svelte.js";
   import { theme, applyTheme } from "../lib/theme.svelte.js";
   import Icon from "../lib/Icon.svelte";
+  import AiSetup from "./AiSetup.svelte";
+  import { onMount } from "svelte";
 
   const st = app.status || {};
   const s = st.settings || {};
@@ -13,8 +15,11 @@
   let reelsFolder = $state(st.reels_folder || "");
   let music = $state([...(st.music_folders || [])]);
   let browser = $state(s.TRIPSHOTS_COOKIES_BROWSER || "");
-  let gemini = $state("");
-  let anthropic = $state("");
+  // opened from the "set up an AI" notice: go straight to that section
+  onMount(() => {
+    if (app.focus === "ai") document.getElementById("ai")?.scrollIntoView({ block: "start" });
+    app.focus = null;
+  });
   let saving = $state(false);
   let engineUpdate = $state(null);
   let cli = $state(null);
@@ -37,10 +42,7 @@
     saving = true;
     try {
       const env = { TRIPSHOTS_COOKIES_BROWSER: browser };
-      if (gemini) env.GEMINI_API_KEY = gemini;
-      if (anthropic) env.ANTHROPIC_API_KEY = anthropic;
       app.status = await api("/api/settings", { footage_folders: footage, reels_folder: reelsFolder || null, music_folders: music, env });
-      gemini = anthropic = "";
       toast("Settings saved", "ok");
     } catch (e) {
       toast(String(e.message || e), "error");
@@ -77,6 +79,8 @@
 <div class="page">
   <div class="page-head"><h1>Settings</h1><div class="spacer"></div>
     <button class="btn primary" onclick={save} disabled={saving}>{#if saving}<span class="spin"></span>{/if} Save</button></div>
+
+  <div class="ai"><AiSetup /></div>
 
   <div class="cols">
     <div class="col">
@@ -117,21 +121,13 @@
 
     <div class="col">
       <section class="surface block">
-        <h2>Accounts</h2>
-        <div class="field">
-          <label for="ig">Instagram login from <span class="hint">· to download reels you learn from or take the sound of</span></label>
+        <h2>Instagram</h2>
+        <div class="field last">
+          <label for="ig">Borrow the login from <span class="hint">· to download reels you learn from or take the sound of</span></label>
           <select id="ig" bind:value={browser}>
             <option value="">Not set</option>
             {#each ["auto", "chrome", "safari", "brave", "arc", "firefox", "edge"] as b}<option value={b}>{b === "auto" ? "Any browser that's signed in" : b[0].toUpperCase() + b.slice(1)}</option>{/each}
           </select>
-        </div>
-        <div class="field">
-          <label for="gk">Gemini API key <span class="hint">· {s.GEMINI_API_KEY ? "set" : "not set"}, lets TripShots watch clips and hear dialogue</span></label>
-          <input id="gk" type="password" placeholder={s.GEMINI_API_KEY ? "Saved. Type to replace" : "Optional"} bind:value={gemini} />
-        </div>
-        <div class="field last">
-          <label for="ak">Anthropic API key <span class="hint">· {s.ANTHROPIC_API_KEY ? "set" : "not set"}, used when the Claude app isn't signed in</span></label>
-          <input id="ak" type="password" placeholder={s.ANTHROPIC_API_KEY ? "Saved. Type to replace" : "Optional"} bind:value={anthropic} />
         </div>
         {#if !app.status?.ffmpeg}<p class="warn">ffmpeg isn't installed. {app.engineState?.platform?.startsWith("darwin") ? "Install it with Homebrew: brew install ffmpeg" : "Install the engine again"}</p>{/if}
       </section>
@@ -168,6 +164,7 @@
 </div>
 
 <style>
+  .ai { max-width: 1200px; margin-bottom: 16px; }
   .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; align-items: start; max-width: 1200px; }
   .col { display: flex; flex-direction: column; gap: 16px; }
   .block { padding: 20px 24px; display: flex; flex-direction: column; }

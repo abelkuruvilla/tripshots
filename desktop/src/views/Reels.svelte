@@ -31,6 +31,13 @@
     <button class="btn primary" onclick={() => (app.view = "make")}><Icon name="plus" /> New reel</button>
   </div>
 
+  {#if app.ai && !app.ai.using && app.ai.backend !== "none"}
+    <div class="notice">
+      <span>No AI is set up, so shots are picked on sharpness and exposure only and no words or captions are written</span>
+      <button class="btn sm" onclick={() => { app.focus = "ai"; app.view = "settings"; }}>Set up an AI</button>
+    </div>
+  {/if}
+
   {#if !app.reels.length}
     <div class="empty">
       <p>No reels yet</p>
@@ -69,6 +76,10 @@
   .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .search input { border: 0; padding: 0; min-height: 0; height: 30px; background: transparent; box-shadow: none; color: var(--text); }
   section + section { margin-top: 40px; }
+  .notice {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: -8px 0 24px; padding: 12px 16px;
+    border-radius: var(--r-card); background: var(--accent-soft); font-size: 13px;
+  }
   .folder { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; margin-bottom: 12px; }
   /* fixed columns so an upright reel is one column and a wide one two, at the same height */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, 160px); grid-auto-flow: dense; gap: 24px 16px; }

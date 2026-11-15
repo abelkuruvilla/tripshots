@@ -57,8 +57,10 @@ def available() -> bool:
 def motion_for(kind: str, text_cfg: dict, overlay: dict | None = None) -> str | None:
     """The motion for one overlay, or None (typo.py draws it). Captions stay with typo.py: there are
     many, they change fast and must never lag the words."""
-    if kind not in ("hook", "location", "cta", "label"):
+    if kind not in ("hook", "location", "cta", "label", "text"):
         return None
+    if str(((overlay or {}).get("style") or {}).get("font") or "").startswith("gf:"):
+        return None  # a library font: the pages only carry the bundled faces, typo.py sets it exactly
     if isinstance((overlay or {}).get("style"), dict) and not (overlay or {}).get("motion"):
         return None  # a line with its own lettering (a recipe's) is drawn as written
     want = str((overlay or {}).get("motion") or text_cfg.get("motion") or "auto").lower()
@@ -108,7 +110,7 @@ def text_page(el, motion: str, kind: str) -> tuple[str, list[str]]:
     D = round(float(el.duration), 3)
     lines = el.lines
     font_css, files = _font_css(lines)
-    centered = kind in ("hook", "cta", "label")
+    centered = kind in ("hook", "cta", "label", "text")
     divs, units = [], 0
     for li, ln in enumerate(lines):
         name = str(ln.get("font") or "montserrat").lower()

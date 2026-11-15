@@ -11,6 +11,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`clone`](#clone) | remake a reel you like shot for shot with your own footage |
 | [`render`](#render) | re-render an (edited) plan.json |
 | [`qa`](#qa) | check a rendered reel: format, length, loudness, black/frozen/silent stretches, text in the safe area, readable text (runs after every render) |
+| [`caption`](#caption) | write the post for a reel: a caption made for reach, 3-5 hashtags, search keywords, alt text (NAME.caption.txt + NAME.social.json) |
 | [`skills`](#skills) | agent skills that work next to TripShots (HyperFrames, Remotion, one-take, Lemo-Opuscar): what they add, whether installed, how to install |
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
@@ -20,7 +21,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`scan`](#scan) | analyze + score footage and list the best shots |
 | [`frame`](#frame) | pop-out frame stills: the subject steps out of a framed photo |
 | [`look`](#look) | copy the colour grade of reels/videos/photos you like into a reusable look |
-| [`looks`](#looks) | list colour looks (built-in and yours) |
+| [`looks`](#looks) | colour looks: list them, add your own LUTs (.cube, HaldCLUT .png, folders, zips, links), fetch a free LUT pack, remove looks |
 | [`grade`](#grade) | colour grade photos and videos (graded copies + before/after sheet) |
 | [`sounds`](#sounds) | sound effects: what's available per role, or --fetch real ones from Openverse |
 | [`listen`](#listen) | earshot listens to a finished reel: events, sync, loudness (optional models) |
@@ -122,8 +123,9 @@ options:
   --loop, --no-loop     seamless loop ending
   --min-score N         lowest AI score (1-10) a shot may have to be used (default: style's
                         min_score - 2)
-  --look LOOK           colour grade: auto (AI picks), none, a preset (see `tripshots looks`) or a
-                        look you made with `tripshots look`
+  --look LOOK           colour grade: auto (AI picks), none, a look: cinematic-film, coastal,
+                        desert-warm, alpine, tropical, night-neon... or one of yours / an imported
+                        LUT (see `tripshots looks`) or a look you made with `tripshots look`
   --grade-strength 0-1  how strongly the look is applied (default 0.75)
   --variants N          make N versions (different opening shot, order, transitions and hook) + a
                         comparison sheet, e.g. to test with Instagram trial reels
@@ -295,6 +297,20 @@ positional arguments:
 
 options:
   -h, --help  show this help message and exit
+```
+
+## caption
+
+```text
+usage: tripshots caption [-h] [--tone TONE] [--extra EXTRA] plan
+
+positional arguments:
+  plan
+
+options:
+  -h, --help     show this help message and exit
+  --tone TONE    the voice, e.g. 'funny, short'
+  --extra EXTRA  anything the caption should mention or do
 ```
 
 ## skills
@@ -487,10 +503,18 @@ instagram login (most reels need it):
 ## looks
 
 ```text
-usage: tripshots looks [-h]
+usage: tripshots looks [-h] [--pack PACK] [--name NAME]
+                       [{list,packs,fetch,add,remove}] [items ...]
+
+positional arguments:
+  {list,packs,fetch,add,remove}
+                        default: list
+  items                 fetch: pack ids; add: files, folders, zips or links; remove: a look name
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help            show this help message and exit
+  --pack PACK           list or remove one pack; add: the pack to file them under
+  --name NAME           add: the name for a single LUT
 ```
 
 ## grade
@@ -576,7 +600,8 @@ options:
 ```text
 usage: tripshots find [-h] [--place PLACE] [--near LAT,LON] [--radius RADIUS]
                       [--people NAME [NAME ...]] [--any-people] [--since SINCE] [--until UNTIL]
-                      [--kind {both,photo,video}] [--text TEXT] [--only-matching] [--name NAME]
+                      [--kind {both,photo,video}] [--text TEXT]
+                      [--camera {drone,phone,action,camera}] [--only-matching] [--name NAME]
                       [--sheet] [--list]
                       [folders ...]
 
@@ -595,6 +620,9 @@ options:
   --until UNTIL         YYYY-MM-DD
   --kind {both,photo,video}
   --text TEXT           words in the folder/file/place name
+  --camera {drone,phone,action,camera}
+                        only footage from this kind of camera (drone: from its make, file names
+                        and what the AI saw)
   --only-matching       don't add same-day files without GPS (default: added, so phone clips come
                         along)
   --name NAME           label for the selection (used in the reel's file name)

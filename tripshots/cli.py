@@ -190,9 +190,33 @@ def cmd_look(a):
 
 
 def cmd_looks(a):
-    from . import grade
-    for name, lk in grade.list_looks().items():
-        print(f"{name:<14} {'' if lk.get('builtin') else '(yours) '}{lk.get('desc', '')}")
+    from . import grade, luts
+    act = a.action or "list"
+    if act == "list":
+        for name, lk in grade.list_looks().items():
+            if a.pack and lk.get("pack") != a.pack:
+                continue
+            where = "" if lk.get("builtin") else f"({lk['pack']}) " if lk.get("pack") else "(yours) "
+            print(f"{name:<30} {where}{lk.get('desc', '')}")
+    elif act == "packs":
+        for p in luts.packs():
+            state = f"{p['installed']} looks installed" if p["installed"] else f"about {p['size_mb']} MB"
+            print(f"{p['id']:<18} {p['title']} by {p['by']}: {p['about']} [{state}]\n{'':<18} {p['licence']}")
+    elif act == "fetch":
+        if not a.items:
+            raise SystemExit("which pack? " + ", ".join(luts.PACKS) + " (see `tripshots looks packs`)")
+        got = [x for pk in a.items for x in luts.fetch(pk)]
+        print(json.dumps({"added": len(got), "looks": [x["name"] for x in got]}, indent=2))
+    elif act == "add":
+        if not a.items:
+            raise SystemExit("give .cube files, HaldCLUT images, folders, zips or links")
+        got = luts.add(a.items, pack=a.pack, name=a.name)
+        print(json.dumps({"added": len(got), "looks": [{"name": x["name"], "desc": x["desc"]} for x in got]}, indent=2))
+    elif act == "remove":
+        n = luts.remove(name=a.items[0] if a.items else None, pack=a.pack)
+        print(json.dumps({"removed": n}))
+    else:
+        raise SystemExit(f"unknown action {act} (list, packs, fetch, add, remove)")
 
 
 def cmd_grade(a):
@@ -239,6 +263,11 @@ def cmd_qa(a):
     print(json.dumps(rep, indent=2, ensure_ascii=False))
 
 
+def cmd_caption(a):
+    from .social import write
+    print(json.dumps(write(Path(a.plan), a.tone, a.extra), indent=2, ensure_ascii=False))
+
+
 def cmd_skills(a):
     from . import companions
     if a.install:
@@ -263,7 +292,7 @@ def cmd_find(a):
     near = [float(x) for x in a.near.split(",")] if a.near else None
     res = catalog.find(a.folders or None, place=a.place, near=near, radius_km=a.radius, people=a.people,
                        people_mode="any" if a.any_people else "all", date_from=a.since, date_to=a.until,
-                       kinds=a.kind, whole_days=not a.only_matching, text=a.text, label=a.name)
+                       kinds=a.kind, whole_days=not a.only_matching, text=a.text, label=a.name, camera=a.camera)
     if a.sheet and res["count"]:
         res["sheet"] = str(catalog.contact_sheet(res["selection"]))
     if a.list:
@@ -557,7 +586,8 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--loop", action=argparse.BooleanOptionalAction, default=None, help="seamless loop ending")
     m.add_argument("--min-score", type=float, metavar="N",
                    help="lowest AI score (1-10) a shot may have to be used (default: style's min_score - 2)")
-    m.add_argument("--look", help="colour grade: auto (AI picks), none, a preset (see `tripshots looks`) "
+    m.add_argument("--look", help="colour grade: auto (AI picks), none, a look: cinematic-film, coastal, desert-warm, alpine, "
+                                  "tropical, night-neon... or one of yours / an imported LUT (see `tripshots looks`) "
                                   "or a look you made with `tripshots look`")
     m.add_argument("--grade-strength", type=float, metavar="0-1", help="how strongly the look is applied (default 0.75)")
     m.add_argument("--variants", type=int, default=1, metavar="N",
@@ -626,6 +656,13 @@ def build_parser() -> argparse.ArgumentParser:
                                   "stretches, text in the safe area, readable text (runs after every render)")
     q.add_argument("video")
     q.set_defaults(fn=cmd_qa)
+
+    cp = sub.add_parser("caption", help="write the post for a reel: a caption made for reach, 3-5 hashtags, search "
+                                        "keywords, alt text (NAME.caption.txt + NAME.social.json)")
+    cp.add_argument("plan")
+    cp.add_argument("--tone", help="the voice, e.g. 'funny, short'")
+    cp.add_argument("--extra", help="anything the caption should mention or do")
+    cp.set_defaults(fn=cmd_caption)
 
     sk = sub.add_parser("skills", help="agent skills that work next to TripShots (HyperFrames, Remotion, "
                                        "one-take, Lemo-Opuscar): what they add, whether installed, how to install")
@@ -698,7 +735,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_cookie_args(lk)
     lk.set_defaults(fn=cmd_look)
 
-    sub.add_parser("looks", help="list colour looks (built-in and yours)").set_defaults(fn=cmd_looks)
+    ls = sub.add_parser("looks", help="colour looks: list them, add your own LUTs (.cube, HaldCLUT .png, folders, zips, links), "
+                                     "fetch a free LUT pack, remove looks")
+    ls.add_argument("action", nargs="?", choices=["list", "packs", "fetch", "add", "remove"], help="default: list")
+    ls.add_argument("items", nargs="*", help="fetch: pack ids; add: files, folders, zips or links; remove: a look name")
+    ls.add_argument("--pack", help="list or remove one pack; add: the pack to file them under")
+    ls.add_argument("--name", help="add: the name for a single LUT")
+    ls.set_defaults(fn=cmd_looks)
 
     gr = sub.add_parser("grade", help="colour grade photos and videos (graded copies + before/after sheet)")
     gr.add_argument("inputs", nargs="+", help="photos, videos and/or folders")
@@ -740,6 +783,8 @@ def build_parser() -> argparse.ArgumentParser:
     fd.add_argument("--until", help="YYYY-MM-DD")
     fd.add_argument("--kind", choices=["both", "photo", "video"], default="both")
     fd.add_argument("--text", help="words in the folder/file/place name")
+    fd.add_argument("--camera", choices=["drone", "phone", "action", "camera"],
+                    help="only footage from this kind of camera (drone: from its make, file names and what the AI saw)")
     fd.add_argument("--only-matching", action="store_true",
                     help="don't add same-day files without GPS (default: added, so phone clips come along)")
     fd.add_argument("--name", help="label for the selection (used in the reel's file name)")

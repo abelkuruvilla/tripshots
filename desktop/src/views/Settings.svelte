@@ -21,6 +21,22 @@
     app.focus = null;
   });
   let saving = $state(false);
+  let saved = $state(false);
+  // changes save on their own, a moment after the last one
+  let first = true;
+  $effect(() => {
+    const snapshot = JSON.stringify([footage, reelsFolder, music, browser]);
+    if (first) {
+      first = false;
+      return;
+    }
+    saved = false;
+    const id = setTimeout(() => save(snapshot), 600);
+    return () => clearTimeout(id);
+  });
+  const sections = [["ai", "AI"], ["folders", "Folders"], ["appearance", "Appearance"], ["instagram", "Instagram"],
+                    ["outside", "Outside the app"], ["about", "About"]];
+  const go = (id) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
   let engineUpdate = $state(null);
   let cli = $state(null);
   let claude = $state(null);
@@ -43,7 +59,7 @@
     try {
       const env = { TRIPSHOTS_COOKIES_BROWSER: browser };
       app.status = await api("/api/settings", { footage_folders: footage, reels_folder: reelsFolder || null, music_folders: music, env });
-      toast("Settings saved", "ok");
+      saved = true;
     } catch (e) {
       toast(String(e.message || e), "error");
     } finally {
@@ -78,13 +94,18 @@
 
 <div class="page">
   <div class="page-head"><h1>Settings</h1><div class="spacer"></div>
-    <button class="btn primary" onclick={save} disabled={saving}>{#if saving}<span class="spin"></span>{/if} Save</button></div>
+    <span class="state" aria-live="polite">{#if saving}<span class="spin" style="width: 10px; height: 10px; border-width: 1.5px"></span> Saving{:else if saved}<span class="dot ok"></span> Saved{/if}</span></div>
 
-  <div class="ai"><AiSetup /></div>
+  <div class="layout">
+  <nav class="index" aria-label="Settings sections">
+    {#each sections as [id, label]}<button onclick={() => go(id)}>{label}</button>{/each}
+  </nav>
+  <div class="content">
+  <div class="ai" id="ai-anchor"><AiSetup /></div>
 
   <div class="cols">
     <div class="col">
-      <section class="surface block">
+      <section class="surface block" id="folders">
         <h2>Folders</h2>
         <div class="field">
           <label for="ft">Footage <span class="hint">· where your photos and clips live</span></label>
@@ -106,7 +127,7 @@
         </div>
       </section>
 
-      <section class="surface block">
+      <section class="surface block" id="appearance">
         <h2>Appearance</h2>
         <div class="themes" role="radiogroup" aria-label="Appearance">
           {#each themes as t}
@@ -120,7 +141,7 @@
     </div>
 
     <div class="col">
-      <section class="surface block">
+      <section class="surface block" id="instagram">
         <h2>Instagram</h2>
         <div class="field last">
           <label for="ig">Borrow the login from <span class="hint">· to download reels you learn from or take the sound of</span></label>
@@ -132,7 +153,7 @@
         {#if !app.status?.ffmpeg}<p class="warn">ffmpeg isn't installed. {app.engineState?.platform?.startsWith("darwin") ? "Install it with Homebrew: brew install ffmpeg" : "Install the engine again"}</p>{/if}
       </section>
 
-      <section class="surface block">
+      <section class="surface block" id="outside">
         <h2>Outside the app</h2>
         <div class="opt">
           <div><div class="t">Command line</div><div class="quiet small">The <span class="tc">tripshots</span> command, with the same engine and library</div></div>
@@ -148,7 +169,7 @@
         {/if}
       </section>
 
-      <section class="surface block">
+      <section class="surface block" id="about">
         <h2>About</h2>
         <dl>
           <dt>App</dt><dd class="tc">{app.engineState?.app_version}</dd>
@@ -162,10 +183,20 @@
     </div>
   </div>
 </div>
+  </div>
+  </div>
 
 <style>
-  .ai { max-width: 1200px; margin-bottom: 16px; }
-  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; align-items: start; max-width: 1200px; }
+  .layout { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 32px; align-items: start; }
+  .index { position: sticky; top: 0; display: flex; flex-direction: column; gap: 2px; }
+  .index button {
+    height: 32px; padding: 0 8px; border: 0; border-radius: var(--r-ctl); background: none; text-align: left; color: var(--text-2);
+    font-size: 13px; transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+  }
+  .index button:hover { background: var(--raised); color: var(--text); }
+  .content { min-width: 0; max-width: 1040px; }
+  .ai { margin-bottom: 16px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; align-items: start; }
   .col { display: flex; flex-direction: column; gap: 16px; }
   .block { padding: 20px 24px; display: flex; flex-direction: column; }
   .block h2 { margin-bottom: 16px; }

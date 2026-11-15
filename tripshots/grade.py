@@ -61,10 +61,69 @@ PRESETS: dict[str, dict] = {
                     "Lq": [14, 18, 33, 51, 67, 82, 88], "black": 13, "white": 92, "sh_ab": [2, 2], "mid_ab": [2, 5],
                     "hi_ab": [3, 8], "chroma": 15, "grain": 3,
                     "hue": [[140, 30, 15, 0.75], [275, 35, -12, 0.85]]},
+    # ---- cinematic and travel looks. `film`: a print-film finish (highlights roll off softly, bright colours
+    # thin out like on film stock, mid-tones keep their colour); `mono`: black and white. Lab hue angles in `hue`:
+    # red ~35, orange ~60, yellow ~95, green ~135, cyan ~200, blue ~270, magenta ~330
+    "cinematic-film": {"desc": "A feature film's print: soft highlight roll-off, gentle teal shadows, warm skin, greens pulled toward teal.",
+                       "Lq": [3, 7, 25, 46, 66, 86, 93], "black": 3, "white": 95, "sh_ab": [-7, -10], "mid_ab": [1, 4],
+                       "hi_ab": [8, 15], "chroma": 21, "film": True, "grain": 3, "vignette": True, "tags": ["cinematic", "film"],
+                       "hue": [[135, 30, 30, 0.75], [95, 18, 10, 0.8], [60, 22, -3, 1.1], [270, 35, -18, 0.9]]},
+    "blockbuster": {"desc": "Big-screen action: deep contrast, strong teal and orange, bright warm faces against cool backgrounds.",
+                    "Lq": [1, 5, 22, 46, 70, 91, 97], "black": 1, "white": 98, "sh_ab": [-9, -14], "mid_ab": [0, 0],
+                    "hi_ab": [8, 18], "chroma": 26, "film": True, "tags": ["cinematic", "punchy"],
+                    "hue": [[135, 32, 45, 0.8], [200, 30, 10, 1.15], [60, 22, -4, 1.2], [270, 35, -35, 1.05], [95, 20, -15, 0.85]]},
+    "bleach-bypass": {"desc": "Gritty and silvery: hard contrast, little colour, a metallic sheen. War films, storms, rough coasts.",
+                      "Lq": [1, 4, 20, 45, 70, 92, 97], "black": 1, "white": 98, "sh_ab": [-1, -3], "mid_ab": [0, 0],
+                      "hi_ab": [1, 2], "chroma": 10, "film": True, "grain": 4, "tags": ["cinematic", "gritty"]},
+    "coastal": {"desc": "Bright and airy seaside: aqua water, soft white sand, clean skies, light open shadows.",
+                "Lq": [5, 10, 31, 55, 75, 92, 97], "black": 3, "white": 99, "sh_ab": [-7, -9], "mid_ab": [-3, -4],
+                "hi_ab": [3, 6], "chroma": 28, "tags": ["travel", "beach", "ocean", "coast", "sea", "island"],
+                "hue": [[200, 30, -12, 1.45], [245, 30, -15, 1.3], [135, 30, 35, 0.9], [80, 25, -5, 0.9]]},
+    "desert-warm": {"desc": "Red rock and sand: rich terracotta and amber, deep blue skies, warm sunlit contrast.",
+                    "Lq": [3, 8, 27, 50, 71, 89, 95], "black": 2, "white": 97, "sh_ab": [3, 5], "mid_ab": [6, 13],
+                    "hi_ab": [8, 18], "chroma": 30, "film": True, "tags": ["travel", "desert", "canyon", "rock", "sand", "arch"],
+                    "hue": [[45, 25, 8, 1.3], [70, 20, -6, 1.2], [270, 35, -15, 1.25], [135, 30, -15, 0.7]]},
+    "alpine": {"desc": "Crisp mountain air: clean whites, deep blue sky, cool shadows, dark evergreen forest.",
+               "Lq": [2, 7, 27, 52, 75, 93, 98], "black": 1, "white": 99, "sh_ab": [-5, -11], "mid_ab": [-2, -4],
+               "hi_ab": [0, 0], "chroma": 25, "tags": ["travel", "mountain", "snow", "glacier", "alpine", "peak", "lake"],
+               "hue": [[135, 30, 18, 0.85], [270, 35, -15, 1.35], [200, 25, -5, 1.2], [60, 22, 0, 0.9]]},
+    "tropical": {"desc": "Lush and saturated: jungle greens, turquoise water, sunshine yellows. Holiday brochure.",
+                 "Lq": [2, 7, 28, 53, 75, 92, 97], "black": 1, "white": 99, "sh_ab": [-2, -2], "mid_ab": [0, 2],
+                 "hi_ab": [2, 6], "chroma": 35, "tags": ["travel", "tropical", "jungle", "palm", "island", "waterfall"],
+                 "hue": [[135, 30, -10, 1.35], [195, 30, -10, 1.45], [95, 20, -5, 1.25]]},
+    "forest-moody": {"desc": "Deep woods: dark rich greens, cool misty shadows, quiet muted colour.",
+                     "Lq": [2, 5, 20, 41, 62, 83, 91], "black": 2, "white": 94, "sh_ab": [-3, -5], "mid_ab": [-1, 0],
+                     "hi_ab": [1, 4], "chroma": 17, "film": True, "vignette": True,
+                     "tags": ["forest", "woods", "trees", "fog", "mist", "rain", "redwood"],
+                     "hue": [[135, 30, 15, 0.85], [95, 20, 20, 0.75], [60, 20, 0, 0.95]]},
+    "portrait-film": {"desc": "Warm portrait film: creamy skin, soft contrast, lifted shadows, pastel colour, fine grain.",
+                      "Lq": [7, 11, 29, 51, 70, 87, 93], "black": 6, "white": 95, "sh_ab": [1, 3], "mid_ab": [3, 7],
+                      "hi_ab": [4, 9], "chroma": 18, "film": True, "grain": 4, "tags": ["people", "portrait", "film", "warm"],
+                      "hue": [[60, 25, 0, 1.05], [135, 30, -12, 0.75], [270, 35, -8, 0.85]]},
+    "night-neon": {"desc": "City at night: cool teal shadows, glowing warm and magenta lights, deep blacks.",
+                   "Lq": [1, 3, 12, 28, 48, 75, 88], "black": 1, "white": 96, "sh_ab": [-6, -10], "mid_ab": [2, -4],
+                   "hi_ab": [6, 8], "chroma": 24, "film": True, "tags": ["night", "city", "neon", "street", "lights"],
+                   "hue": [[35, 25, 0, 1.15], [330, 30, 0, 1.2], [200, 30, 0, 1.15], [95, 20, -15, 0.85]]},
+    "blue-hour": {"desc": "Twilight calm: cool blue ambience, warm points of light, soft gentle contrast.",
+                  "Lq": [3, 7, 22, 42, 62, 84, 92], "black": 2, "white": 96, "sh_ab": [-3, -10], "mid_ab": [-1, -7],
+                  "hi_ab": [3, 4], "chroma": 20, "tags": ["dusk", "twilight", "evening", "blue hour"],
+                  "hue": [[270, 35, 5, 1.15], [60, 22, 0, 1.15]]},
+    "documentary": {"desc": "Honest and grounded: true colour, slightly muted, soft natural contrast. Lets the place speak.",
+                    "Lq": [4, 9, 28, 50, 70, 88, 94], "black": 3, "white": 97, "sh_ab": [0, 0], "mid_ab": [0, 1],
+                    "hi_ab": [1, 2], "chroma": 18, "tags": ["documentary", "natural"]},
+    "black-and-white": {"desc": "Classic black and white: rich contrast, deep blacks, clean silvery highlights.",
+                        "Lq": [2, 6, 25, 50, 72, 91, 97], "black": 1, "white": 99, "sh_ab": [0, 0], "mid_ab": [0, 0],
+                        "hi_ab": [0, 0], "chroma": 0, "mono": True, "grain": 3, "tags": ["mono", "classic"]},
 }
+
+NATURAL_BASE = "natural"  # what a LUT look stands on: the per-shot balance that makes shots match
 
 
 # ------------------------------------------------------------------ stats
+# colour families (Lab hue angle of their centre): a learned look records the hue and saturation of each, and a shot
+# is moved family by family toward it (teal-cyan skies, olive greens, golden light...)
+BANDS = {"red": 30, "orange": 62, "yellow": 95, "green": 135, "cyan": 200, "blue": 262}
+BAND_W = 26
 def _lab(rgb_u8: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(rgb_u8.astype(np.float32) / 255.0, cv2.COLOR_RGB2LAB)
 
@@ -96,12 +155,23 @@ def measure(images: list[np.ndarray]) -> dict:
         if n.sum() < 20:
             n = sel
         return [round(float(np.median(a[n])), 2), round(float(np.median(b[n])), 2)]
+    bands = {}
+    hue = np.degrees(np.arctan2(b, a)) % 360
+    coloured = (C > 8) & (L > 12) & (L < 96)
+    for name, centre in BANDS.items():
+        d = np.abs((hue - centre + 180) % 360 - 180)
+        sel = coloured & (d < BAND_W)
+        if sel.sum() >= 30:
+            hs = hue[sel]
+            off = (hs - centre + 180) % 360 - 180   # circular median around the band's centre
+            bands[name] = {"share": round(float(sel.mean()), 4), "hue": round(float((centre + np.median(off)) % 360), 1),
+                           "chroma": round(float(np.median(C[sel])), 2)}
     neutral = (C < 12) & (L > 15) & (L < 95)
     wb = [round(float(np.median(a[neutral])), 2), round(float(np.median(b[neutral])), 2)] \
         if neutral.sum() > 0.02 * len(L) else [0.0, 0.0]
     return {"Lq": [round(float(v), 2) for v in lq], "black": round(float(lq[0]), 2), "white": round(float(lq[-1]), 2),
             "sh_ab": ab_where(L < 30), "mid_ab": ab_where((L >= 30) & (L <= 70)), "hi_ab": ab_where(L > 70),
-            "wb_ab": wb, "chroma": round(float(np.sqrt(np.mean(C ** 2))), 2)}
+            "wb_ab": wb, "chroma": round(float(np.sqrt(np.mean(C ** 2))), 2), "bands": bands}
 
 
 def look_from_images(images: list[np.ndarray], name: str, desc: str = "") -> dict:
@@ -145,7 +215,10 @@ def get_look(name: str | None) -> dict | None:
         if p.suffix == ".json" and p.exists():
             return json.loads(p.read_text())
         raise KeyError(f"unknown look '{name}'. Available: {', '.join(looks)}")
-    return looks[name]
+    lk = looks[name]
+    if lk.get("cube") and "Lq" not in lk:
+        lk = {**PRESETS[NATURAL_BASE], **lk}
+    return lk
 
 
 def save_look(look: dict, name: str) -> Path:
@@ -157,6 +230,35 @@ def save_look(look: dict, name: str) -> Path:
 
 # ------------------------------------------------------------ transform
 MAX_CONTRAST = 2.0  # how far a grade may stretch a shot's own tones apart (x its own spread around the middle)
+
+
+def band_ops(src: dict, target: dict, k: float) -> list[tuple]:
+    """Hue moves that take a shot's colour families toward a learned look's: each family present in both turns
+    toward the look's hue (at most 28 degrees) and takes its saturation (0.6x..1.45x), by k (the strength)."""
+    ops = []
+    if not target or k <= 0:
+        return ops
+    names = list(BANDS)
+    for i, name in enumerate(names):
+        a, b = src.get(name), target.get(name)
+        if not a or a["share"] < 0.01:
+            continue
+        limit = 28
+        if (not b or b["share"] < 0.35 * a["share"]) and a["share"] >= 0.03:
+            # a family the reference hardly has (its skies are teal, not blue): move it toward the neighbour the
+            # reference does use
+            near = [target.get(names[(i + d) % len(names)]) for d in (-1, 1)]
+            near = [n for n in near if n and n["share"] >= 0.08]
+            if near:
+                b, limit = max(near, key=lambda n: n["share"]), 40
+        if not b or b["share"] < 0.01:
+            continue
+        dh = float(np.clip((b["hue"] - a["hue"] + 180) % 360 - 180, -limit, limit))
+        mul = float(np.clip(b["chroma"] / max(4.0, a["chroma"]), 0.6, 1.45))
+        if abs(dh) < 2 and abs(mul - 1) < 0.04:
+            continue
+        ops.append((float(a["hue"]), float(BAND_W), dh * k, 1 + (mul - 1) * k))
+    return ops
 
 
 def _smooth(x, e0, e1):
@@ -178,8 +280,11 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
     s = float(np.clip(strength, 0, 1))
     full = notes.get("match") == "full"  # a learned/cloned look: take its mood, not just a hint of it
     keep = bool(notes.get("keep_mood")) and not full
+    creative = read_lut(look["cube"]) if look.get("cube") else None
     s_tone = s * (0.5 if keep else 1.0)
     s_col = s * (0.6 if keep else 1.0)
+    if creative is not None:  # a LUT carries the look: the transform only balances the shot (exposure, cast, tones)
+        s_tone, s_col = s_tone * 0.5, s_col * 0.35
     stops = float(np.clip(notes.get("exposure", 0.0) or 0.0, -1.5, 1.5))
     # guard: if the bright parts are already bright, lifting exposure only greys out a dark
     # background (low-key shots: a lit subject in front of shadow is intentional)
@@ -203,6 +308,8 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
     # 28) so a black background stays black; a bright tone can only be pulled down a little
     up = np.minimum(28 if full else 18, 0.5 * sq + 1)
     down = np.minimum(24 if full else 14, (0.45 if full else 0.3) * (100 - sq) + 1)
+    if notes.get("people"):  # a face in shade stays readable: dark tones may only sink a little
+        down = np.where(sq < sq[3], np.minimum(down, 6), down)
     tq = sq + np.clip(tq - sq, -down, up)
     # and a flat scene stays flat: sand, fog or a grey sea has its tones close together, and pulling them as far
     # apart as the look's turns texture into blotches. Around its middle tone the contrast at most doubles.
@@ -219,7 +326,11 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
 
     src_ch = max(5.0, float(src["chroma"]))
     c_scale = float(np.clip((float(look["chroma"]) / src_ch) ** (0.8 if full else 0.5), 0.55 if full else 0.75, 1.4))
+    if look.get("chroma", 1) < 12 and not look.get("mono"):  # a deliberately colourless look (bleach bypass)
+        c_scale = min(c_scale, 0.6)
     c_scale = 1 + (c_scale - 1) * s_col
+    mono = bool(look.get("mono"))
+    film = bool(look.get("film"))
 
     # white balance: remove the shot's own cast (measured on neutral pixels)
     wb = np.array(src.get("wb_ab", [0, 0]), np.float32)
@@ -227,10 +338,19 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
     wb_shift = -wb * k
 
     def tint(key):
+        if full and key in src:
+            # a look learned from reels: each zone is taken to the reference's tint from where the shot starts
+            # (after its own cast is removed), so blue-white snow under a golden look turns golden, not grey
+            here = np.array(src[key], np.float32) + wb_shift
+            # at most 7 units, so warm sand under a teal look turns neutral rather than cyan
+            d = np.array(look.get(key, [0, 0]), np.float32) - here
+            n = float(np.hypot(*d))
+            return (d * (7.0 / n if n > 7.0 else 1.0)) * s_col
         return np.array(look.get(key, [0, 0]), np.float32) * s_col
     t_sh, t_mid, t_hi = tint("sh_ab"), tint("mid_ab"), tint("hi_ab")
     hue_ops = [(float(c), float(w), float(sh) * s_col, 1 + (float(m) - 1) * s_col)
                for c, w, sh, m in look.get("hue", [])]
+    hue_ops += band_ops(src.get("bands") or {}, look.get("bands") or {}, s_col * (1.0 if full else 0.7))
 
     def f(rgb: np.ndarray) -> np.ndarray:
         x = np.clip(rgb, 0, 1).astype(np.float32)
@@ -243,6 +363,10 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
         L, ab = lab[:, 0], lab[:, 1:] + wb_shift
         L2 = np.interp(L, xp, fp).astype(np.float32)
         L = L + (L2 - L) * s_tone
+        if film:  # print film: the top of the range rolls off instead of clipping
+            knee = 82.0
+            over = np.clip(L - knee, 0, None)
+            L = L - (over - (100 - knee) * (1 - np.exp(-over / (100 - knee)))) * s_tone
         ab = ab * c_scale
         if hue_ops:
             C = np.hypot(ab[:, 0], ab[:, 1])
@@ -263,10 +387,23 @@ def build_transform(src: dict, look: dict, strength: float = 0.8, notes: dict | 
         # a red jacket) take less of it so skies never turn purple
         protect = (1 - 0.65 * _smooth(np.hypot(ab[:, 0], ab[:, 1]), 8, 40))[:, None]
         ab = ab + protect * (w_sh[:, None] * t_sh + w_mid[:, None] * t_mid + w_hi[:, None] * t_hi)
+        if film:  # bright colours thin out as on film stock, mid-tones keep theirs
+            ab = ab * (1 + 0.08 * w_mid[:, None] * s_col - 0.3 * _smooth(L, 70, 96)[:, None] * s_col)
         ab = ab * (1 - 0.6 * _smooth(L, 93, 100)[:, None])   # clean whites
         ab = ab * _smooth(L, 0, 6)[:, None]                  # clean blacks
+        if mono:  # black and white: luminance only, whatever the strength (a hint of colour reads as a mistake)
+            ab = ab * 0.0
         out = cv2.cvtColor(np.concatenate([L[:, None], ab], 1).reshape(-1, 1, 3).astype(np.float32),
                            cv2.COLOR_LAB2RGB).reshape(rgb.shape)
+        out = np.clip(out, 0, 1)
+        if creative is not None:
+            # the look's LUT on top, at the strength asked; skin keeps more of its own colour
+            hue = np.degrees(np.arctan2(ab[:, 1], ab[:, 0]))
+            C = np.hypot(ab[:, 0], ab[:, 1])
+            skin = (_smooth(hue, 18, 30) * (1 - _smooth(hue, 68, 82)) * _smooth(C, 6, 12) * (1 - _smooth(C, 45, 60))
+                    * _smooth(L, 22, 32) * (1 - _smooth(L, 82, 92)))
+            amt = (s * (1 - 0.45 * skin)).reshape(out.shape[:-1] + (1,))
+            out = out + (sample_lut(creative, out) - out) * amt
         return np.clip(out, 0, 1)
     return f
 
@@ -287,8 +424,11 @@ def write_cube(f, path: Path, size: int = GRID) -> Path:
 
 
 def shot_lut(src_stats: dict, look: dict, strength: float, notes: dict | None) -> Path:
-    key = hashlib.sha1(json.dumps(["g6", src_stats, {k: look.get(k) for k in ("Lq", "black", "white", "sh_ab", "mid_ab", "hue",
-                                                                        "hi_ab", "chroma")}, round(strength, 3),
+    cube = look.get("cube")
+    stamp = Path(cube).stat().st_mtime_ns if cube and Path(cube).exists() else None
+    key = hashlib.sha1(json.dumps(["g10", src_stats, {k: look.get(k) for k in ("Lq", "black", "white", "sh_ab", "mid_ab", "hue",
+                                                                        "hi_ab", "chroma", "film", "mono", "cube")},
+                                   stamp, round(strength, 3),
                                    notes or {}], sort_keys=True, default=str).encode()).hexdigest()[:16]
     p = LUT_DIR / f"{key}.cube"
     if not p.exists():
@@ -331,14 +471,28 @@ For EACH shot decide what a good colourist would do before applying the reel's l
 - "exposure": stops to add (-1.0..1.0). 0 if it is fine (most shots). Only raise it when the MAIN SUBJECT itself is too dark (+0.2..0.6). A dark or black background behind a well-lit subject is intentional: 0. Blown skies -0.2..-0.4. Night shots stay dark.
 - "wb": "neutralize" if the cast is an error (camera white balance off, green fluorescent, blue phone shadow) or "keep" if the tint is the light itself (sunset, blue hour, neon, snow at dusk)
 - "keep_mood": true for shots whose own light IS the story (sunset, blue hour, night city, fog) so the look is applied gently
+- "layers": up to 3 secondary corrections on PARTS of the frame, the way a colourist adds windows and qualifiers
+  after the primary. Each is {{"region": "...", <adjustments>, "why": "<few words>"}}. Regions: "sky", "subject" (the
+  person or main subject), "skin", "greens" (foliage), "water", "ground" (lower frame), "edges" (all but the subject).
+  Adjustments: "exposure" (-1..1 stops), "contrast" (0.8..1.3), "saturation" (0.6..1.4), "warmth" (-1..1),
+  "tint" (-1 green .. 1 magenta), "hue" (-30..30 degrees). Typical: a bright washed-out sky -> sky exposure -0.3,
+  saturation 1.15; a person in shade -> subject exposure +0.3; skin gone grey or orange -> skin warmth/saturation
+  to natural; dull foliage -> greens saturation 1.15 (or hue toward the look); flat foreground -> ground exposure
+  -0.2; to lead the eye -> edges exposure -0.2. Only what THIS frame needs: often one layer, sometimes none ([]).
+  Keep moves gentle; never make skies purple or skin orange.
 {look_q}
 Reply with JSON only:
-{{{look_key}"shots": [{{"id": "S001", "light": "...", "exposure": 0.0, "wb": "keep", "keep_mood": false}}]}}
+{{{look_key}"shots": [{{"id": "S001", "light": "...", "exposure": 0.0, "wb": "keep", "keep_mood": false,
+  "layers": [{{"region": "sky", "exposure": -0.3, "saturation": 1.1, "why": "bright sky held back"}}]}}]}}
 """
 
 LOOK_Q = """
 Also choose the reel's look from: {looks}.
-Pick what flatters THIS footage overall (e.g. lush greens and blue water -> vivid or natural; warm desert/sunsets -> golden-hour or teal-orange; misty mountains/rain -> moody or nordic; city/people -> teal-orange or warm-film).
+Pick what flatters THIS footage and the story it tells, by name (e.g. beaches and sea -> coastal; red rock, desert,
+canyons -> desert-warm; snowy peaks and lakes -> alpine; jungle and waterfalls -> tropical; woods and fog ->
+forest-moody; sunsets -> golden-hour; city at night -> night-neon; people up close -> portrait-film; an epic road
+trip -> cinematic-film or blockbuster; mixed everyday footage -> cinematic-film or natural). A look whose colours
+would fight the footage (a blue look on golden sunsets, a teal look on green jungle) is the wrong one.
 """
 
 
@@ -391,12 +545,15 @@ def ai_notes(shots: list[dict], stats: dict, backend, work: Path, choose_look: b
     from .util import log
     cache = _load_notes()
     keys = {s["id"]: lib.shot_key(s) for s in shots}
-    notes = {i: cache[k] for i, k in keys.items() if k in cache}
+    older = {i: cache[k] for i, k in keys.items() if k in cache}
+    # verdicts from before the colourist proposed layers are asked again (when an AI is there to ask)
+    notes = {i: v for i, v in older.items() if "layers" in v or backend is None}
     todo = [s for s in shots if s["id"] not in notes]
     look_choice = None
     if backend is None:
         return {s["id"]: notes.get(s["id"]) or heuristic_notes(stats[s["id"]]) for s in shots}, None
-    look_key = "_look:" + hashlib.sha1("|".join(sorted(keys.values())).encode()).hexdigest()[:16]
+    menu = look_menu()
+    look_key = "_look:" + hashlib.sha1(("|".join(sorted(keys.values())) + "|" + "|".join(sorted(menu))).encode()).hexdigest()[:16]
     if choose_look and look_key in cache:
         look_choice = tuple(cache[look_key])
         choose_look = False
@@ -404,7 +561,7 @@ def ai_notes(shots: list[dict], stats: dict, backend, work: Path, choose_look: b
         todo = shots[:12]  # need a sheet to pick the look anyway
     if todo:
         log(f"AI colourist: {len(todo)} shot(s) -> {backend.name}")
-    looks = ", ".join(f"{k} ({v['desc']})" for k, v in PRESETS.items())
+    looks = "; ".join(f"{k} ({v})" for k, v in menu.items())
     for n, (sheet, ids) in enumerate(contact_sheets(todo, work / "grade_sheets", per_sheet=12)):
         table = "\n".join(f"{i}: L={stats[i]['Lq'][3]:.0f} (5%={stats[i]['Lq'][1]:.0f}, 95%={stats[i]['Lq'][5]:.0f}), "
                           f"cast a={stats[i]['mid_ab'][0]:+.0f} b={stats[i]['mid_ab'][1]:+.0f}, "
@@ -414,23 +571,26 @@ def ai_notes(shots: list[dict], stats: dict, backend, work: Path, choose_look: b
                                      look_key='"look": "<name>", "why": "<one sentence>", ' if ask_look else "")
         try:
             data = extract_json(backend.ask(prompt, [sheet], max_tokens=2500))
-            if ask_look and isinstance(data, dict) and data.get("look") in PRESETS:
+            if ask_look and isinstance(data, dict) and data.get("look") in menu:
                 look_choice = (data["look"], str(data.get("why", "")))
                 cache[look_key] = list(look_choice)
             rows = data.get("shots", []) if isinstance(data, dict) else data
             for d in rows or []:
                 i = str(d.get("id", "")).upper()
                 if i in keys:
+                    from .nodes import REGIONS, clean
+                    layers = [clean({**l, "auto": True}) for l in (d.get("layers") or [])
+                              if isinstance(l, dict) and l.get("region") in REGIONS][:4]
                     v = {"light": str(d.get("light", "mixed")),
                          "exposure": float(np.clip(float(d.get("exposure") or 0), -1, 1)),
                          "wb": "neutralize" if d.get("wb") == "neutralize" else "keep",
-                         "keep_mood": bool(d.get("keep_mood")), "source": backend.name}
+                         "keep_mood": bool(d.get("keep_mood")), "layers": layers, "source": backend.name}
                     notes[i] = v
                     cache[keys[i]] = v
         except Exception as e:
             log(f"  colourist sheet {sheet.name} failed ({e}); using measurements")
     _save_notes(cache)
-    return {s["id"]: notes.get(s["id"]) or heuristic_notes(stats[s["id"]]) for s in shots}, look_choice
+    return {s["id"]: notes.get(s["id"]) or older.get(s["id"]) or heuristic_notes(stats[s["id"]]) for s in shots}, look_choice
 
 
 # ----------------------------------------------------------- plan grading
@@ -443,18 +603,73 @@ def _plan_shot_ids(plan: dict) -> list[str]:
     return ids
 
 
-def auto_look(stats: list[dict]) -> str:
-    """No AI: pick a preset from the footage's overall character."""
+MENU_MAX = 60  # looks offered to the AI colourist
+
+
+def look_menu() -> dict[str, str]:
+    """Looks the AI colourist may pick, with what each does: the built-in ones, then yours (measured from reels,
+    imported LUTs). LUTs made for log footage are left out: on normal video they blow out."""
+    out = {k: v["desc"] for k, v in PRESETS.items()}
+    for k, v in list_looks().items():
+        prof = v.get("profile") or {}
+        if v.get("builtin") or k in out or prof.get("log_input") or prof.get("inverts"):
+            continue
+        if len(out) >= MENU_MAX:
+            break
+        out[k] = (v.get("title") + ": " if v.get("title") else "") + str(v.get("desc", ""))[:120]
+    return out
+
+
+# what the footage shows -> the look that flatters it (AI tags of the shots)
+SCENES = [("night-neon", ("night", "neon", "city lights", "nightlife")),
+          ("desert-warm", ("desert", "canyon", "red rock", "sandstone", "arch", "mesa", "dune")),
+          ("coastal", ("beach", "ocean", "coast", "sea", "surf", "shore", "pier", "island")),
+          ("alpine", ("mountain", "snow", "glacier", "alpine", "peak", "summit")),
+          ("tropical", ("tropical", "jungle", "palm", "rainforest", "waterfall")),
+          ("forest-moody", ("forest", "woods", "redwood", "trees", "fog", "mist")),
+          ("golden-hour", ("sunset", "sunrise", "golden hour", "golden")),
+          ("blue-hour", ("dusk", "twilight", "blue hour"))]
+
+
+def auto_look(stats: list[dict], tags: list[str] | None = None) -> str:
+    """No AI: pick a look from what the footage shows (the shots' AI tags) and its overall light."""
     b = np.median([s["mid_ab"][1] for s in stats])
     ch = np.median([s["chroma"] for s in stats])
     med = np.median([s["Lq"][3] for s in stats])
+    if tags:
+        words = " ".join(str(t).lower() for t in tags)
+        counts = [(sum(words.count(k) for k in keys), look) for look, keys in SCENES]
+        n, best = max(counts)
+        if n >= max(2, 0.12 * len(tags)):
+            if best == "night-neon" and med > 40:   # "night" tags on daylight footage: not a night reel
+                pass
+            else:
+                return best
     if b > 8:
         return "golden-hour"
-    if med < 35:
+    if med < 30:
         return "moody"
     if ch < 12:
         return "nordic" if b < 0 else "warm-film"
-    return "vivid" if ch < 20 else "natural"
+    return "vivid" if ch < 20 else "cinematic-film"
+
+
+def set_layers(seg: dict, shot: dict, note: dict, look: dict | None) -> None:
+    """A segment's secondary layers (nodes.py): the ones you set by hand stay; the rest come from the AI colourist's
+    verdict on the shot, or, without one, from what its thumbnail shows (a bright sky, a person in shade...)."""
+    from . import nodes
+    from .story import has_people
+    mine = [l for l in seg.get("layers") or [] if not l.get("auto")]
+    if "layers" in note:
+        auto = note["layers"]
+    else:
+        im = cv2.imread(str(shot.get("thumb") or ""))
+        auto = nodes.auto_layers(cv2.cvtColor(im, cv2.COLOR_BGR2RGB), seg, look, has_people(shot)) if im is not None else []
+    layers = mine + [l for l in auto if l["region"] not in {m["region"] for m in mine}]
+    if layers:
+        seg["layers"] = layers
+    else:
+        seg.pop("layers", None)
 
 
 def grade_plan(plan: dict, by_id: dict, cfg: dict, backend, work: Path) -> dict | None:
@@ -473,18 +688,22 @@ def grade_plan(plan: dict, by_id: dict, cfg: dict, backend, work: Path) -> dict 
         if choice:
             name, why = choice
         else:
-            name = auto_look(list(stats.values()))
+            name = auto_look(list(stats.values()), [t for i in ids for t in (by_id[i].get("ai") or {}).get("tags") or []])
             why = "picked from the footage's overall colour"
     look = get_look(name)
-    match = cfg.get("match")
+    match = cfg.get("match") or look.get("match")   # a look learned from reels takes the shots fully into it
+    from .story import has_people
     luts = {i: str(shot_lut(stats[i], look, strength, {**{k: notes[i].get(k) for k in ("exposure", "wb", "keep_mood")},
-                                                       **({"match": match} if match else {})}))
+                                                       **({"match": match} if match else {}),
+                                                       **({"people": True} if has_people(by_id[i]) else {})}))
             for i in ids}
     for seg in plan["segments"]:
         for c in (seg.get("clips") or [seg]):
             if c.get("shot_id") in luts:
                 c["lut"] = luts[c["shot_id"]]
                 c["grade_note"] = notes[c["shot_id"]].get("light", "")
+        if not seg.get("panel") and seg.get("shot_id") in by_id:
+            set_layers(seg, by_id[seg["shot_id"]], notes.get(seg["shot_id"]) or {}, look)
     g = {"look": name, "strength": strength, "why": why, "grain": look.get("grain", 0), "match": match,
          "vignette": bool(look.get("vignette"))}
     plan["grade"] = g
@@ -526,7 +745,28 @@ def before_after(plan: dict, by_id: dict, out: Path, max_shots: int = 8) -> Path
     return out
 
 
+_cubes: dict = {}
+
+
 def read_cube(path: Path) -> np.ndarray:
+    """A .cube LUT as an array; kept in memory by path and modification time (a LUT file never changes in place,
+    but the editor redraws storyboards often)."""
+    p = Path(path)
+    try:
+        key = (str(p), p.stat().st_mtime_ns)
+    except OSError:
+        key = None
+    if key in _cubes:
+        return _cubes[key]
+    lut = _parse_cube(p)
+    if key:
+        if len(_cubes) > 256:
+            _cubes.clear()
+        _cubes[key] = lut
+    return lut
+
+
+def _parse_cube(path: Path) -> np.ndarray:
     vals, size = [], GRID
     for line in Path(path).read_text().splitlines():
         t = line.strip().split()
@@ -537,6 +777,55 @@ def read_cube(path: Path) -> np.ndarray:
             continue
         vals.append([float(x) for x in t[:3]])
     return np.array(vals, np.float32).reshape(size, size, size, 3)
+
+
+def read_hald(path: Path, size: int = GRID) -> np.ndarray:
+    """A HaldCLUT image (level L: an L^3 x L^3 picture holding an L^2-point cube, red fastest) as a size^3 table."""
+    im = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+    if im is None or im.ndim != 3:
+        raise ValueError(f"not a HaldCLUT image: {Path(path).name}")
+    h, w = im.shape[:2]
+    level = int(round(w ** (1 / 3)))
+    if h != w or level ** 3 != w:
+        raise ValueError(f"{Path(path).name} isn't a HaldCLUT ({w}x{h})")
+    n = level * level
+    scale = 65535.0 if im.dtype == np.uint16 else 255.0
+    table = cv2.cvtColor(im[..., :3], cv2.COLOR_BGR2RGB).astype(np.float32).reshape(n, n, n, 3) / scale
+    if n == size:
+        return table
+    r = np.linspace(0, 1, size, dtype=np.float32)
+    B, G, R = np.meshgrid(r, r, r, indexing="ij")
+    return sample_lut(table, np.stack([R, G, B], -1).reshape(-1, 3)).reshape(size, size, size, 3)
+
+
+def read_lut(path) -> np.ndarray:
+    """A creative LUT as a table [b][g][r] of RGB 0..1: a .cube file or a HaldCLUT .png (kept in memory)."""
+    p = Path(path)
+    if p.suffix.lower() == ".cube":
+        return read_cube(p)
+    key = ("hald", str(p), p.stat().st_mtime_ns)
+    if key not in _cubes:
+        _cubes[key] = read_hald(p)
+    return _cubes[key]
+
+
+def sample_lut(table: np.ndarray, rgb: np.ndarray) -> np.ndarray:
+    """Trilinear lookup of float RGB (0..1, any shape [..., 3]) in a table [b][g][r]."""
+    size = table.shape[0]
+    x = np.clip(rgb.reshape(-1, 3).astype(np.float32), 0, 1) * (size - 1)
+    i0 = np.clip(np.floor(x).astype(np.int32), 0, size - 2)
+    d = x - i0
+    r, g, b = i0[:, 0], i0[:, 1], i0[:, 2]
+    dr, dg, db = d[:, 0:1], d[:, 1:2], d[:, 2:3]
+    out = np.zeros_like(x)
+    for ob in (0, 1):
+        wb = db if ob else 1 - db
+        for og in (0, 1):
+            wg = dg if og else 1 - dg
+            for orr in (0, 1):
+                wr = dr if orr else 1 - dr
+                out += table[b + ob, g + og, r + orr] * (wb * wg * wr)
+    return np.clip(out, 0, 1).reshape(rgb.shape)
 
 
 def apply_cube(rgb_u8: np.ndarray, path: Path) -> np.ndarray:
@@ -664,6 +953,7 @@ def look_from_refs(refs: list[str], name: str, backend=None, cookies_browser=Non
         except Exception as e:
             log(f"AI look description failed ({e}); saved the measured look")
     look["refs"] = refs
+    look["match"] = "full"
     p = save_look(look, name)
     log(f"look saved: {p} - {look['desc']}")
     return p

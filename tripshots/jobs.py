@@ -102,7 +102,8 @@ def status(jid: str) -> dict:
         rc = meta.get("rc")
         running = rc is None and _alive(meta["pid"])
     st = {"id": jid, "kind": meta["kind"], "label": meta.get("label"), "command": "tripshots " + " ".join(meta["args"]),
-          "elapsed_s": round((meta.get("ended") or time.time()) - meta["started"]), "log": log_tail(jid)}
+          "started": round(meta["started"]), "elapsed_s": round((meta.get("ended") or time.time()) - meta["started"]),
+          "log": log_tail(jid)}
     if running:
         st["state"] = "running"
         return st

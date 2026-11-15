@@ -96,13 +96,116 @@ def reel_detail(plan: Path) -> dict:
                      "role": s.get("role"), "shot_id": s.get("shot_id"), "kind": sh.get("kind") or s.get("kind"),
                      "thumb": sh.get("thumb"), "file": Path(sh.get("src") or s.get("src") or "").name,
                      "note": (sh.get("ai") or {}).get("note"), "transition": s.get("trans_out"),
-                     "speed": s.get("speed"), "panel": s.get("panel")})
-    texts = [{"type": o.get("type"), "text": o.get("text"), "start": o.get("start"), "duration": o.get("duration")}
-             for o in p.get("overlays") or [] if o.get("text")]
+                     "speed": s.get("speed"), "panel": s.get("panel"), "ramp": s.get("ramp"),
+                     "in": s.get("in"), "clip": [sh.get("t0"), sh.get("t1")] if sh.get("kind") == "video" else None,
+                     "layout": s.get("layout"), "subject_x": s.get("subject_x"), "kb": s.get("kb"),
+                     "trans_dur": s.get("trans_dur"), "adjust": s.get("adjust") or {},
+                     "graded": bool(s.get("lut")) and not s.get("no_grade"), "no_grade": bool(s.get("no_grade")),
+                     "light": s.get("grade_note"), "layers": s.get("layers") or []})
+    from .planedit import history, texts as plan_texts
     cap = _side(plan, ".caption.txt")
-    return {**reel_card(plan), "segments": segs, "texts": texts,
-            "caption": Path(cap).read_text() if cap else "", "qa_report": read_json(Path(f"{_base(plan)}.qa.json")),
+    music = p.get("music") or {}
+    return {**reel_card(plan), "segments": segs, "texts": plan_texts(p),
+            "text_defaults": text_defaults(p), "history": history(plan),
+            "caption": Path(cap).read_text() if cap else "", "social": read_json(Path(f"{_base(plan)}.social.json")),
+            "qa_report": read_json(Path(f"{_base(plan)}.qa.json")),
+            "beats": [round(float(b), 3) for b in p.get("beats") or []],
+            "music": {k: music.get(k) for k in ("start", "gain_db", "fade_out", "label")} if music.get("path") else None,
+            "grading": {k: (p.get("grade") or {}).get(k) for k in ("look", "strength", "grain", "vignette", "why")},
+            "beat_punch": (p.get("motion") or {}).get("beat_punch"),
             "sound_sheet": _side(plan, ".sound.jpg"), "grade": _side(plan, ".grade.jpg")}
+
+
+def text_defaults(p: dict) -> dict:
+    """Each kind of text's lettering in this plan when a line has none of its own (the editor starts from it)."""
+    from .typo import PRESETS
+    tcfg = p.get("text") or {}
+    preset = PRESETS.get(str(tcfg.get("preset", "bold")), PRESETS["bold"])
+    out = {}
+    for kind in ("hook", "location", "cta", "label", "text", "caption"):
+        base = dict(preset.get("hook" if kind in ("text", "caption") else kind) or {})
+        own = tcfg.get("hook" if kind == "text" else kind) or {}
+        if own.get("font"):
+            base.update({k: v for k, v in own.items() if k in ("font", "size", "uppercase", "color", "anim")})
+        out[kind] = {k: base.get(k) for k in ("font", "size", "uppercase", "color", "anim", "position")}
+    return out
+
+
+def still(plan: Path, t: float, raw: bool = False, mask: str | None = None) -> Path:
+    """The frame at t with the plan's text as it stands now (cached by the plan's state and the time)."""
+    from .render import still as render_still
+    from .util import short_hash
+    d = HOME / "cache" / "stills"
+    out = d / f"{short_hash(f'{plan.resolve()}|{plan.stat().st_mtime_ns}|{t:.2f}|{raw}|{mask}', 16)}.jpg"
+    if not out.exists():
+        d.mkdir(parents=True, exist_ok=True)
+        for old in sorted(d.glob("*.jpg"), key=lambda f: f.stat().st_mtime)[:-200]:
+            old.unlink(missing_ok=True)   # a few hundred recent frames is plenty
+        from .nodes import REGIONS
+        render_still(read_json(plan), t, out, raw=raw, mask=mask if mask in REGIONS else None)
+    return out
+
+
+def look_thumb(plan: Path, slot: int, look: str) -> Path | None:
+    """A small picture of one shot in a look (the editor's look strip): its thumbnail through the LUT that look would
+    give it, with the colourist's cached notes for that shot. No AI calls."""
+    from . import grade
+    from .planedit import _shots
+    from .util import short_hash
+    p = read_json(plan)
+    segs = p.get("segments") or []
+    seg = segs[max(0, min(len(segs) - 1, int(slot) - 1))] if segs else {}
+    shot = _shots(p).get(seg.get("shot_id")) or {}
+    thumb = shot.get("thumb") or seg.get("thumb")
+    if not thumb or not Path(thumb).exists():
+        return None
+    strength = float((p.get("grade") or {}).get("strength") or 0.75)
+    d = HOME / "cache" / "looks"
+    out = d / f"{short_hash(f'{thumb}|{look}|{strength:.2f}|g1', 16)}.jpg"
+    if out.exists():
+        return out
+    import cv2
+    im = cv2.imread(str(thumb))
+    if im is None:
+        return None
+    h = 240
+    im = cv2.resize(im, (max(1, int(im.shape[1] * h / im.shape[0])), h), interpolation=cv2.INTER_AREA)
+    rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+    lk = grade.get_look(look) if look not in ("none", "off", "") else None
+    if lk:
+        stats = grade.shot_stats(shot)
+        notes, _ = grade.ai_notes([shot], {shot["id"]: stats}, None, Path(p.get("work") or "."), False)
+        n = notes.get(shot["id"]) or {}
+        lut = grade.shot_lut(stats, lk, strength, {**{k: n.get(k) for k in ("exposure", "wb", "keep_mood")},
+                                                   **({"match": lk["match"]} if lk.get("match") else {})})
+        rgb = grade.apply_cube(rgb, lut)
+    d.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 86])
+    return out
+
+
+def fonts() -> list[dict]:
+    """Fonts a line can be set in: the bundled faces, then the open-font library (fetched on first use)."""
+    from . import fontlib
+    from .typo import FONTS
+    out = [{"id": n, "label": n.replace("-", " ").title(), "look": "bundled", "weight": w or 400, "bundled": True}
+           for n, (_f, w) in FONTS.items()]
+    for fam, (look, weights, scripts) in fontlib.CATALOG.items():
+        for w in weights:
+            out.append({"id": fontlib.name(fam, w), "label": f"{fam} {w}", "look": look, "weight": w,
+                        "bundled": False, "fetched": fontlib.path(fam, w).exists(), "scripts": list(scripts)})
+    return out
+
+
+def font_file(name: str) -> Path | None:
+    from . import fontlib
+    from .typo import FONT_DIR, FONTS
+    if name.lower() in FONTS:
+        return FONT_DIR / FONTS[name.lower()][0]
+    fam = fontlib.parse(name)
+    if fam and fam[0] in fontlib.CATALOG:
+        return fontlib.get(*fam)
+    return None
 
 
 def styles() -> list[dict]:
@@ -246,15 +349,34 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
     if kind == "learn":
         name = re.sub(r"[^A-Za-z0-9_-]+", "-", s("name")).strip("-") or "mystyle"
         return ["learn", *items("refs"), "-n", name] + (["--add"] if b.get("add") else []), name
-    if kind == "ask":
-        return ["ask", s("request")], s("request")[:60]
+    if kind == "ask":  # the app asks for a finished reel; plan_only for a storyboard first
+        return ["ask", s("request")] + ([] if b.get("plan_only") else ["--render"]), s("request")[:60]
     if kind == "find":
-        keys = ("place", "people", "date_from", "date_to", "kinds", "text", "folders", "label")
+        keys = ("place", "people", "date_from", "date_to", "kinds", "text", "folders", "label", "camera")
         return find_args(**{k: b[k] for k in keys if b.get(k) not in (None, "", [])}), s("label") or s("place")
     if kind == "trips":
         return ["trips", "--", *items("folders")], "trips"
     if kind == "music":
         return ["music", s("url")], s("url")
+    if kind == "looks":   # the look library: fetch a free pack, add LUT files, remove a pack or a look
+        act = s("action")
+        if act == "fetch":
+            from .luts import PACKS
+            if s("pack") not in PACKS:
+                raise ReelError(f"unknown pack {s('pack')}")
+            return ["looks", "fetch", s("pack")], f"Looks: {PACKS[s('pack')]['title']}"
+        if act == "add":
+            files = items("files")
+            if not files:
+                raise ReelError("choose LUT files")
+            return ["looks", "add", *files], "Add looks"
+        if act == "remove":
+            return ["looks", "remove"] + ([s("name")] if b.get("name") else []) + \
+                (["--pack", s("pack")] if b.get("pack") else []), "Remove looks"
+        raise ReelError("looks: fetch, add or remove")
+    if kind == "caption":
+        return ["caption", str(_plan(s("plan")))] + (["--tone", s("tone")] if b.get("tone") else []) + \
+            (["--extra", s("extra")] if b.get("extra") else []), Path(s("plan")).name
     if kind == "qa":
         return ["qa", s("video")], Path(s("video")).name
     if kind == "analyze":
@@ -348,6 +470,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "version": __version__})
             if path == "/api/file" and method == "GET":
                 return self._file(Path(arg("path")))
+            if path == "/api/font" and method == "GET":
+                f = font_file(arg("name"))
+                return self._file(f, trusted=True) if f else self._json({"error": "no such font"}, 404)
             if method == "GET":
                 if path == "/api/status":
                     return self._json(status())
@@ -355,13 +480,28 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(list_reels())
                 if path == "/api/reel":
                     return self._json(reel_detail(_plan(arg("plan"))))
+                if path == "/api/still":
+                    return self._file(still(_plan(arg("plan")), float(arg("at", "0")), arg("raw") == "1", arg("mask") or None),
+                                      trusted=True)
+                if path == "/api/lookthumb":
+                    f = look_thumb(_plan(arg("plan")), int(arg("slot", "1")), arg("look", "none"))
+                    return self._file(f, trusted=True) if f else self._json({"error": "no picture"}, 404)
+                if path == "/api/fonts":
+                    return self._json(fonts())
                 if path == "/api/styles":
                     return self._json(styles())
                 if path == "/api/ai":
                     return self._json(ai_status())
                 if path == "/api/looks":
                     from .grade import list_looks
-                    return self._json([{"name": k, "description": v.get("desc", "")} for k, v in list_looks().items()])
+                    return self._json([{"name": k, "title": v.get("title"), "description": v.get("desc", ""),
+                                        "builtin": v.get("builtin", False), "pack": v.get("pack"),
+                                        "lut": bool(v.get("cube")), "tags": v.get("tags") or [],
+                                        "for_log": bool((v.get("profile") or {}).get("log_input"))}
+                                       for k, v in list_looks().items()])
+                if path == "/api/lookpacks":
+                    from .luts import packs
+                    return self._json(packs())
                 if path == "/api/candidates":
                     from .planedit import candidates
                     return self._json(candidates(_plan(arg("plan")), int(arg("top", "40"))))
@@ -392,6 +532,9 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/edit":
                     from .planedit import apply
                     return self._json(apply(_plan(str(b.get("plan"))), list(b.get("edits") or [])))
+                if path in ("/api/undo", "/api/redo"):
+                    from .planedit import step
+                    return self._json(step(_plan(str(b.get("plan"))), back=path == "/api/undo"))
                 if path == "/api/ai/test":
                     return self._json(ai_test(str(b.get("provider"))))
                 if path == "/api/caption":
@@ -406,9 +549,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:  # the app shows it; the server keeps running
             return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
-    def _file(self, path: Path):
+    def _file(self, path: Path, trusted: bool = False):
         """A media file, with byte ranges so <video> can seek."""
-        if not path.is_file() or not allowed(path):
+        if not path.is_file() or not (trusted or allowed(path)):
             return self._json({"error": "not found"}, 404)
         size = path.stat().st_size
         ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"

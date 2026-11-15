@@ -183,10 +183,78 @@ def place_matcher(place: str):
 
 
 # ------------------------------------------------------------------ find
+# ------------------------------------------------------------------ which kind of camera made a file
+CAMERAS = ("drone", "phone", "action", "camera")
+_NAME_KINDS = (  # names cameras give their files, and folders people keep them in (a file's path, lower case)
+    ("drone", re.compile(r"(^|[/_\-\s])(hover|hoverair|autel|skydio|anafi|parrot|mavic|avata|drones?|fpv)([/_\-\s\d.]|$)")),
+    ("action", re.compile(r"(^|/)(gopr|gp\d|gx\d|gh\d|insta360|vid_\d{8}_\d{6}_\d+_\d+)|gopro|osmo")),
+    ("phone", re.compile(r"(^|/)(img_|pxl_|vid_\d{8}|\d{8}_\d{6})|iphone")),
+    ("camera", re.compile(r"(^|/)(_?dsc|dscf|_mg_|img_\d{4}\.(cr|nef|arw))|[/_]c\d{4}\.mp4$")),
+)
+_DRONE_MODEL = re.compile(r"\b(fc\d{4}|mavic|mini \d|air \d|avata|phantom|inspire|hover|autel|evo|skydio|anafi)\b", re.I)
+
+
+def camera_kind(rec: dict, ai: dict | None = None) -> str | None:
+    """drone, phone, action, camera or None, from what is known without opening the file: the camera model when an
+    analysis cached it, what the AI saw in its shots (`ai`: {"drone": bool}), and the names cameras give files."""
+    path = rec["path"].replace("\\", "/").lower()
+    model = " ".join(str(rec.get(k) or "") for k in ("make", "model")).strip().lower()
+    if model:
+        if _DRONE_MODEL.search(model):
+            return "drone"
+        if any(m in model for m in ("apple", "iphone", "samsung", "google", "pixel", "oneplus", "xiaomi")):
+            return "phone"
+        if any(m in model for m in ("gopro", "insta360", "osmo action")):
+            return "action"
+    named = next((kind for kind, pat in _NAME_KINDS if pat.search(path)), None)
+    if path.rsplit("/", 1)[-1].startswith("dji_"):
+        named = None  # DJI names both drone and hand-held (Osmo) files: only the AI or the model can tell
+    # what the AI saw decides only when the name doesn't (a camera photo from a lookout can look "aerial")
+    if named is None and (ai or {}).get("drone"):
+        return "drone"
+    return named
+
+
+def ai_camera_hints() -> dict[str, dict]:
+    """{file sig: {"drone": bool}} from the AI's stored verdicts: a file any of whose shots it saw as drone or
+    aerial footage. One query over the library; nothing is sent anywhere."""
+    from . import library
+    out: dict[str, dict] = {}
+    try:
+        rows = library._q("SELECT shot_key, data FROM scores")
+    except Exception:
+        return out
+    for key, data in rows:
+        try:
+            d = json.loads(data)
+        except ValueError:
+            continue
+        tags = {str(t).lower() for t in (d.get("tags") or [])[:12]}
+        if d.get("motion") == "drone" or tags & {"drone", "aerial", "aerial view", "drone shot"}:
+            out.setdefault(key.split("@", 1)[0], {})["drone"] = True
+    return out
+
+
+def _with_camera_model(recs: list[dict]) -> None:
+    """Copy a cached camera make/model (from `tripshots analyze`) onto records that have one."""
+    from . import library
+    try:
+        from .analysis import TECH_VERSION
+    except Exception:
+        return
+    for r in recs:
+        if r.get("model") or not r.get("key"):
+            continue
+        a = library.get_analysis(r["key"], TECH_VERSION) or {}
+        cam = a.get("camera") or {}
+        if cam.get("model") or cam.get("make"):
+            r["make"], r["model"] = cam.get("make"), cam.get("model")
+
+
 def find(folders=None, place: str | None = None, near: list[float] | None = None, radius_km: float = 10,
          people: list[str] | None = None, people_mode: str = "all", date_from: str | None = None,
          date_to: str | None = None, kinds: str = "both", whole_days: bool = True, text: str | None = None,
-         label: str | None = None, max_people_scan: int = 4000) -> dict:
+         label: str | None = None, max_people_scan: int = 4000, camera: str | None = None) -> dict:
     """Find footage and save it as a selection. Returns a summary for the agent (counts, days,
     places, people) and the selection id to pass to `make sel:<id>`."""
     recs = records(folders, {"since": date_from, "until": date_to})
@@ -199,6 +267,14 @@ def find(folders=None, place: str | None = None, near: list[float] | None = None
     why: dict[str, str] = {}
 
     picked = recs
+    if camera:
+        camera = camera.lower().rstrip("s")
+        if camera not in CAMERAS:
+            raise ReelError(f"unknown camera kind '{camera}' (use {', '.join(CAMERAS)})")
+        _with_camera_model(picked)
+        hints = ai_camera_hints()
+        picked = [r for r in picked if camera_kind(r, hints.get(r.get("sig"))) == camera]
+        notes.append(f"camera: {camera} ({len(picked)} of {len(recs)} files)")
     if text:
         words = _words(text)
         picked = [r for r in picked if all(w in (r["path"] + " " + (r.get("place") or "")).lower() for w in words)]
@@ -247,6 +323,7 @@ def find(folders=None, place: str | None = None, near: list[float] | None = None
     picked.sort(key=lambda r: (r.get("created") or "", r["path"]))
     q = {"place": place, "near": near, "radius_km": radius_km if near else None, "people": people,
          "date_from": date_from, "date_to": date_to, "kinds": kinds, "whole_days": whole_days, "text": text,
+         "camera": camera,
          "folders": [str(f) for f in _roots(folders)]}
     return _save_selection(picked, q, total, notes, why, label)
 

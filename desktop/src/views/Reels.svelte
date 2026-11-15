@@ -3,8 +3,12 @@
   import Icon from "../lib/Icon.svelte";
 
   let q = $state("");
+  let filter = $state("all");
+  const filters = [["all", "All"], ["upright", "Upright"], ["wide", "Wide"], ["plans", "Plans"], ["edited", "Edited"]];
+  const fits = (r) => filter === "all" || (filter === "upright" && r.height >= r.width) || (filter === "wide" && r.width > r.height)
+    || (filter === "plans" && !r.rendered) || (filter === "edited" && r.stale);
   let shown = $derived(
-    app.reels.filter((r) => !q || `${r.name} ${r.folder} ${r.sound || ""} ${r.style || ""}`.toLowerCase().includes(q.toLowerCase())),
+    app.reels.filter((r) => fits(r) && (!q || `${r.name} ${r.folder} ${r.sound || ""} ${r.style || ""}`.toLowerCase().includes(q.toLowerCase()))),
   );
   // grouped by folder; reels arrive newest first, so the newest folder leads
   let groups = $derived.by(() => {
@@ -25,11 +29,16 @@
     <div class="spacer"></div>
     <label class="search">
       <Icon name="search" />
-      <input type="text" placeholder="Search" bind:value={q} aria-label="Search reels" />
+      <input type="search" placeholder="Search" bind:value={q} aria-label="Search reels" />
     </label>
-    <button class="btn" onclick={refreshReels} aria-label="Refresh"><Icon name="refresh" /></button>
-    <button class="btn primary" onclick={() => (app.view = "make")}><Icon name="plus" /> New reel</button>
+    <button class="btn icon" onclick={refreshReels} aria-label="Look for new reels" title="Look for new reels"><Icon name="refresh" /></button>
+    <button class="btn primary" onclick={() => (app.view = "make")}><Icon name="plus" /> Make a reel</button>
   </div>
+  {#if app.reels.length}
+    <div class="seg filters" role="radiogroup" aria-label="Show">
+      {#each filters as [id, label]}<button role="radio" aria-checked={filter === id} onclick={() => (filter = id)}>{label}</button>{/each}
+    </div>
+  {/if}
 
   {#if app.ai && !app.ai.using && app.ai.backend !== "none"}
     <div class="notice">
@@ -40,11 +49,15 @@
 
   {#if !app.reels.length}
     <div class="empty">
-      <p>No reels yet</p>
+      <h2>No reels yet</h2>
+      <p>Reels you make here, on the command line or with an AI agent show up in this list</p>
       <button class="btn primary" onclick={() => (app.view = "make")}>Make your first reel</button>
     </div>
   {:else if !shown.length}
-    <div class="empty">Nothing matches “{q}”</div>
+    <div class="empty">
+      <p>{q ? `Nothing matches “${q}”` : "No reels of this kind"}</p>
+      <button class="btn" onclick={() => ((q = ""), (filter = "all"))}>Show all reels</button>
+    </div>
   {/if}
 
   {#each groups as [folder, reels]}
@@ -52,14 +65,16 @@
       <h2 class="folder" title={folder}><Icon name="folder" size={14} /> <span>{short(folder)}</span><span class="meta">{reels.length}</span></h2>
       <div class="grid">
         {#each reels as r (r.plan)}
-          <button class="tile" class:wide={r.width > r.height} onclick={() => openReel(r.plan)}>
+          <button class="tile" class:wide={r.width > r.height} onclick={() => openReel(r.plan)} aria-label={`Open ${r.name}`}>
             <div class="thumb">
               {#if r.cover || r.storyboard}<img loading="lazy" src={media(r.cover || r.storyboard, r.modified)} alt="" />{/if}
+              <span class="play" aria-hidden="true"><Icon name="play" size={18} /></span>
+              {#if !r.rendered}<span class="tag">Plan</span>{:else if r.stale}<span class="tag">Edited</span>{/if}
               <span class="tcbox tc">{tc(r.duration)}</span>
             </div>
             <div class="name ellipsis">{r.name}</div>
             <div class="meta ellipsis">
-              {[!r.rendered && "plan", r.width > r.height ? "16:9" : "9:16", ago(r.modified)].filter(Boolean).join(" · ")}
+              {[r.width > r.height ? "16:9" : "9:16", r.qa?.total && r.qa.passed < r.qa.total ? `QA ${r.qa.passed}/${r.qa.total}` : "", ago(r.modified)].filter(Boolean).join(" · ")}
             </div>
           </button>
         {/each}
@@ -70,16 +85,25 @@
 
 <style>
   .search {
-    display: flex; align-items: center; gap: 8px; width: 240px; height: 32px; margin: 0; padding: 0 12px;
+    display: flex; align-items: center; gap: 8px; width: 240px; height: 36px; margin: 0; padding: 0 12px;
     background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); color: var(--text-3); font-weight: 400;
   }
   .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .search input { border: 0; padding: 0; min-height: 0; height: 30px; background: transparent; box-shadow: none; color: var(--text); }
+  .search input { border: 0; padding: 0; min-height: 0; height: 34px; background: transparent; box-shadow: none; color: var(--text); }
+  .search input:focus-visible { box-shadow: none; }
+  .filters { margin: 16px 0 32px; }
   section + section { margin-top: 40px; }
-  .notice {
-    display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: -8px 0 24px; padding: 12px 16px;
-    border-radius: var(--r-card); background: var(--accent-soft); font-size: 13px;
+  .play {
+    position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
+    display: grid; place-items: center; background: rgba(15, 15, 16, 0.6); color: #ededed; opacity: 0;
+    transition: opacity var(--fast) var(--ease);
   }
+  .tile:hover .play, .tile:focus-visible .play { opacity: 1; }
+  .tag {
+    position: absolute; left: 8px; top: 8px; font-size: 11px; line-height: 16px; padding: 2px 6px; border-radius: 4px;
+    background: rgba(15, 15, 16, 0.72); color: #ededed; font-weight: 500;
+  }
+  .notice { margin: 0 0 24px; }
   .folder { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; margin-bottom: 12px; }
   /* fixed columns so an upright reel is one column and a wide one two, at the same height */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, 160px); grid-auto-flow: dense; gap: 24px 16px; }

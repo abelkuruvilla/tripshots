@@ -10,7 +10,7 @@ Only segments whose content changed are re-rendered.
 |---|---|
 | `version`, `style` | Plan format version and the style it was made with |
 | `duration`, `tempo`, `beats`, `drops` | Length (s), BPM, beat times and drop times (s, reel time) |
-| `music` | `{path, start, fade_out}`: the track, where in it the reel starts, fade at the end |
+| `music` | `{path, start, fade_out, gain_db}`: the track, where in it the reel starts, fade at the end, its level (dB, the editor's music level; the master makes up the loudness) |
 | `segments` | The shots, in order (below) |
 | `overlays` | Text and maps (below) |
 | `motion` | `beat_punch` (zoom bump per beat, e.g. 0.06), `punch_on` (energy levels), `shake_on_drop` (allows segment `shake: true` on fitting drops), `video_push`, `pulse` |
@@ -32,6 +32,9 @@ changing lengths.
 | Key | Meaning |
 |---|---|
 | `shot_id` | Which shot (ids from `tripshots scan` or `shots_scored.json`). Change it to swap the shot |
+| `adjust` | The editor's own colour corrections, after the grading LUT: `exposure` (stops, -2..2), `contrast` and `saturation` (1 = unchanged), `warmth`, `tint`, `shadows`, `highlights` (-1..1). Change with `edit_plan` `adjust` |
+| `no_grade` | `true`: the shot is shown as filmed, without the look |
+| `layers` | Corrections on parts of the frame after the grade: `[{region: sky|subject|skin|greens|water|ground|edges, exposure, contrast, saturation, warmth, tint, hue, on, auto, why}]` ([colour](colour.md)) |
 | `kind`, `src` | `video` / `photo` and the source file |
 | `dur`, `out_start` | Length and start in the reel (s) |
 | `in`, `speed` | Video: start time in the source (s) and speed (0.5 = slow motion, 2 = twice as fast; 0.2–4) |
@@ -65,13 +68,15 @@ changing lengths.
 | `cta` | A closing line: `text`, `start`, `duration` |
 | `label` | A short label on one shot: `text`, `start`, `duration`; optional `lead` (a small line above it, e.g. "Greetings from...") and `shots` (the shot ids it names; a recipe's labels are rewritten when those shots change) |
 | `caption` | A subtitle or lyric line: `text`, `start`, `duration` |
+| `text` | A line added in the editor (`edit_plan` `add_text`): `text`, `start`, `duration`, `style`, optional `lead`; set in the hook's lettering unless its `style` says otherwise |
 | `map` | Route map: `mode` (`intro` / `tracker`), `start`, `duration`, `x`, `y`, `theme`, `title`, `stops` [`{name, region, ll}`], `beats` (intro), `keys` (tracker). Rebuilt from these fields at render time, so renaming a stop just works |
 
 Any text overlay may carry its own `style`: `font`, `size`, `uppercase`, `anim` (`cut` = appears on the frame), `position`
 (`upper`, `center`, `lower`), `color` [r, g, b] or `colors` [[r, g, b], ...] (one per letter, repeating), `line_gap`,
 `exit`, `legible`, `fit` (share of the frame's width a short word grows to), `fixed` (keep the place on every shot),
 `lead_font` / `lead_size` (the small line above a label), `y` (the middle of the line, 0 to 1 down the frame, instead
-of the middle of its third: a line held across shots gets one when that keeps it off somebody's head). Recipes use it so the words look like the reference's
+of the middle of its third: a line held across shots gets one when that keeps it off somebody's head), `x` (its middle
+across the frame, 0 to 1), `fill: picture` (see-through letters), `lead_color`, `shadow`. Recipes use it so the words look like the reference's
 (overlay `recipe`: `lyric`, `tease`, `payoff`, `title`, `label`); edit it to restyle one line.
 
 The text style comes from `text.preset` (`bold`, `editorial`, `minimal`, `handwritten`, `typewriter`);

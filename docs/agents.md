@@ -106,10 +106,15 @@ tripshots ask "last summer's beach days" --find-only           # just the search
 ```
 
 `ask` uses your configured [AI backend](ai-backends.md) for one thing: turning the sentence into a search (place,
-dates, people, photo/video) and edit settings (style, length, hook, music from `TRIPSHOTS_MUSIC`). It sends the
-request, today's date, your known people's names and aliases, your trips (dates, GPS centres, folder names), the style
-names and the file names (not paths) of your music. When the request can't be resolved (for example it mentions someone TripShots doesn't know
-yet) it asks one question back instead of guessing. The app's **Ask** tab does the same.
+dates, people, photo/video, kind of camera: "all my drone footage") and edit settings (style, length, hook, sound).
+It prefers your learned styles, and picks the sound itself: one of the style's reference reels, whose cut and words
+the reel then follows (avoiding the ones your recent reels used), or a file from `TRIPSHOTS_MUSIC`; a reel is never
+left silent when there is a sound to use. It sends the request, today's date, your known people's names and aliases,
+your trips (dates, GPS centres, folder names), the style names and descriptions, your reference reels' cuts and the
+file names (not paths) of your music. When the request can't be resolved (for example it mentions someone TripShots
+doesn't know yet, or nothing matches) it asks one question back, saying what it searched for. The desktop app's
+**Ask** renders the reel (or plans it, with Plan only), shows what it understood and found with a contact sheet, and
+takes your answer to a question.
 
 ## Tips for good results
 

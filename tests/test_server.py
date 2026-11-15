@@ -108,3 +108,54 @@ def test_keys_are_saved_and_removed(tmp_path, monkeypatch):
     assert "MINIMAX_API_KEY" not in server.os.environ and "MINIMAX_API_KEY=mm-1" not in (tmp_path / ".env").read_text()
     server.save_settings({"backend": "rm -rf"})          # only known backends
     assert server.os.environ["TRIPSHOTS_BACKEND"] == "minimax"
+
+
+def test_the_editor_api_texts_fonts_undo_and_a_still(api, monkeypatch):
+    import tripshots.text as T
+    monkeypatch.setattr(T, "storyboard", lambda plan, by_id, out: out)
+    call, reels = api
+    plan = _reel(reels)
+    plan.write_text(plan.read_text().replace('"style": "x"', '"style": "beat-montage", "duration": 3.5, "tempo": 120'))
+    code, d = call(f"/api/reel?plan={plan}")
+    assert d["texts"][0]["index"] == 1 and d["texts"][0]["text"] == "this is" and "hook" in d["text_defaults"]
+    code, fonts = call("/api/fonts")
+    assert any(f["id"] == "anton" and f["bundled"] for f in fonts) and any(f["id"].startswith("gf:") for f in fonts)
+    code, ttf = call("/api/font?name=anton")
+    assert code == 200 and len(ttf) > 1000
+    assert call("/api/font?name=../../etc/passwd")[0] == 404
+    code, res = call("/api/edit", {"plan": str(plan), "edits": [{"op": "edit_text", "index": 1, "style": {"color": "#ff0000"}}]})
+    assert code == 200 and res["undo"] == 1
+    code, d = call(f"/api/reel?plan={plan}")
+    assert d["texts"][0]["style"]["color"] == [255, 0, 0] and d["history"] == {"undo": 1, "redo": 0}
+    assert call("/api/undo", {"plan": str(plan)})[0] == 200
+    code, d = call(f"/api/reel?plan={plan}")
+    assert not d["texts"][0]["style"] and d["history"] == {"undo": 0, "redo": 1}
+    assert call("/api/undo", {"plan": str(plan)})[0] == 400        # nothing left to undo
+    p = json.loads(plan.read_text())
+    for sg in p["segments"]:
+        sg["kind"] = "photo"
+    plan.write_text(json.dumps(p))
+    code, jpg = call(f"/api/still?plan={plan}&at=0.5")           # the edited frame: picture (or black) + its words
+    assert code == 200 and jpg[:2] == b"\xff\xd8"
+
+
+
+def test_caption_jobs_and_the_post_written_without_an_ai(tmp_path):
+    from tripshots import social
+    p = tmp_path / "r.plan.json"
+    p.write_text(json.dumps({"segments": [{"dur": 2.0, "shot_id": "S1"}], "work": str(tmp_path),
+                             "overlays": [{"type": "location", "text": "Big Sur, California", "start": 0, "duration": 1}]}))
+    args, _ = server.job_args("caption", {"plan": str(p), "tone": "funny"})
+    assert args == ["caption", str(p), "--tone", "funny"]
+    got = social.write(p)
+    assert got["source"] == "local" and "Big Sur" in got["caption"] and 1 <= len(got["hashtags"]) <= social.MAX_TAGS
+    assert (tmp_path / "r.caption.txt").read_text().strip().endswith(" ".join("#" + h for h in got["hashtags"]))
+    assert json.loads((tmp_path / "r.social.json").read_text())["keywords"]
+    assert social.checks({"caption": "x" * 200, "hashtags": list("abcdef")})[:2] == [
+        "the first line is 200 characters: only about 125 show before \"more\"", "Instagram allows 5 hashtags"]
+
+
+def test_look_previews_need_a_picture(api):
+    call, reels = api
+    plan = _reel(reels)
+    assert call(f"/api/lookthumb?plan={plan}&slot=1&look=moody")[0] == 404   # no thumbnail: nothing to show, no crash

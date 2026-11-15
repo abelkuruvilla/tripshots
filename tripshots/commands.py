@@ -53,7 +53,8 @@ def make_args(sources: list[str], *, variants: int = 1, upload_copy: bool = Fals
 def find_args(place: str | None = None, people: list[str] | None = None, date_from: str | None = None,
               date_to: str | None = None, near_lat: float | None = None, near_lon: float | None = None,
               radius_km: float = 10, kinds: str = "both", any_people: bool = False, whole_days: bool = True,
-              text: str | None = None, folders: list[str] | None = None, label: str | None = None) -> list[str]:
+              text: str | None = None, folders: list[str] | None = None, label: str | None = None,
+              camera: str | None = None) -> list[str]:
     args = ["find", "--sheet", "--kind", kinds]
     if place:
         args += ["--place", place]
@@ -61,7 +62,8 @@ def find_args(place: str | None = None, people: list[str] | None = None, date_fr
         args += ["--near", f"{near_lat},{near_lon}", "--radius", str(radius_km)]
     if people:
         args += ["--people", *people] + (["--any-people"] if any_people else [])
-    for flag, v in (("--since", date_from), ("--until", date_to), ("--text", text), ("--name", label)):
+    for flag, v in (("--since", date_from), ("--until", date_to), ("--text", text), ("--name", label),
+                    ("--camera", camera)):
         if v:
             args += [flag, v]
     if not whole_days:

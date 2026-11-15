@@ -1,6 +1,7 @@
 // App state and the engine client. The engine (`tripshots serve`) runs on 127.0.0.1 with a random token the
 // Rust side chose; every call carries it. Media (<video>, <img>) use ?t= because they can't set headers.
 import { invoke } from "@tauri-apps/api/core";
+import { kindName } from "./steps.js";
 
 export const app = $state({
   engine: null, // { url, token, version, path, source }
@@ -13,6 +14,8 @@ export const app = $state({
   reels: [],
   jobs: [],
   toasts: [],
+  prefill: null, // fields another view hands to Make (a style picked in Styles)
+  makeJob: null, // the job Make is showing, so it is still there when you come back
 });
 
 export async function startEngine(restart = false) {
@@ -56,7 +59,12 @@ export async function refreshReels() {
 export function toast(text, kind = "info", action = null) {
   const id = Math.random().toString(36).slice(2);
   app.toasts.push({ id, text, kind, action });
-  setTimeout(() => (app.toasts = app.toasts.filter((t) => t.id !== id)), action ? 9000 : 5000);
+  setTimeout(() => dismiss(id), kind === "error" ? 10000 : action ? 9000 : 5000);
+  return id;
+}
+
+export function dismiss(id) {
+  app.toasts = app.toasts.filter((t) => t.id !== id);
 }
 
 export function openReel(plan) {
@@ -66,7 +74,7 @@ export function openReel(plan) {
 
 export async function startJob(kind, fields, label) {
   const st = await api("/api/jobs", { kind, ...fields });
-  toast(`${label || kind}: started`, "info");
+  if (!["make", "ask", "caption"].includes(kind)) toast(`${label || kind}: started`, "info");  // those show their own progress
   await pollJobs();
   return st;
 }
@@ -96,17 +104,20 @@ export async function pollJobs() {
 async function onFinished(id) {
   const st = await api(`/api/jobs/${id}`).catch(() => null);
   if (!st) return;
+  const what = st.label || kindName[st.kind] || st.kind;
   if (st.state === "failed") {
-    toast(`${st.label || st.kind} failed: ${st.error || "see Jobs"}`, "error");
+    toast(`${what} failed: ${st.error || "see Activity"}`, "error", { label: "Details", run: () => (app.view = "jobs") });
     return;
   }
   const res = st.result || {};
   const plan = res.plan || (res.variants && res.variants[0] && res.variants[0].plan);
   if (["make", "render", "ask"].includes(st.kind)) {
     await refreshReels().catch(() => {});
-    toast(`${st.label || st.kind}: done`, "ok", plan ? { label: "Open", run: () => openReel(plan) } : null);
-  } else {
-    toast(`${st.label || st.kind}: done`, "ok");
+    if (res.question) toast(`${what}: one question for you`, "info", { label: "Answer", run: () => (app.view = "make") });
+    else toast(plan ? (st.kind === "render" ? `${what} rendered` : "Your reel is ready") : `${what}: done`, "ok",
+               plan && app.reel !== plan ? { label: "Open", run: () => openReel(plan) } : null);
+  } else if (st.kind !== "caption") {
+    toast(`${what}: done`, "ok");
   }
   if (st.kind === "learn") refreshStatus().catch(() => {});
 }

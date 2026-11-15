@@ -3,7 +3,7 @@ name: release
 # One tag does the whole release. Either push a tag (git tag v0.1.0 && git push origin v0.1.0, or create it on
 # GitHub with "Draft a new release"), or run this workflow from the Actions tab and type the version. The version
 # comes from the tag and is written into the engine and the app inside CI: nothing to bump or commit beforehand.
-# It builds the engine and the desktop app for macOS (Apple Silicon + Intel), Windows and Linux, signs them, and
+# It builds the engine and the desktop app for macOS (Apple Silicon), Windows and Linux, signs them, and
 # publishes one GitHub release with:
 #   tripshots-engine-<v>-<platform>.tar.gz|zip (+ .sig)   the engine the app downloads on first run / updates
 #   engine.json                                          the manifest the app reads (releases/latest/download/)
@@ -40,7 +40,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       release_id: ${{ steps.rel.outputs.id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: v
         name: the version is the tag
         run: |
@@ -76,20 +76,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, platform: darwin-aarch64 }
-          - { os: macos-15-intel, platform: darwin-x86_64 }
+          # (no Intel Mac engine: numba/llvmlite and onnxruntime no longer publish Intel Mac builds)
+          - { os: macos-15, platform: darwin-aarch64 }
           - { os: ubuntu-22.04, platform: linux-x86_64 }
           - { os: windows-latest, platform: windows-x86_64 }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: stamp the version
@@ -98,22 +98,28 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install ".[heic,export,watch,cutout]" "pyinstaller>=6.10"
-      # ffmpeg: static builds for Linux and Windows (BtbN, GPL: libx264 is the software encoder TripShots falls
-      # back to; shipped as separate programs with their licence, source at https://ffmpeg.org). On macOS the
-      # engine uses Homebrew's ffmpeg; the app says how to install it when it's missing.
-      - name: ffmpeg (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          curl -sSL -o ff.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-linux64-gpl-7.1.tar.xz
-          mkdir ffmpeg && tar -xf ff.tar.xz -C ffmpeg --strip-components=1
-          mkdir ffbin && cp ffmpeg/bin/ffmpeg ffmpeg/bin/ffprobe ffmpeg/LICENSE.txt ffbin/
-      - name: ffmpeg (Windows)
-        if: runner.os == 'Windows'
+      # ffmpeg: static builds for Linux and Windows (FFmpeg-Builds, GPL: libx264 is the software encoder TripShots
+      # falls back to; shipped as separate programs with their licence, source at https://ffmpeg.org). The newest
+      # stable release build is looked up, so a new ffmpeg version or a renamed file doesn't break the release.
+      # On macOS the engine uses Homebrew's ffmpeg; the app says how to install it when it's missing.
+      - name: ffmpeg (Linux, Windows)
+        if: runner.os != 'macOS'
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OSNAME: ${{ runner.os == 'Windows' && 'win64' || 'linux64' }}
         run: |
-          curl -sSL -o ff.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-7.1.zip
-          unzip -q ff.zip -d ffmpeg && mkdir ffbin
-          cp ffmpeg/*/bin/ffmpeg.exe ffmpeg/*/bin/ffprobe.exe ffmpeg/*/LICENSE.txt ffbin/
+          set -euo pipefail
+          url=$(gh api repos/FFmpeg-Builds/FFmpeg-Builds/releases/tags/latest --jq '.assets[].browser_download_url' \
+            | grep -E "/ffmpeg-n[0-9.]+-latest-${OSNAME}-gpl-[0-9.]+\.(tar\.xz|zip)$" | sort -V | tail -1)
+          [ -n "$url" ] || { echo "::error::no stable ${OSNAME} GPL build found in FFmpeg-Builds"; exit 1; }
+          echo "ffmpeg: $url"
+          curl -fsSL -o "ff.${url##*.}" "$url"
+          mkdir ffmpeg ffbin
+          if [ "$OSNAME" = win64 ]; then unzip -q ff.zip -d ffmpeg; else tar -xf ff.xz -C ffmpeg; fi
+          cp ffmpeg/*/bin/ffmpeg* ffmpeg/*/bin/ffprobe* ffbin/
+          cp ffmpeg/*/LICENSE.txt ffbin/
+          ls -la ffbin
       - name: freeze
         run: pyinstaller packaging/engine/tripshots.spec --noconfirm --clean
       - name: package and smoke-test
@@ -142,7 +148,7 @@ jobs:
     needs: [prepare, engine]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
       - uses: actions/download-artifact@v4
@@ -164,13 +170,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, args: "--target aarch64-apple-darwin", rust: aarch64-apple-darwin }
-          - { os: macos-14, args: "--target x86_64-apple-darwin", rust: x86_64-apple-darwin }
+          - { os: macos-15, args: "--target aarch64-apple-darwin", rust: aarch64-apple-darwin }
           - { os: ubuntu-22.04, args: "", rust: "" }
           - { os: windows-latest, args: "", rust: "" }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
       - name: Linux libraries
@@ -178,7 +183,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm

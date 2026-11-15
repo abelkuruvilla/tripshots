@@ -132,6 +132,11 @@ def font(name: str | None, size: int) -> ImageFont.FreeTypeFont:
                 f.set_variation_by_axes([weight])
             except Exception:
                 pass
+    elif name.startswith("gf:"):  # a font from the library (fontlib), fetched once
+        from . import fontlib
+        fam = fontlib.parse(name)
+        p = fontlib.get(*fam) if fam else None
+        f = ImageFont.truetype(str(p if p else FONT_DIR / FONTS["montserrat"][0]), size)
     else:  # a path to the user's own font
         try:
             f = ImageFont.truetype(str(Path(name).expanduser()), size)
@@ -152,6 +157,7 @@ class Sprite:
     clip: tuple | None = None  # (y0, y1) frame rows it may occupy while revealing
     anim: str | None = None    # per-sprite animation override
     behind: bool = False       # drawn behind the foreground (mountains etc.)
+    knock: np.ndarray | None = None  # letter mask filled with the picture itself (see-through postcard letters)
 
 
 def _render_text(text: str, fnt, fill=(255, 255, 255), shadow: float = 0.55, stroke: int = 0,
@@ -197,6 +203,54 @@ def _render_text(text: str, fnt, fill=(255, 255, 255), shadow: float = 0.55, str
     else:
         draw(d, pad, pad, (*fill, 255))
     return np.asarray(txt).astype(np.float32) / 255.0, pad
+
+
+def _render_knock(text: str, fnt) -> tuple[np.ndarray, np.ndarray, int]:
+    """Postcard block letters: a light rim, a dark extruded edge and a soft shadow as an RGBA sprite, and the
+    letters' own shape as a mask that is filled with the picture behind them, boosted (see-through letters)."""
+    asc, desc = fnt.getmetrics()
+    h = asc + desc
+    w = int(math.ceil(fnt.getlength(text))) + 2
+    depth = max(3, h // 14)
+    pad = max(14, int(h * 0.3)) + depth
+    W, H = w + 2 * pad, h + 2 * pad
+    sw = max(2, h // 26)
+    base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sh = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(sh).text((pad + depth + 3, pad + depth + 4), text, font=fnt, fill=(0, 0, 0, 150),
+                            stroke_width=sw * 2, stroke_fill=(0, 0, 0, 150))
+    base = Image.alpha_composite(base, sh.filter(ImageFilter.GaussianBlur(max(3, h / 16))))
+    d = ImageDraw.Draw(base)
+    for k in range(depth, 0, -1):  # the letters' thickness, going back down-right
+        d.text((pad + k, pad + k), text, font=fnt, fill=(70, 18, 12, 255), stroke_width=sw, stroke_fill=(40, 10, 8, 255))
+    d.text((pad, pad), text, font=fnt, fill=(255, 255, 255, 255), stroke_width=sw, stroke_fill=(255, 248, 225, 255))
+    m = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(m).text((pad, pad), text, font=fnt, fill=255)
+    return np.asarray(base).astype(np.float32) / 255.0, np.asarray(m).astype(np.float32) / 255.0, pad
+
+
+def _knock_fill(frame: np.ndarray, mask: np.ndarray, x: int, y: int, alpha: float,
+                src: np.ndarray | None = None) -> np.ndarray:
+    """Fill the letter mask with the picture under it (`src`, the frame before any text), saturated and
+    brightened like a postcard print."""
+    src = frame if src is None else src
+    H, W = frame.shape[:2]
+    h, w = mask.shape
+    fx0, fy0, fx1, fy1 = max(x, 0), max(y, 0), min(x + w, W), min(y + h, H)
+    if fx1 <= fx0 or fy1 <= fy0:
+        return frame
+    m = mask[fy0 - y:fy1 - y, fx0 - x:fx1 - x, None] * alpha
+    reg = frame[fy0:fy1, fx0:fx1].astype(np.float32)
+    hsv = cv2.cvtColor(src[fy0:fy1, fx0:fx1], cv2.COLOR_RGB2HSV).astype(np.float32)
+    hsv[..., 1] = np.clip(hsv[..., 1] * 1.7 + 25, 0, 255)
+    hsv[..., 2] = np.clip(hsv[..., 2] * 1.15 + 20, 0, 255)
+    vivid = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)
+    shade = np.linspace(1.08, 0.86, fy1 - fy0, dtype=np.float32)[:, None, None]  # a little light from above
+    vivid = np.clip(vivid * shade, 0, 255)
+    if frame.flags.writeable is False:
+        frame = frame.copy()
+    frame[fy0:fy1, fx0:fx1] = (reg * (1 - m) + vivid * m).astype(np.uint8)
+    return frame
 
 
 def _wrap(words: list[str], fnt, max_w: float, space: float) -> list[list[str]]:
@@ -341,6 +395,9 @@ class TextElement:
                 y = s.y + dy * h * 0.7
                 clip = (s.y, s.y + h)  # masked: only visible inside its own line box
             out = _blend(out, img, int(round(x)), int(round(y)), a, clip)
+            if s.knock is not None:
+                km = s.knock if img is s.img else cv2.resize(s.knock, (img.shape[1], img.shape[0]))
+                out = _knock_fill(out, km, int(round(x)), int(round(y)), a, frame)
         return out
 
 
@@ -466,6 +523,13 @@ def script_cfg(text: str, cfg: dict) -> dict:
     sc = script_of(text)
     if not sc:
         return cfg
+    from . import fontlib
+    fam = fontlib.parse(cfg.get("font"))
+    if fam and sc in fontlib.CATALOG.get(fam[0], ("", (), ()))[2]:  # the chosen face has these letters
+        out = {**cfg, "uppercase": False, "script": sc}
+        if out.get("anim") in ("typewriter", "tracking"):
+            out["anim"] = "slide"
+        return out
     path = font_for(sc)
     if path is None:
         return cfg
@@ -550,19 +614,29 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
     inked = 0  # letters drawn so far: the colours run on through the lines
     items = []  # (text, x, y, line)
     widths = []
+    line_w = [sum(fnt.getlength(w) for w in ws) + space * (len(ws) - 1) for ws in lines]
+    dx = 0.0
+    if cfg.get("x") is not None:  # the block's middle across the frame, as the reference has it (0..1)
+        half = max(line_w + [lead_fnt.getlength(lead) if lead else 0]) / 2
+        mid = min(max(float(cfg["x"]) * CANVAS.w, SAFE["left"] + 20 + half), SAFE["right"] - 20 - half)
+        dx = mid - (SAFE["left"] + 20 + max_w / 2)
     if lead:
         lw = lead_fnt.getlength(lead)
         widths.append(lw)
-        lx = SAFE["left"] + 20 + (max_w - lw) / 2
+        lx = SAFE["left"] + 20 + (max_w - lw) / 2 + dx
+        if cfg.get("fill") == "picture" and line_w:  # a postcard's script line starts over the name's left edge
+            lx = SAFE["left"] + 20 + (max_w - line_w[0]) / 2 + dx - 0.04 * line_w[0]
         el.lines.append({"text": lead, "x": lx, "y": top, "font": cfg.get("lead_font") or "caveat",
                          "size": lead_fnt.size, "tracking": 0.0, "h": lead_h, "role": "lead"})
-        img, pad = _render_text(lead, lead_fnt, shadow=0.7)
+        lead_fill = tuple(int(c) for c in cfg["lead_color"][:3]) if cfg.get("lead_color") else (255, 255, 255)
+        img, pad = _render_text(lead, lead_fnt, fill=lead_fill, shadow=0.7, stroke=max(1, lead_size // 24)
+                                if cfg.get("lead_color") else 0)
         el.sprites.append(Sprite(img, lx - pad, top - pad, 0.0, 0))
         top += lead_h
     for li, words in enumerate(lines):
-        lw = sum(fnt.getlength(w) for w in words) + space * (len(words) - 1)
+        lw = line_w[li]
         widths.append(lw)
-        x = SAFE["left"] + 20 + (max_w - lw) / 2
+        x = SAFE["left"] + 20 + (max_w - lw) / 2 + dx
         y = top + li * lh
         el.lines.append({"text": " ".join(words), "x": x, "y": y, "font": cfg.get("font"), "size": size,
                          "tracking": 0.0, "h": lh})
@@ -577,7 +651,7 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
                 x += fnt.getlength(c)
         else:
             items.append((" ".join(words), x, y, li))
-    x0 = SAFE["left"] + 20 + (max_w - max(widths)) / 2
+    x0 = SAFE["left"] + 20 + (max_w - max(widths)) / 2 + dx
     top -= lead_h or 0
     el.box = (x0, top, x0 + max(widths), top + block_h)
     bright = band_brightness(frame, el.box)
@@ -619,6 +693,10 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
                 fills.append(palette[n % len(palette)])
                 n += 0 if c == " " else 1
             inked = n
+        if cfg.get("fill") == "picture":  # see-through letters: the picture shows inside them
+            img, km, pad = _render_knock(txt, fnt)
+            el.sprites.append(Sprite(img, x - pad, y - pad, ti, li, knock=km))
+            continue
         img, pad = _render_text(txt, fnt, fill=fill, shadow=0.6 if el.scrim < 0.3 else 0.45, fills=fills,
                                 stroke=max(2, size // 36) if palette else edge)
         el.sprites.append(Sprite(img, x - pad, y - pad, ti, li))

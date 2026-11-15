@@ -530,6 +530,15 @@ def learn(refs: list[str], name: str, backend_name: str | None, cookies_browser:
                 log(f"  the AI stopped answering at {Path(m['file']).name}: {stopped[:160]}")
             if cards[i] is None:
                 unread.append(i)
+            if cards[i] and not stopped:  # its own words, exactly, with their times, place and lettering
+                from . import reftext
+                try:
+                    exact = reftext.read(Path(m["file"]), work, backend, m.get("content_box"))
+                except Exception as e:
+                    exact = None
+                    log(f"  could not read the text of {Path(m['file']).name} ({str(e)[:90]})")
+                if exact is not None:
+                    cards[i]["_exact"] = exact
             if cards[i]:
                 t = cards[i].get("text") if isinstance(cards[i].get("text"), dict) else {}
                 log(f"  {Path(m['file']).name}: {cards[i].get('format')}, opens on {cards[i].get('open')}, "
@@ -596,6 +605,12 @@ def learn(refs: list[str], name: str, backend_name: str | None, cookies_browser:
                       "footage": footage if footage in ("video", "photos", "mixed") else ""}
     # every reference's own recipe: its cut, picture shape, opening and what its text does
     from . import recipes
+    for i, m in enumerate(measures):  # what was read before (cached), when the AI couldn't be asked this time
+        if cards[i] is not None and "_exact" not in cards[i]:
+            from . import reftext
+            got = reftext.read(Path(m["file"]), work, None, m.get("content_box"))
+            if got is not None:
+                cards[i]["_exact"] = got
     style["recipes"] = [recipes.build(m, cards[i], refs[i], i + 1, unread=i in unread)
                         for i, m in enumerate(measures) if m.get("shot_lens")]
     cams = [m["camera"] for m in measures if m.get("camera") and m["camera"].get("pan_speed") is not None]

@@ -4,6 +4,8 @@ A depth map is made once per photo (cached in the library): with Depth Anything 
 about 27 MB, downloaded once to ~/.tripshots/models on first use) when it can be had, else an estimate from the
 picture itself (sky far away, the bottom of the frame and the salient subject near). During the shot every
 pixel is shifted by an amount that grows with its nearness, as the camera drifts: near things move more.
+Things that stand out in front (a person, a rock, a tree) move as one rigid layer: inside them the depth is
+flattened (rigid_layers), so only the background just outside their edge stretches and the subject never bends.
 `TRIPSHOTS_OFFLINE=1` never downloads.
 """
 from __future__ import annotations
@@ -125,6 +127,38 @@ def depth(rgb: np.ndarray, key: str | None = None) -> np.ndarray:
     return cv2.GaussianBlur(d, (k, k), 0)
 
 
+def rigid_layers(d: np.ndarray) -> np.ndarray:
+    """The depth with every object that stands out in front made flat (one value per object), and the step at
+    its edge moved outside it: shifting by this depth slides a person across the view without bending them."""
+    h, w = d.shape[:2]
+    s = min(1.0, 480 / max(h, w))
+    ds = cv2.resize(d, (max(8, int(w * s)), max(8, int(h * s))), interpolation=cv2.INTER_AREA) if s < 1 else d.copy()
+    sh, sw = ds.shape[:2]
+    k = max(5, int(0.18 * max(sh, sw)) | 1)
+    bg = cv2.morphologyEx(ds, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    obj = ((ds - bg) > 0.06).astype(np.uint8)  # nearer than what is around it: something standing in front
+    obj = cv2.morphologyEx(obj, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(obj, 8)
+    flat = ds.copy()
+    keep = np.zeros_like(obj)
+    for i in range(1, n):
+        if stats[i, cv2.CC_STAT_AREA] < 0.003 * sh * sw:
+            continue
+        m = lab == i
+        flat[m] = float(np.percentile(ds[m], 60))
+        keep[m] = 1
+    if keep.any():  # the step from the object to what is behind it happens in a ring outside the object
+        ring = max(3, int(0.04 * max(sh, sw)))
+        dist, idx = cv2.distanceTransformWithLabels(1 - keep, cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
+        ys, xs = np.nonzero(keep)
+        near = np.zeros(int(idx.max()) + 1, np.float32)
+        near[idx[ys, xs]] = flat[ys, xs]  # each pixel outside takes the value of the nearest object pixel
+        val = near[idx]
+        wgt = np.clip(1.0 - dist / ring, 0, 1) * (1 - keep)
+        flat = np.where(keep > 0, flat, wgt * np.maximum(val, ds) + (1 - wgt) * ds)
+    return cv2.resize(flat, (w, h), interpolation=cv2.INTER_LINEAR) if s < 1 else flat
+
+
 def worth_it(d: np.ndarray) -> bool:
     """A flat picture (a wall, a distant ridge) gains nothing from parallax."""
     return float(np.percentile(d, 90) - np.percentile(d, 10)) > 0.25
@@ -134,7 +168,7 @@ class Mover:
     """Per-frame parallax shift on top of the Ken Burns crop."""
 
     def __init__(self, src: np.ndarray, d: np.ndarray, amp_px: float, direction: float = 1.0):
-        self.d = d.astype(np.float32)
+        self.d = rigid_layers(d.astype(np.float32))
         self.mid = float(np.median(self.d))
         self.amp = float(amp_px)
         self.dir = direction

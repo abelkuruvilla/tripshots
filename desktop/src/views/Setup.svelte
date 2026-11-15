@@ -4,6 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { app } from "../lib/store.svelte.js";
   import Icon from "../lib/Icon.svelte";
+  import Mark from "../lib/Mark.svelte";
 
   let { onready } = $props();
   let busy = $state(false);
@@ -11,8 +12,8 @@
   let progress = $state(null);
   let latest = $state(null);
 
-  const stages = { checking: "Checking for the latest engine", downloading: "Downloading", verifying: "Verifying the signature", unpacking: "Unpacking", done: "Starting" };
-  const mb = (b) => (b / 1e6).toFixed(0);
+  const stages = { checking: "Finding the latest engine", downloading: "Downloading", verifying: "Checking the signature", unpacking: "Unpacking", done: "Starting" };
+  const mb = (b) => Math.round(b / 1e6);
 
   onMount(() => {
     invoke("engine_check_update").then((u) => (latest = u)).catch(() => {});
@@ -26,7 +27,7 @@
     try {
       const st = await invoke("engine_install");
       if (st.status === "ready") onready();
-      else error = st.error || "the engine was installed but didn't start";
+      else error = st.error || "The engine was installed but didn't start";
     } catch (e) {
       error = String(e);
     } finally {
@@ -35,53 +36,51 @@
   }
 </script>
 
-<div class="page setup">
-  <div class="card box">
-    <img src="/icon.png" alt="" width="64" height="64" />
-    <h1>Welcome to TripShots</h1>
+<div class="page center">
+  <div class="box">
+    <Mark size={40} />
+    <h1>Install the TripShots engine</h1>
     <p class="muted">
-      TripShots needs its engine: the part that analyses your footage and renders reels. It is downloaded once
-      {#if latest}(version {latest.latest}){/if} and updates on its own afterwards. Your footage never leaves this computer.
+      The engine is the part that reads your footage and renders reels. It downloads once{#if latest}, version <span class="tc">{latest.latest}</span>,{/if}
+      about 200 MB, and keeps itself up to date. Your footage stays on this computer
     </p>
 
     {#if busy && progress}
-      <div class="prog">
-        <div class="bar"><div style="width: {progress.total ? (100 * progress.done) / progress.total : 15}%"></div></div>
-        <div class="muted small">
-          {stages[progress.stage] || progress.stage}
-          {#if progress.stage === "downloading" && progress.total}: {mb(progress.done)} of {mb(progress.total)} MB{/if}
+      <div class="prog" role="progressbar" aria-valuenow={progress.done} aria-valuemax={progress.total || 1}>
+        <div class="bar"><div style="transform: scaleX({progress.total ? progress.done / progress.total : 0.08})"></div></div>
+        <div class="meta">
+          {[stages[progress.stage] || progress.stage, progress.stage === "downloading" && progress.total ? `${mb(progress.done)} of ${mb(progress.total)} MB` : ""].filter(Boolean).join(" · ")}
         </div>
       </div>
     {:else}
-      <button class="btn primary big" onclick={install} disabled={busy}>
+      <button class="btn primary lg" onclick={install} disabled={busy}>
         {#if busy}<span class="spin"></span>{:else}<Icon name="download" />{/if} Download the engine
       </button>
     {/if}
 
     {#if error}<p class="err selectable">{error}</p>{/if}
 
-    <details class="dev">
-      <summary class="muted">Already have TripShots installed with pip?</summary>
+    <details>
+      <summary>Already installed TripShots with pip</summary>
       <p class="muted">
-        The app uses a <span class="mono">tripshots</span> on your PATH when no engine is installed here, or the one
-        named by <span class="mono">TRIPSHOTS_ENGINE</span>. It needs a version with <span class="mono">tripshots serve</span>.
+        The app uses a <span class="tc">tripshots</span> on your PATH when no engine is installed here, or the one named by
+        <span class="tc">TRIPSHOTS_ENGINE</span>. It needs a version that has <span class="tc">tripshots serve</span>
       </p>
-      <button class="btn small" onclick={onready}><Icon name="refresh" size={14} /> Try again</button>
+      <button class="btn sm" onclick={onready}><Icon name="refresh" size={14} /> Look again</button>
     </details>
   </div>
 </div>
 
 <style>
-  .setup { display: grid; place-items: center; }
-  .box { max-width: 520px; padding: 36px 40px; text-align: center; }
-  .box img { border-radius: 14px; margin-bottom: 10px; }
-  .box p { margin: 12px 0 22px; }
-  .big { padding: 11px 20px; font-size: 15px; }
-  .prog { margin: 8px 0 4px; }
-  .bar { height: 8px; background: var(--sunken); border-radius: 99px; overflow: hidden; }
-  .bar div { height: 100%; background: var(--accent); transition: width 0.3s; }
-  .small { font-size: 12.5px; margin-top: 8px; }
+  .center { display: grid; place-items: center; }
+  .box { max-width: 480px; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; }
+  .box p { margin: 0; }
+  .prog { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+  .bar { height: 4px; background: var(--raised); border-radius: 2px; overflow: hidden; }
+  .bar div { height: 100%; background: var(--accent); transform-origin: left; transition: transform 300ms var(--ease); }
   .err { color: var(--err); font-size: 13px; }
-  .dev { margin-top: 26px; text-align: left; font-size: 13px; }
-  .dev summary { cursor: pointer; }
+  details { margin-top: 24px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; color: var(--text-2); }
+  details[open] { gap: 12px; }
+  summary { cursor: pointer; }
+  details p { margin: 12px 0; }
 </style>

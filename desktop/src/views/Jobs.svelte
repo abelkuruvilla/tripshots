@@ -1,8 +1,8 @@
 <script>
-  import { app, api, openReel, pollJobs, seconds } from "../lib/store.svelte.js";
+  import { app, api, openReel, pollJobs, clock } from "../lib/store.svelte.js";
   import Icon from "../lib/Icon.svelte";
 
-  let open = $state(null);
+  let open = $state(app.jobs[0]?.id || null);
   let detail = $state(null);
 
   $effect(() => {
@@ -21,47 +21,60 @@
     pollJobs();
   }
   const planOf = (d) => d?.result?.plan || d?.result?.variants?.[0]?.plan;
+  const tone = (s) => (s === "running" ? "run" : s === "done" ? "ok" : "err");
 </script>
 
 <div class="page">
-  <div class="page-head"><h1>Activity</h1><span class="muted">reels being made, rendered and learned (also those started from the command line or an AI agent)</span></div>
-  <div class="split">
-    <div class="list card">
-      {#each app.jobs as j (j.id)}
-        <button class="item" class:on={open === j.id} onclick={() => (open = j.id)}>
-          <span class="badge {j.state === 'running' ? 'run' : j.state === 'done' ? 'ok' : 'err'}">{j.state}</span>
-          <span class="ellipsis"><b>{j.kind}</b> {j.label || ""}</span>
-          <span class="muted small">{seconds(j.elapsed_s)}</span>
-        </button>
-      {:else}
-        <div class="empty">Nothing yet.</div>
-      {/each}
+  <div class="page-head"><h1>Activity</h1><span class="meta">{app.jobs.length}</span></div>
+  <p class="page-sub">Reels being made, rendered and learned, from this app, the command line or an AI agent</p>
+
+  {#if !app.jobs.length}
+    <div class="empty">Nothing has run yet</div>
+  {:else}
+    <div class="split">
+      <div class="list surface">
+        {#each app.jobs as j (j.id)}
+          <button class="item" class:on={open === j.id} onclick={() => (open = j.id)}>
+            <span class="dot {tone(j.state)}"></span>
+            <span class="what ellipsis"><span class="kind">{j.kind}</span> <span class="muted">{j.label || ""}</span></span>
+            <span class="meta">{clock(j.elapsed_s)}</span>
+          </button>
+        {/each}
+      </div>
+      <div class="detail surface">
+        {#if detail}
+          <div class="row">
+            <span class="dot {tone(detail.state)}"></span>
+            <h2>{detail.kind}</h2>
+            <span class="muted ellipsis">{detail.label}</span>
+            <div class="spacer"></div>
+            {#if detail.state === "running"}<button class="btn sm" onclick={() => cancel(detail.id)}><Icon name="x" size={14} /> Stop</button>{/if}
+            {#if planOf(detail)}<button class="btn primary sm" onclick={() => openReel(planOf(detail))}>Open the reel</button>{/if}
+          </div>
+          <div class="meta cmd selectable">{detail.command}</div>
+          <pre class="log selectable">{(detail.log || []).join("\n")}{detail.error ? "\n\n" + detail.error : ""}</pre>
+        {:else}
+          <div class="empty">Select a job to see its log</div>
+        {/if}
+      </div>
     </div>
-    <div class="card detail">
-      {#if detail}
-        <div class="row">
-          <b>{detail.kind}</b><span class="muted ellipsis">{detail.label}</span><div style="flex:1"></div>
-          {#if detail.state === "running"}<button class="btn small" onclick={() => cancel(detail.id)}><Icon name="x" size={13} /> Stop</button>{/if}
-          {#if planOf(detail)}<button class="btn primary small" onclick={() => openReel(planOf(detail))}>Open the reel</button>{/if}
-        </div>
-        <div class="mono muted cmd selectable">{detail.command}</div>
-        <pre class="log mono selectable">{(detail.log || []).join("\n")}{detail.error ? "\n\n" + detail.error : ""}</pre>
-      {:else}
-        <div class="empty">Pick a job to see its log.</div>
-      {/if}
-    </div>
-  </div>
+  {/if}
 </div>
 
 <style>
-  .split { display: grid; grid-template-columns: 340px 1fr; gap: 16px; height: calc(100% - 60px); }
-  .list { overflow: auto; padding: 6px; }
-  .item { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 8px; border-radius: 7px; cursor: pointer; text-align: left; color: inherit; }
-  .item:hover { background: var(--sunken); }
-  .item.on { background: var(--accent-soft); }
-  .item .ellipsis { flex: 1; }
-  .small { font-size: 12px; }
-  .detail { padding: 14px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+  .spacer { flex: 1; }
+  .split { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+  .list { padding: 4px; max-height: calc(100vh - 200px); overflow: auto; }
+  .item {
+    display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 12px;
+    border: 0; border-radius: var(--r-ctl); background: none; text-align: left; color: inherit; cursor: pointer;
+    transition: background-color 150ms var(--ease);
+  }
+  .item:hover { background: var(--raised); }
+  .item.on { background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); }
+  .what { flex: 1; }
+  .kind { font-weight: 500; }
+  .detail { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; min-height: 360px; max-height: calc(100vh - 200px); }
   .cmd { word-break: break-all; }
-  .log { flex: 1; background: var(--sunken); border-radius: 8px; padding: 10px; overflow: auto; white-space: pre-wrap; margin: 0; }
+  .log { flex: 1; margin: 4px 0 0; padding: 12px; overflow: auto; white-space: pre-wrap; border-radius: var(--r-ctl); background: var(--raised); font: 12px/18px var(--mono); color: var(--text-2); }
 </style>

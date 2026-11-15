@@ -3,20 +3,27 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { check } from "@tauri-apps/plugin-updater";
   import { relaunch } from "@tauri-apps/plugin-process";
-  import { app, api, startEngine, refreshStatus, toast } from "../lib/store.svelte.js";
+  import { app, api, startEngine, toast } from "../lib/store.svelte.js";
+  import { theme, applyTheme } from "../lib/theme.svelte.js";
   import Icon from "../lib/Icon.svelte";
 
   const st = app.status || {};
+  const s = st.settings || {};
   let footage = $state([...(st.footage_folders || [])]);
   let reelsFolder = $state(st.reels_folder || "");
   let music = $state([...(st.music_folders || [])]);
-  let browser = $state(st.settings?.TRIPSHOTS_COOKIES_BROWSER || "");
+  let browser = $state(s.TRIPSHOTS_COOKIES_BROWSER || "");
   let gemini = $state("");
   let anthropic = $state("");
   let saving = $state(false);
   let engineUpdate = $state(null);
   let cli = $state(null);
   let claude = $state(null);
+  const themes = [
+    { id: "system", icon: "monitor", label: "System" },
+    { id: "light", icon: "sun", label: "Light" },
+    { id: "dark", icon: "moon", label: "Dark" },
+  ];
 
   async function pickInto(list) {
     const got = await open({ directory: true, multiple: true });
@@ -41,50 +48,30 @@
       saving = false;
     }
   }
-  async function checkEngine() {
+  const run = (f) => async () => {
     try {
-      engineUpdate = await invoke("engine_check_update");
+      await f();
     } catch (e) {
-      toast(String(e), "error");
+      toast(String(e.message || e), "error");
     }
-  }
-  async function updateEngine() {
-    try {
-      toast("Updating the engine…", "info");
-      await invoke("engine_install");
-      await startEngine(true);
-      engineUpdate = null;
-      toast("Engine updated", "ok");
-    } catch (e) {
-      toast(String(e), "error");
-    }
-  }
-  async function updateApp() {
-    try {
-      const u = await check();
-      if (!u) return toast("TripShots is up to date", "ok");
-      toast(`Downloading TripShots ${u.version}…`, "info");
-      await u.downloadAndInstall();
-      await relaunch();
-    } catch (e) {
-      toast(String(e), "error");
-    }
-  }
-  async function installCli() {
-    try {
-      cli = await invoke("install_cli");
-    } catch (e) {
-      toast(String(e), "error");
-    }
-  }
-  async function connectClaude() {
-    try {
-      claude = await invoke("connect_claude");
-    } catch (e) {
-      toast(String(e), "error");
-    }
-  }
-  const s = st.settings || {};
+  };
+  const checkEngine = run(async () => (engineUpdate = await invoke("engine_check_update")));
+  const updateEngine = run(async () => {
+    toast("Updating the engine", "info");
+    await invoke("engine_install");
+    await startEngine(true);
+    engineUpdate = null;
+    toast("Engine updated", "ok");
+  });
+  const updateApp = run(async () => {
+    const u = await check();
+    if (!u) return toast("TripShots is up to date", "ok");
+    toast(`Downloading TripShots ${u.version}`, "info");
+    await u.downloadAndInstall();
+    await relaunch();
+  });
+  const installCli = run(async () => (cli = await invoke("install_cli")));
+  const connectClaude = run(async () => (claude = await invoke("connect_claude")));
 </script>
 
 <div class="page">
@@ -92,90 +79,117 @@
     <button class="btn primary" onclick={save} disabled={saving}>{#if saving}<span class="spin"></span>{/if} Save</button></div>
 
   <div class="cols">
-    <section class="card pad">
-      <h2>Folders</h2>
-      <div class="field">
-        <label>Footage <span class="hint">· where your photos and clips live (searched inside)</span></label>
-        <div class="chips">
-          {#each footage as f, i}<span class="chip" title={f}><span class="ellipsis">{f}</span><button onclick={() => footage.splice(i, 1)}><Icon name="x" size={12} /></button></span>{/each}
-          <button class="btn small" onclick={() => pickInto(footage)}><Icon name="folder" size={13} /> Add</button>
+    <div class="col">
+      <section class="surface block">
+        <h2>Folders</h2>
+        <div class="field">
+          <label for="ft">Footage <span class="hint">· where your photos and clips live</span></label>
+          <div class="chips" id="ft">
+            {#each footage as f, i}<span class="chip" title={f}><span class="ellipsis">{f}</span><button onclick={() => footage.splice(i, 1)} aria-label="Remove"><Icon name="x" size={14} /></button></span>{/each}
+            <button class="btn sm" onclick={() => pickInto(footage)}><Icon name="folder" size={14} /> Add</button>
+          </div>
         </div>
-      </div>
-      <div class="field">
-        <label>Reels are saved to</label>
-        <div class="row"><input type="text" bind:value={reelsFolder} /><button class="btn" onclick={pickReels}>Choose</button></div>
-      </div>
-      <div class="field">
-        <label>Music folders</label>
-        <div class="chips">
-          {#each music as f, i}<span class="chip" title={f}><span class="ellipsis">{f}</span><button onclick={() => music.splice(i, 1)}><Icon name="x" size={12} /></button></span>{/each}
-          <button class="btn small" onclick={() => pickInto(music)}><Icon name="folder" size={13} /> Add</button>
+        <div class="field">
+          <label for="rf">Reels are saved to</label>
+          <div class="row"><input id="rf" type="text" bind:value={reelsFolder} /><button class="btn" onclick={pickReels}>Choose</button></div>
         </div>
-      </div>
-    </section>
+        <div class="field last">
+          <label for="mf">Music</label>
+          <div class="chips" id="mf">
+            {#each music as f, i}<span class="chip" title={f}><span class="ellipsis">{f}</span><button onclick={() => music.splice(i, 1)} aria-label="Remove"><Icon name="x" size={14} /></button></span>{/each}
+            <button class="btn sm" onclick={() => pickInto(music)}><Icon name="folder" size={14} /> Add</button>
+          </div>
+        </div>
+      </section>
 
-    <section class="card pad">
-      <h2>AI and Instagram</h2>
-      <div class="field">
-        <label>Instagram login from <span class="hint">· to download reels you learn from or use the sound of</span></label>
-        <select bind:value={browser}>
-          <option value="">Not set</option>
-          {#each ["auto", "chrome", "safari", "brave", "arc", "firefox", "edge"] as b}<option value={b}>{b}</option>{/each}
-        </select>
-      </div>
-      <div class="field">
-        <label>Gemini API key <span class="hint">· {s.GEMINI_API_KEY ? "set" : "not set"}: lets TripShots watch clips and hear dialogue</span></label>
-        <input type="password" placeholder={s.GEMINI_API_KEY ? "•••••••• (leave empty to keep)" : "optional"} bind:value={gemini} />
-      </div>
-      <div class="field">
-        <label>Anthropic API key <span class="hint">· {s.ANTHROPIC_API_KEY ? "set" : "not set"}: for when the Claude app isn't signed in</span></label>
-        <input type="password" placeholder={s.ANTHROPIC_API_KEY ? "•••••••• (leave empty to keep)" : "optional"} bind:value={anthropic} />
-      </div>
-      {#if !app.status?.ffmpeg}<p class="warn">ffmpeg wasn't found. {app.engineState?.platform?.startsWith("darwin") ? "Install it with Homebrew: brew install ffmpeg" : "Reinstall the engine."}</p>{/if}
-    </section>
+      <section class="surface block">
+        <h2>Appearance</h2>
+        <div class="themes" role="radiogroup" aria-label="Appearance">
+          {#each themes as t}
+            <button role="radio" aria-checked={theme.choice === t.id} class:on={theme.choice === t.id} onclick={() => applyTheme(t.id)}>
+              <Icon name={t.icon} /> {t.label}
+            </button>
+          {/each}
+        </div>
+        <p class="quiet small">System follows your computer's light and dark setting</p>
+      </section>
+    </div>
 
-    <section class="card pad">
-      <h2>Use TripShots elsewhere</h2>
-      <div class="opt">
-        <div><b>Command line</b><div class="muted small">the <span class="mono">tripshots</span> command in a terminal: the same engine and library as this app</div></div>
-        <button class="btn" onclick={installCli}><Icon name="terminal" size={14} /> Install</button>
-      </div>
-      {#if cli}<p class="small selectable">Installed at <span class="mono">{cli.path}</span>{cli.note ? ` · ${cli.note}` : ""}</p>{/if}
-      <div class="opt">
-        <div><b>Claude (MCP)</b><div class="muted small">let Claude find footage and make reels for you</div></div>
-        <button class="btn" onclick={connectClaude}><Icon name="link" size={14} /> Connect</button>
-      </div>
-      {#if claude}
-        <p class="small selectable">Added to Claude Desktop (<span class="mono">{claude.desktop_config}</span>): restart Claude to use it.
-          For Claude Code, run:<br /><span class="mono">{claude.claude_code_command}</span></p>
-      {/if}
-    </section>
+    <div class="col">
+      <section class="surface block">
+        <h2>Accounts</h2>
+        <div class="field">
+          <label for="ig">Instagram login from <span class="hint">· to download reels you learn from or take the sound of</span></label>
+          <select id="ig" bind:value={browser}>
+            <option value="">Not set</option>
+            {#each ["auto", "chrome", "safari", "brave", "arc", "firefox", "edge"] as b}<option value={b}>{b === "auto" ? "Any browser that's signed in" : b[0].toUpperCase() + b.slice(1)}</option>{/each}
+          </select>
+        </div>
+        <div class="field">
+          <label for="gk">Gemini API key <span class="hint">· {s.GEMINI_API_KEY ? "set" : "not set"}, lets TripShots watch clips and hear dialogue</span></label>
+          <input id="gk" type="password" placeholder={s.GEMINI_API_KEY ? "Saved. Type to replace" : "Optional"} bind:value={gemini} />
+        </div>
+        <div class="field last">
+          <label for="ak">Anthropic API key <span class="hint">· {s.ANTHROPIC_API_KEY ? "set" : "not set"}, used when the Claude app isn't signed in</span></label>
+          <input id="ak" type="password" placeholder={s.ANTHROPIC_API_KEY ? "Saved. Type to replace" : "Optional"} bind:value={anthropic} />
+        </div>
+        {#if !app.status?.ffmpeg}<p class="warn">ffmpeg isn't installed. {app.engineState?.platform?.startsWith("darwin") ? "Install it with Homebrew: brew install ffmpeg" : "Install the engine again"}</p>{/if}
+      </section>
 
-    <section class="card pad">
-      <h2>About</h2>
-      <table class="small">
-        <tbody>
-          <tr><td class="muted">App</td><td>{app.engineState?.app_version}</td><td><button class="btn small" onclick={updateApp}>Check for updates</button></td></tr>
-          <tr><td class="muted">Engine</td><td>{app.engine?.version} <span class="muted">({app.engine?.source})</span></td>
-            <td>{#if engineUpdate?.available}<button class="btn small primary" onclick={updateEngine}>Update to {engineUpdate.latest}</button>
-              {:else}<button class="btn small" onclick={checkEngine}>{engineUpdate ? "Up to date" : "Check"}</button>{/if}</td></tr>
-          <tr><td class="muted">Engine file</td><td colspan="2" class="mono selectable ellipsis" title={app.engine?.path}>{app.engine?.path}</td></tr>
-          <tr><td class="muted">Library</td><td colspan="2" class="mono selectable">{app.status?.home}</td></tr>
-        </tbody>
-      </table>
-    </section>
+      <section class="surface block">
+        <h2>Outside the app</h2>
+        <div class="opt">
+          <div><div class="t">Command line</div><div class="quiet small">The <span class="tc">tripshots</span> command, with the same engine and library</div></div>
+          <button class="btn" onclick={installCli}><Icon name="terminal" /> Install</button>
+        </div>
+        {#if cli}<p class="small selectable">Installed at <span class="tc">{cli.path}</span>{cli.note ? `. ${cli.note}` : ""}</p>{/if}
+        <div class="opt">
+          <div><div class="t">Claude</div><div class="quiet small">Let Claude find footage and make reels for you, over MCP</div></div>
+          <button class="btn" onclick={connectClaude}><Icon name="link" /> Connect</button>
+        </div>
+        {#if claude}
+          <p class="small selectable">Added to Claude Desktop. Restart Claude to use it. For Claude Code run<br /><span class="tc">{claude.claude_code_command}</span></p>
+        {/if}
+      </section>
+
+      <section class="surface block">
+        <h2>About</h2>
+        <dl>
+          <dt>App</dt><dd class="tc">{app.engineState?.app_version}</dd>
+          <dd class="act"><button class="btn sm" onclick={updateApp}>Check for updates</button></dd>
+          <dt>Engine</dt><dd><span class="tc">{app.engine?.version}</span> <span class="quiet">{app.engine?.source === "installed" ? "" : `· ${app.engine?.source}`}</span></dd>
+          <dd class="act">{#if engineUpdate?.available}<button class="btn sm primary" onclick={updateEngine}>Update to {engineUpdate.latest}</button>
+            {:else}<button class="btn sm" onclick={checkEngine}>{engineUpdate ? "Up to date" : "Check"}</button>{/if}</dd>
+          <dt>Library</dt><dd class="tc selectable ellipsis wide" title={app.status?.home}>{app.status?.home}</dd>
+        </dl>
+      </section>
+    </div>
   </div>
 </div>
 
 <style>
-  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; align-items: start; }
-  .pad { padding: 18px 20px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; align-items: start; max-width: 1200px; }
+  .col { display: flex; flex-direction: column; gap: 16px; }
+  .block { padding: 20px 24px; display: flex; flex-direction: column; }
+  .block h2 { margin-bottom: 16px; }
+  .field.last { margin-bottom: 0; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .chip { max-width: 100%; }
-  .small { font-size: 12.5px; }
-  .warn { color: var(--warn); font-size: 13px; }
-  .opt { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
-  table { width: 100%; border-collapse: collapse; }
-  td { padding: 6px 4px; vertical-align: middle; }
-  td:last-child { text-align: right; }
+  .small { font-size: 13px; margin: 8px 0 0; }
+  .warn { color: var(--err); font-size: 13px; margin: 16px 0 0; }
+  .themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: var(--raised); border-radius: 12px; }
+  .themes button {
+    display: flex; align-items: center; justify-content: center; gap: 8px; height: 36px; border: 0; border-radius: var(--r-ctl);
+    background: transparent; color: var(--text-2); cursor: pointer; font-weight: 500;
+    transition: background-color 150ms var(--ease), color 150ms var(--ease);
+  }
+  .themes button:hover { color: var(--text); }
+  .themes button.on { background: var(--card); color: var(--text); box-shadow: inset 0 0 0 1px var(--line), var(--highlight); }
+  .opt { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--line); }
+  .opt:first-of-type { border-top: 0; padding-top: 0; }
+  .opt .t { font-weight: 500; }
+  dl { display: grid; grid-template-columns: 72px 1fr auto; gap: 12px 12px; align-items: center; margin: 0; }
+  dt { color: var(--text-3); font-size: 13px; }
+  dd { margin: 0; min-width: 0; }
+  dd.act { justify-self: end; }
+  dd.wide { grid-column: span 2; font-size: 12px; }
 </style>

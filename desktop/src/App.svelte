@@ -1,7 +1,9 @@
 <script>
   import { onMount } from "svelte";
   import { app, startEngine, refreshReels, watchJobs } from "./lib/store.svelte.js";
+  import { theme, applyTheme } from "./lib/theme.svelte.js";
   import Icon from "./lib/Icon.svelte";
+  import Mark from "./lib/Mark.svelte";
   import Setup from "./views/Setup.svelte";
   import Reels from "./views/Reels.svelte";
   import Reel from "./views/Reel.svelte";
@@ -15,12 +17,17 @@
   const nav = [
     { id: "reels", label: "Reels", icon: "film" },
     { id: "make", label: "New reel", icon: "plus" },
-    { id: "ask", label: "Ask", icon: "spark" },
-    { id: "styles", label: "Styles", icon: "palette" },
-    { id: "jobs", label: "Activity", icon: "pulse" },
-    { id: "settings", label: "Settings", icon: "gear" },
+    { id: "ask", label: "Ask", icon: "message" },
+    { id: "styles", label: "Styles", icon: "layers" },
+    { id: "jobs", label: "Activity", icon: "activity" },
+  ];
+  const themes = [
+    { id: "system", icon: "monitor", label: "Match the system" },
+    { id: "light", icon: "sun", label: "Light" },
+    { id: "dark", icon: "moon", label: "Dark" },
   ];
   let running = $derived(app.jobs.filter((j) => j.state === "running").length);
+  const on = (id) => app.view === id || (id === "reels" && app.view === "reel");
 
   async function boot() {
     booting = true;
@@ -34,34 +41,53 @@
       booting = false;
     }
   }
-  onMount(boot);
+  onMount(() => {
+    applyTheme();
+    boot();
+  });
 </script>
 
 <div class="shell">
-  <aside class="side" data-tauri-drag-region>
+  <aside class="side">
     <div class="brand" data-tauri-drag-region>
-      <img src="/icon.png" alt="" width="26" height="26" />
+      <Mark size={20} />
       <span>TripShots</span>
     </div>
+
     {#if app.engine}
-      {#each nav as n}
-        <button class="nav" class:on={app.view === n.id || (n.id === "reels" && app.view === "reel")}
-                onclick={() => (app.view = n.id)}>
-          <Icon name={n.icon} />
-          <span>{n.label}</span>
-          {#if n.id === "jobs" && running}<span class="count">{running}</span>{/if}
+      <nav>
+        {#each nav as n}
+          <button class="nav" class:on={on(n.id)} onclick={() => (app.view = n.id)}>
+            <Icon name={n.icon} />
+            <span>{n.label}</span>
+            {#if n.id === "jobs" && running}<span class="count tc">{running}</span>{/if}
+          </button>
+        {/each}
+      </nav>
+      <nav class="lower">
+        <button class="nav" class:on={on("settings")} onclick={() => (app.view = "settings")}>
+          <Icon name="settings" /><span>Settings</span>
         </button>
-      {/each}
+      </nav>
     {/if}
-    <div class="side-foot muted">
-      {#if app.engine}engine {app.engine.version}{:else if booting}starting…{/if}
+
+    <div class="foot">
+      <div class="seg" role="radiogroup" aria-label="Appearance">
+        {#each themes as t}
+          <button role="radio" aria-checked={theme.choice === t.id} class:on={theme.choice === t.id}
+                  title={t.label} aria-label={t.label} onclick={() => applyTheme(t.id)}>
+            <Icon name={t.icon} size={14} />
+          </button>
+        {/each}
+      </div>
+      <span class="meta">{#if app.engine}engine {app.engine.version}{:else if booting}starting{/if}</span>
     </div>
   </aside>
 
   <main class="main">
     <div class="drag" data-tauri-drag-region></div>
     {#if booting}
-      <div class="empty"><span class="spin"></span>&nbsp; Starting TripShots…</div>
+      <div class="empty"><span class="spin"></span></div>
     {:else if !app.engine}
       <Setup onready={boot} />
     {:else if app.view === "reels"}
@@ -81,38 +107,51 @@
     {/if}
   </main>
 
-  <div class="toasts">
+  <div class="toasts" aria-live="polite">
     {#each app.toasts as t (t.id)}
-      <div class="toast card {t.kind}">
+      <div class="toast">
+        <span class="dot {t.kind === 'error' ? 'err' : t.kind === 'ok' ? 'ok' : 'run'}"></span>
         <span>{t.text}</span>
-        {#if t.action}<button class="btn small" onclick={t.action.run}>{t.action.label}</button>{/if}
+        {#if t.action}<button class="btn sm" onclick={t.action.run}>{t.action.label}</button>{/if}
       </div>
     {/each}
   </div>
 </div>
 
 <style>
-  .shell { display: grid; grid-template-columns: 208px 1fr; height: 100%; }
+  .shell { display: grid; grid-template-columns: 248px 1fr; height: 100%; }
   .side {
-    background: var(--sunken); border-right: 1px solid var(--line);
-    padding: 38px 10px 12px; display: flex; flex-direction: column; gap: 2px;
+    background: var(--deep); border-right: 1px solid var(--line);
+    padding: 40px 12px 16px; display: flex; flex-direction: column;
   }
-  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; padding: 4px 10px 16px; }
-  .brand img { border-radius: 7px; }
+  .brand { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; margin-bottom: 24px; font-size: 16px; font-weight: 600; }
+  nav { display: flex; flex-direction: column; gap: 2px; }
+  nav.lower { margin-top: 24px; }
   .nav {
-    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-    border: 0; background: transparent; padding: 8px 10px; border-radius: 8px; cursor: pointer; color: var(--text);
+    display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 8px; width: 100%;
+    border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--text-2);
+    text-align: left; cursor: pointer; font-size: 14px;
+    transition: background-color 150ms var(--ease), color 150ms var(--ease);
   }
-  .nav:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
-  .nav.on { background: var(--panel); box-shadow: var(--shadow); font-weight: 600; }
-  .count { margin-left: auto; background: var(--accent); color: var(--accent-ink); font-size: 11px; border-radius: 999px; padding: 0 7px; }
-  .side-foot { margin-top: auto; font-size: 11.5px; padding: 0 10px; }
+  .nav:hover { background: var(--raised); color: var(--text); }
+  .nav.on { background: var(--card); color: var(--text); font-weight: 500; box-shadow: inset 0 0 0 1px var(--line), var(--highlight); }
+  .count { margin-left: auto; font-size: 12px; color: var(--accent); }
+  .foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; }
+  .seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--raised); border-radius: var(--r-ctl); }
+  .seg button {
+    width: 28px; height: 24px; border: 0; border-radius: var(--r-sm); background: transparent;
+    color: var(--text-3); cursor: pointer; display: grid; place-items: center;
+    transition: background-color 150ms var(--ease), color 150ms var(--ease);
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: var(--card); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
   .main { position: relative; overflow: hidden; }
-  .drag { position: absolute; top: 0; left: 0; right: 0; height: 22px; z-index: 5; }
-  .toasts { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
-  .toast { padding: 10px 14px; display: flex; align-items: center; gap: 12px; max-width: 420px; animation: up 0.18s ease-out; }
-  .toast.ok { border-left: 3px solid var(--ok); }
-  .toast.error { border-left: 3px solid var(--err); }
-  .toast.info { border-left: 3px solid var(--accent); }
-  @keyframes up { from { transform: translateY(8px); opacity: 0; } }
+  .drag { position: absolute; top: 0; left: 0; right: 0; height: 28px; z-index: 5; }
+  .toasts { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+  .toast {
+    display: flex; align-items: center; gap: 12px; max-width: 420px; padding: 12px 16px;
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card); box-shadow: var(--float);
+    animation: rise 300ms var(--ease);
+  }
+  @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
 </style>

@@ -116,11 +116,19 @@ export function watchJobs() {
 }
 
 // ---------------------------------------------------------------- little helpers
-export function seconds(s) {
+// Timecode, the one format for media time everywhere: 0:13.9, 1:02.4
+export function tc(s) {
+  if (s == null || isNaN(s)) return "";
+  const t = Math.max(0, Math.round(+s * 10) / 10);
+  const m = Math.floor(t / 60);
+  return `${m}:${(t - m * 60).toFixed(1).padStart(4, "0")}`;
+}
+
+// Clock time a job has been running: 0:25, 3:10
+export function clock(s) {
   if (s == null) return "";
   const m = Math.floor(s / 60);
-  const r = Math.round(s % 60);
-  return m ? `${m}:${String(r).padStart(2, "0")}` : `${(+s).toFixed(1)} s`;
+  return `${m}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 }
 
 export function ago(ts) {

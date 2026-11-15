@@ -815,6 +815,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="serve over HTTP instead of stdio (e.g. 127.0.0.1:8765; other hosts need TRIPSHOTS_MCP_TOKEN)")
     mc.set_defaults(fn=lambda a: __import__("tripshots.mcp_server", fromlist=["main"]).main(a.http))
 
+    sv = sub.add_parser("serve", help="the desktop app's local API (JSON over HTTP on 127.0.0.1, token required)")
+    sv.add_argument("--port", type=int, default=0, help="0 = any free port (printed as the first line)")
+    sv.add_argument("--token", help="shared secret (default: TRIPSHOTS_API_TOKEN)")
+    sv.add_argument("--watch-stdin", action="store_true", help="exit when stdin closes (the app that started it quit)")
+    sv.set_defaults(fn=lambda a: __import__("tripshots.server", fromlist=["serve"]).serve(a.port, a.token,
+                                                                                          a.watch_stdin))
+
     sub.add_parser("doctor", help="check dependencies").set_defaults(fn=cmd_doctor)
 
     return p

@@ -13,7 +13,6 @@ import asyncio
 import io
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -180,19 +179,9 @@ async def find_footage(place: str | None = None, people: list[str] | None = None
     date_from/date_to: YYYY-MM-DD. kinds: both | photo | video.
     whole_days: also include same-day files without GPS (phone clips) during the place's hours (default true).
     text: words that must appear in the folder/file/place name."""
-    args = ["find", "--sheet", "--kind", kinds]
-    if place:
-        args += ["--place", place]
-    if near_lat is not None and near_lon is not None:
-        args += ["--near", f"{near_lat},{near_lon}", "--radius", str(radius_km)]
-    if people:
-        args += ["--people", *people] + (["--any-people"] if any_people else [])
-    for flag, v in (("--since", date_from), ("--until", date_to), ("--text", text), ("--name", label)):
-        if v:
-            args += [flag, v]
-    if not whole_days:
-        args.append("--only-matching")
-    args += ["--", *(folders or [])]  # paths after "--": never read as options
+    from .commands import find_args
+    args = find_args(place, people, date_from, date_to, near_lat, near_lon, radius_km, kinds, any_people,
+                     whole_days, text, folders, label)
     st = await _run_job(args, "find", label or place or " ".join(people or []) or "find")
     return _finished(st)
 
@@ -313,27 +302,12 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
     upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
       same sound inside Instagram: do this when the music is a commercial song.
     Returns the plan path and the storyboard image to review (or a job id to poll)."""
-    args = ["make"]
-    for flag, v in (("-m", music), ("-s", style), ("-d", duration), ("--hook", hook), ("--location", location),
-                    ("--look", look), ("--text-preset", text_preset), ("--route-map", route_map),
-                    ("--speed-ramps", speed_ramps), ("--speed-up", speed_up), ("--drop-speed", drop_speed),
-                    ("--format", format), ("--text-motion", text_motion), ("--captions", captions),
-                    ("--recipe", recipe), ("--orientation", orientation), ("--fresh", fresh)):
-        if v not in (None, ""):
-            args += [flag, str(v)]
-    if variants and variants > 1:
-        args += ["--variants", str(variants)]
-    if upload_copy:
-        args.append("--upload-copy")
-    if no_location:
-        args.append("--no-location")
-    if dry_run:
-        args.append("--dry-run")
-    if name:
-        safe = re.sub(r"[^A-Za-z0-9 ._-]+", "-", name).strip(" .-")[:80] or "reel"
-        out = Path(os.environ.get("TRIPSHOTS_OUT") or Path.cwd() / "reels") / f"{safe}.mp4"
-        args += ["-o", str(out)]
-    args += ["--", *sources]  # paths after "--": never read as options
+    from .commands import make_args
+    args = make_args(sources, variants=variants, upload_copy=upload_copy, no_location=no_location, dry_run=dry_run,
+                     name=name, music=music, style=style, duration=duration, hook=hook, location=location, look=look,
+                     text_preset=text_preset, route_map=route_map, speed_ramps=speed_ramps, speed_up=speed_up,
+                     drop_speed=drop_speed, format=format, text_motion=text_motion, captions=captions,
+                     recipe=recipe, orientation=orientation, fresh=fresh)
     st = await _run_job(args, "make", name or " ".join(sources))
     return _finished(st)
 
@@ -520,11 +494,8 @@ def reel_from_request(request: str) -> str:
 
 # ------------------------------------------------------------------ run
 def _default_out():
-    if not os.environ.get("TRIPSHOTS_OUT"):
-        from .util import is_mac, read_json
-        st = read_json(HOME / "tui.json", {}) or {}
-        os.environ["TRIPSHOTS_OUT"] = st.get("out_dir") or str(
-            (Path.home() / "Movies" / "Reels") if is_mac() else (Path.home() / "reels"))
+    from .commands import default_out
+    default_out()
 
 
 def main(http: str | None = None) -> None:

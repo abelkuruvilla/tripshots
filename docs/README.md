@@ -2,6 +2,7 @@
 
 **Start here**
 - [Getting started](getting-started.md): install, your first reel, your first agent session
+- [The desktop app](desktop.md): TripShots for macOS, Windows and Linux
 - [The app](app.md): the full-screen terminal app (`tripshots`)
 
 **Making reels**

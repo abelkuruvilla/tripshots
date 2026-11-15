@@ -22,14 +22,23 @@ JOB_DIR = HOME / "jobs"
 _procs: dict[str, subprocess.Popen] = {}
 
 
+def engine_command() -> list[str]:
+    """How to run `tripshots`: the frozen engine is its own executable (desktop app); otherwise this Python."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    return [sys.executable, "-m", "tripshots"]
+
+
 def start(args: list[str], kind: str, label: str = "") -> str:
     JOB_DIR.mkdir(parents=True, exist_ok=True)
     jid = time.strftime("%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
     out, log = JOB_DIR / f"{jid}.out", JOB_DIR / f"{jid}.log"
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    extra = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+             if os.name == "nt" else {"start_new_session": True})
     with open(out, "wb") as fo, open(log, "wb") as fl:
-        p = subprocess.Popen([sys.executable, "-m", "tripshots", *args], stdout=fo, stderr=fl,
-                             stdin=subprocess.DEVNULL, env=env, start_new_session=True)
+        p = subprocess.Popen([*engine_command(), *args], stdout=fo, stderr=fl, stdin=subprocess.DEVNULL, env=env,
+                             **extra)
     _procs[jid] = p
     write_json(JOB_DIR / f"{jid}.json", {"id": jid, "kind": kind, "label": label, "args": args, "pid": p.pid,
                                          "started": time.time()})
@@ -37,6 +46,16 @@ def start(args: list[str], kind: str, label: str = "") -> str:
 
 
 def _alive(pid: int) -> bool:
+    if os.name == "nt":  # no signal 0 on Windows: ask for the process and its exit code
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = k.GetExitCodeProcess(h, ctypes.byref(code))
+        k.CloseHandle(h)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
     try:
         os.kill(pid, 0)
     except OSError:
@@ -114,7 +133,10 @@ def cancel(jid: str) -> dict:
     if not meta:
         return {"id": jid, "state": "unknown"}
     try:
-        os.killpg(meta["pid"], signal.SIGTERM)
+        if os.name == "nt":  # the job and the ffmpeg it started
+            subprocess.run(["taskkill", "/PID", str(meta["pid"]), "/T", "/F"], capture_output=True)
+        else:
+            os.killpg(meta["pid"], signal.SIGTERM)
     except OSError:
         pass
     return status(jid)

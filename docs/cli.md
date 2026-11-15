@@ -36,6 +36,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`analyze`](#analyze) | analyse photos and videos on their own (no reel): what's in them, quality, people, places -> media.jsonl for TripShots and other apps |
 | [`ask`](#ask) | plain language: tripshots ask "a reel about my days in Yellowstone" |
 | [`mcp`](#mcp) | run as an MCP server for AI agents (Claude Desktop/Code, OpenClaw, ...) |
+| [`serve`](#serve) | the desktop app's local API (JSON over HTTP on 127.0.0.1, token required) |
 | [`doctor`](#doctor) | check dependencies |
 
 ## make
@@ -733,6 +734,18 @@ options:
   -h, --help        show this help message and exit
   --http HOST:PORT  serve over HTTP instead of stdio (e.g. 127.0.0.1:8765; other hosts need
                     TRIPSHOTS_MCP_TOKEN)
+```
+
+## serve
+
+```text
+usage: tripshots serve [-h] [--port PORT] [--token TOKEN] [--watch-stdin]
+
+options:
+  -h, --help     show this help message and exit
+  --port PORT    0 = any free port (printed as the first line)
+  --token TOKEN  shared secret (default: TRIPSHOTS_API_TOKEN)
+  --watch-stdin  exit when stdin closes (the app that started it quit)
 ```
 
 ## doctor

@@ -1,0 +1,198 @@
+name: release
+
+# Push a tag vX.Y.Z (after `python tools/set_version.py X.Y.Z`): builds the engine and the desktop app for macOS
+# (Apple Silicon + Intel), Windows and Linux, signs them, and publishes one GitHub release with:
+#   tripshots-engine-<v>-<platform>.tar.gz|zip (+ .sig)   the engine the app downloads on first run / updates
+#   engine.json                                          the manifest the app reads (releases/latest/download/)
+#   TripShots_<v>_*.dmg / .msi / .exe / .deb / .rpm / .AppImage, latest.json (the app's own updates)
+#
+# Secrets: TAURI_SIGNING_PRIVATE_KEY (contents of ~/.tauri/tripshots.key), TAURI_SIGNING_PRIVATE_KEY_PASSWORD.
+# Optional, macOS app signing + notarisation: APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD,
+# APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID.
+# Optional, Windows code signing: see desktop/README.md.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "existing tag to (re)build, e.g. v0.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release_id: ${{ steps.rel.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - id: v
+        name: versions agree with the tag
+        run: |
+          V="${TAG#v}"
+          python tools/set_version.py --check "$V"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - id: rel
+        name: draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --title "TripShots $TAG" --notes "See CHANGELOG.md."
+          fi
+          echo "id=$(gh release view "$TAG" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
+
+  engine:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, platform: darwin-aarch64 }
+          - { os: macos-15-intel, platform: darwin-x86_64 }
+          - { os: ubuntu-22.04, platform: linux-x86_64 }
+          - { os: windows-latest, platform: windows-x86_64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: install the engine and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[heic,export,watch,cutout]" "pyinstaller>=6.10"
+      # ffmpeg: static builds for Linux and Windows (BtbN, GPL: libx264 is the software encoder TripShots falls
+      # back to; shipped as separate programs with their licence, source at https://ffmpeg.org). On macOS the
+      # engine uses Homebrew's ffmpeg; the app says how to install it when it's missing.
+      - name: ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -sSL -o ff.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-linux64-gpl-7.1.tar.xz
+          mkdir ffmpeg && tar -xf ff.tar.xz -C ffmpeg --strip-components=1
+          mkdir ffbin && cp ffmpeg/bin/ffmpeg ffmpeg/bin/ffprobe ffmpeg/LICENSE.txt ffbin/
+      - name: ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          curl -sSL -o ff.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-7.1.zip
+          unzip -q ff.zip -d ffmpeg && mkdir ffbin
+          cp ffmpeg/*/bin/ffmpeg.exe ffmpeg/*/bin/ffprobe.exe ffmpeg/*/LICENSE.txt ffbin/
+      - name: freeze
+        run: pyinstaller packaging/engine/tripshots.spec --noconfirm --clean
+      - name: package and smoke-test
+        shell: bash
+        run: |
+          FF=""; [ -d ffbin ] && FF="--ffmpeg ffbin"
+          python packaging/engine/package.py --dist dist/tripshots --platform ${{ matrix.platform }} \
+            --version ${{ needs.prepare.outputs.version }} $FF --out out
+      - name: sign
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for f in out/tripshots-engine-*.tar.gz out/tripshots-engine-*.zip; do
+            [ -f "$f" ] && npx --yes @tauri-apps/cli@2 signer sign "$f"
+          done
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.platform }}
+          path: out/*
+          retention-days: 7
+
+  engine-manifest:
+    needs: [prepare, engine]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: engine-*
+          path: artifacts
+      - name: engine.json
+        run: python packaging/engine/manifest.py --version ${{ needs.prepare.outputs.version }} --repo ${{ github.repository }} --dir artifacts
+      - name: upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$TAG" engine.json artifacts/*/tripshots-engine-*.tar.gz artifacts/*/tripshots-engine-*.zip \
+            artifacts/*/tripshots-engine-*.sig --clobber
+
+  app:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, args: "--target aarch64-apple-darwin", rust: aarch64-apple-darwin }
+          - { os: macos-14, args: "--target x86_64-apple-darwin", rust: x86_64-apple-darwin }
+          - { os: ubuntu-22.04, args: "", rust: "" }
+          - { os: windows-latest, args: "", rust: "" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - run: npm ci
+        working-directory: desktop
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: desktop
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+  publish:
+    needs: [prepare, engine-manifest, app]
+    runs-on: ubuntu-latest
+    steps:
+      - name: publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false --repo ${{ github.repository }}

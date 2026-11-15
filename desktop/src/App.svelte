@@ -48,9 +48,13 @@
   });
 </script>
 
+<!-- the title bar: the window is moved by dragging the top of it, and zoomed by double-clicking it (macOS draws
+     its own buttons over the top left). A drag region works on its own element only, so it's one empty strip -->
+<div class="titlebar" data-tauri-drag-region></div>
+
 <div class="shell">
   <aside class="side">
-    <div class="brand" data-tauri-drag-region>
+    <div class="brand">
       <Mark size={24} />
       <span>TripShots</span>
     </div>
@@ -86,7 +90,6 @@
   </aside>
 
   <main class="main">
-    <div class="drag" data-tauri-drag-region></div>
     {#if booting}
       <div class="empty"><span class="spin"></span></div>
     {:else if !app.engine}
@@ -147,7 +150,7 @@
   .seg button:hover { color: var(--text); }
   .seg button.on { background: var(--card); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
   .main { position: relative; overflow: hidden; }
-  .drag { position: absolute; top: 0; left: 0; right: 0; height: 28px; z-index: 5; }
+  .titlebar { position: fixed; top: 0; left: 0; right: 0; height: 36px; z-index: 60; }
   .toasts { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
   .toast {
     display: flex; align-items: center; gap: 12px; max-width: 420px; padding: 12px 16px;

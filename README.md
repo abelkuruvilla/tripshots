@@ -1,3 +1,5 @@
+<img src="docs/images/logo.png" width="96" height="96" alt="TripShots logo: a striped setting sun over a mountain ridge with a road">
+
 # TripShots
 
 **Turn your own travel photos and clips into beat-synced Instagram Reels, by hand or by asking an AI.**

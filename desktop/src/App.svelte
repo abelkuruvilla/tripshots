@@ -51,7 +51,7 @@
 <div class="shell">
   <aside class="side">
     <div class="brand" data-tauri-drag-region>
-      <Mark size={20} />
+      <Mark size={24} />
       <span>TripShots</span>
     </div>
 

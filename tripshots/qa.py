@@ -111,8 +111,13 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
         add("text_safe", not out_of, [f"{t['kind']}: {t['text'][:30]}" for t in out_of][:6],
             "inside the safe area", "Instagram's buttons, name and caption cover the edges of the screen")
         # a line set like its reference (small quiet type held for seconds) only has to stay readable
-        small = [t for t in texts if t.get("size") and t["kind"] in MIN_SIZE
-                 and t["size"] < (STYLED_MIN if t.get("styled") else 0.9 * MIN_SIZE[t["kind"]]) * CANVAS.text]
+        # words copied from the reference keep its size: a line about as big as a phone's own caption type
+        # (2.2 % of the frame's width) still reads, as it does in the reference
+        def floor(t):
+            if t.get("sung") and t.get("styled"):
+                return 0.022 * CANVAS.w  # (a phone shows the reel by its width)
+            return (STYLED_MIN if t.get("styled") else 0.9 * MIN_SIZE[t["kind"]]) * CANVAS.text
+        small = [t for t in texts if t.get("size") and t["kind"] in MIN_SIZE and t["size"] < floor(t)]
         add("text_size", not small, [f"{t['kind']} {t['size']}px: {t['text'][:30]}" for t in small][:6],
             "hook ≥ 88 px, labels ≥ 64, captions ≥ 54 (at 1080 wide)" + (
                 f", x{CANVAS.text:g} on a horizontal reel" if CANVAS.horizontal else ""),

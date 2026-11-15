@@ -68,6 +68,13 @@ Casting follows the cut: the turn takes one of the best-looking shots, longer sl
 opening held isn't shown again, and one kind of view doesn't keep coming back. A nearly colourless shot (steam, fog)
 has to be clearly better than a colourful one, and never opens, turns or closes a colourful reel.
 
+**The reference's own words.** `learn` reads every line of text a reference shows (a small text detector finds
+the lines and when they are up; the AI copies the words from close-ups, exactly as written, and leaves out signs in
+the scene and watermarks) and the typeface closest to its lettering (from about a hundred open fonts fetched once
+into `~/.tripshots/fonts/gf`). On that reference's own sound, lyrics and subtitles are its words at its times, in
+its place, size and colour. Words are never transcribed from the sound: a reel shows the reference's text exactly or
+none at all, and lettering nothing in the library resembles is left out rather than set in a standard face.
+
 What each kind of text does with your footage:
 
 * **`title`** is built like the example's ("USA 2026" gives "West Coast 2026", not a sentence) and stays up for the
@@ -97,7 +104,8 @@ Pick one with `make --recipe N`, or `--recipe off` for the style's averaged prof
 
 Every rendered reel is noted in `~/.tripshots/history.json` (which shots it showed, and which opened it). The next
 `make` from the same footage marks those shots down, the opening shot most, so five reels from one trip are five
-different reels rather than the same best ten shots in a new order. A shot from the same moment as one already shown
+different reels rather than the same best ten shots in a new order. Every earlier reel counts, however long the
+series (up to 300 remembered reels). A shot from the same moment as one already shown
 counts as (nearly) shown. Re-rendering a reel replaces its own note, and a reel whose file you deleted is forgotten.
 `make --fresh off` (style `shots.fresh: 0`) ignores the memory.
 

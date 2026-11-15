@@ -124,7 +124,44 @@ def build(measure: dict, card: dict | None, source: str, idx: int, unread: bool 
            "why": " ".join(str(card.get("why") or "").split())[:240], "unread": True if unread else None}
     if rec["text"]["kind"] == "lyrics" and name != "hold_burst" and not rec["text"]["per_word"]:
         rec["text"]["kind"] = "subtitles"  # lyric lines under an even edit are subtitles
+    ex = card.get("_exact")
+    if isinstance(ex, dict):
+        rec["text"].update(exact_text(ex))
     return {k: v for k, v in rec.items() if v is not None}
+
+
+FONT_MIN = 0.4  # how alike the matched face must be to the reference's letters to be used (reftext.likeness)
+
+
+def exact_text(ex: dict) -> dict:
+    """The reference's own words as reftext read them, for the recipe: `exact` [{text, from, to, x, y, size,
+    color}] (x, y: the middle of the words in the picture, 0..1; size: line height / picture height) and
+    `font`, the library face most like its lettering. Text that was only partly readable is left out: words
+    on screen are copied exactly or not at all."""
+    evs = []
+    for e in ex.get("events") or []:
+        if e.get("partial") or not str(e.get("text") or "").strip():
+            continue
+        b = e.get("box") or [0, 0, 1, 1]
+        evs.append({"text": str(e["text"]).strip(), "from": float(e["t0"]), "to": float(e["t1"]),
+                    "x": round((b[0] + b[2]) / 2, 3), "y": round((b[1] + b[3]) / 2, 3),
+                    "size": round(float(e.get("size") or 0.04), 4), "lines": int(e.get("lines") or 1),
+                    "color": e.get("color")})
+    evs.sort(key=lambda e: e["from"])
+    one: list[dict] = []
+    for e in evs:  # one line at a time: the same words read twice are one; a new line ends the one before
+        if one and e["from"] < one[-1]["to"]:
+            if e["text"] == one[-1]["text"] or e["text"] in one[-1]["text"]:
+                one[-1]["to"] = max(one[-1]["to"], e["to"])
+                continue
+            one[-1]["to"] = e["from"]
+        one.append(e)
+    evs = [e for e in one if e["to"] - e["from"] >= 0.15]
+    f = ex.get("font") or {}
+    out = {"exact": evs}
+    if f.get("font") and float(f.get("score") or 0) >= FONT_MIN:
+        out["font"] = f["font"]
+    return out
 
 
 def describe(r: dict) -> str:
@@ -540,19 +577,42 @@ def text_style(recipe: dict, per_word: bool = False, label: bool = False) -> dic
     look = t.get("look", "sans")
     px = SIZES.get(t.get("size"), SIZES["medium"]) * (1.3 if look == "script" else 1.0)
     face = NARROW.get(look) if t.get("width") == "narrow" else None
+    face = t.get("font") or face   # the face matched to the reference's own letters (reftext)
+    ex = [e for e in t.get("exact") or [] if e.get("size")]
+    if ex:  # the reference's own type size: line height in the picture -> font size in ours
+        import statistics
+        from .config import CANVAS
+        sizes = [e["size"] for e in ex]
+        h = max(sizes) if t.get("kind") == "title" else statistics.median(sizes)  # a title is its biggest line
+        # a phone shows a reel by its width: the line's height as a share of the reference picture's WIDTH, set
+        # on ours (a 4:3 reference's lyrics would come out smaller in a 16:9 frame measured by height).
+        # (the renderer scales lettering by CANVAS.text: undo it, this is already the size on our canvas)
+        try:
+            a, b = (float(x) for x in str(recipe.get("frame") or "9:16").split(":"))
+            ref_ar = a / b
+        except ValueError:
+            ref_ar = 9 / 16
+        px = max(40.0, min(220.0, h / ref_ar * CANVAS.w * 0.92)) / (1.3 if per_word else 1.0) / (CANVAS.text or 1.0)
+        if t.get("kind") in ("title", "tease"):  # words we write ourselves: never smaller than reads at a glance
+            px = max(px, SIZES["small"] * 1.1)
     st = {"font": face or FONTS.get(look, FONTS["sans"]), "size": int(round(px * (1.3 if per_word else 1.0))),
           "uppercase": look == "caps" or bool(t.get("upper")), "position": t.get("position", "center"),
           "anim": "cut" if per_word else "fade", "line_gap": 1.05}
     col = color_of(t.get("color"))
+    multi = any(w in str(t.get("color") or "").lower() for w in ("multi", "rainbow", "colorful", "colourful"))
     if col:
         st["color"] = list(col)
-    elif any(w in str(t.get("color") or "").lower() for w in ("multi", "rainbow", "colorful", "colourful")):
+    elif multi and label:  # postcard letters: the picture shows through them
+        st.update({"fill": "picture", "font": t.get("font") or "anton", "uppercase": True,
+                   "lead_color": [250, 196, 58]})
+    elif multi:
         st["colors"] = [list(c) for c in POSTCARD]
     if per_word:
         st["exit"] = 0.04
     if label:
         st.update({"size": int(round(max(st["size"], SIZES["medium"]) * 1.4)), "anim": "cut", "exit": 0.05,
-                   "fixed": True, "fit": 0.8, "lead_font": FONTS["script"]})
+                   "fixed": True, "fit": 0.8,
+                   "lead_font": "gf:Yellowtail:400" if st.get("fill") == "picture" else FONTS["script"]})
         st["lead_size"] = int(round(st["size"] * 0.6))  # the line above the name reads on a phone too
     return st
 
@@ -607,18 +667,12 @@ def text_overlays(plan: dict, recipe: dict, words_rel: dict | None, copy: dict |
     turn = turn_time(plan)
     copy = copy or {}
     out: list[dict] = []
-    if kind == "lyrics":
-        until = turn if turn else total
-        ws = lyric_words((words_rel or {}).get("lines") or [], until, bool(t.get("per_word")))
-        if not ws and recipe.get("_own"):   # no transcript: the words as the AI read them off the reference
-            off = float((plan.get("music") or {}).get("start") or 0.0)
-            ws = lyric_words([{"text": ln["text"], "start": ln["from"] - off, "end": ln["to"] - off}
-                              for ln in t.get("lines") or []], until, bool(t.get("per_word")))
-        st = text_style(recipe, bool(t.get("per_word")))
-        out = [{"type": "caption", **w, "style": st, "recipe": "lyric"} for w in ws]
-        if out or not (hook or copy.get("hook")):
-            return out
-        kind = "tease"                      # a song without words: hold a line instead
+    if kind in ("lyrics", "subtitles"):
+        # sung or spoken words go on screen only as the reference shows them on its own sound: copied, never
+        # transcribed (a transcript of a song is too often wrong, and wrong lyrics ruin a reel)
+        # its own sound and words we can't copy (lettering nothing matches): none, not a line of our own over
+        # someone else's lyrics
+        return exact_overlays(plan, recipe) if recipe.get("_own") else []
     if kind == "labels":
         return label_overlays(plan, recipe, label_names(facts or [{} for _ in plan["segments"]],
                                                         copy.get("labels")))
@@ -657,6 +711,15 @@ def text_overlays(plan: dict, recipe: dict, words_rel: dict | None, copy: dict |
     line = hook or copy.get("tease") or copy.get("hook")
     if not line:
         return out
+    exact = t.get("exact") or []
+    kept = copy.get("payoff")
+    mine = {_plain(x) for x in [line] + (kept if isinstance(kept, list) else [kept]) if x}
+    if recipe.get("_own") and exact and all(_plain(e["text"]) in mine for e in exact):
+        # the copywriter kept ALL of the reference's own words (they fit any trip): show them as and when it does.
+        # (one kept line is not enough: "this is" then the reference's "the faroe islands" would be copied too)
+        got = exact_overlays(plan, recipe)
+        if got:
+            return [{**o, "recipe": "lyric"} for o in got]
     pay = copy.get("payoff")
     pay = [p for p in (pay if isinstance(pay, list) else [pay]) if p]
     ref_pay = sorted((ln for ln in ref if ln.get("role") == "payoff"), key=lambda ln: float(ln["from"]))
@@ -700,20 +763,46 @@ def trail_off(line: str) -> str:
     return line
 
 
+def _plain(s: str) -> str:
+    return " ".join("".join(c for c in str(s).lower() if c.isalnum() or c.isspace()).split())
+
+
+def exact_overlays(plan: dict, recipe: dict) -> list[dict]:
+    """The reference's own words at their own times (it is the same sound, from 0:00), each where the
+    reference has it, in its lettering, size and colour."""
+    t = recipe.get("text") or {}
+    if not t.get("font"):  # lettering we can't match (hand-drawn, decorative): no words rather than wrong-looking ones
+        return []
+    total = float(plan["duration"])
+    off = float((plan.get("music") or {}).get("start") or 0.0)
+    out = []
+    lines: list[dict] = []
+    for e in sorted(t.get("exact") or [], key=lambda e: e["from"]):
+        if lines and e["text"] == lines[-1]["text"] and e["from"] - lines[-1]["to"] < 1.0:
+            lines[-1] = {**lines[-1], "to": e["to"]}  # the same words, lost for a moment against a bright shot
+        else:
+            lines.append(dict(e))
+    for e in lines:
+        a, b = _frames(max(0.0, e["from"] - off)), _frames(min(total - 0.05, e["to"] - off))
+        if b - a < 0.15:
+            continue
+        one = len(e["text"].split()) <= 2
+        st = {**text_style(recipe, False), "anim": "cut" if one else "fade", "exit": 0.04 if one else 0.2,
+              "y": e["y"], "x": e["x"]}
+        # (one colour for all of its lines: the one the AI named reading the reference; a colour measured per
+        # line is thrown off by what is behind small type)
+        st["legible"] = True
+        out.append({"type": "caption", "text": e["text"], "start": a, "duration": round(b - a, 4), "style": st,
+                    "recipe": "lyric"})
+    return out
+
+
 # ----------------------------------------------------------------------- labels
 def subtitled(recipe: dict, caps: list[dict]) -> list[dict]:
-    """Subtitles only where the reference has them. On its own sound, a reference that subtitles the spoken
-    opening and lets the song play bare stays bare: no line starts after its last subtitle (a second of slack).
-    One that shows no words at all over its own voice shows none here either, and one whose words are its own
-    (a note, a title, the lyrics) doesn't get subtitles under them saying the same thing twice."""
-    t = recipe.get("text") or {}
-    lines = t.get("lines") or []
-    if recipe.get("_own") and t.get("kind", "none") != "subtitles" and not recipe.get("unread"):
-        return []
-    if not recipe.get("_own") or t.get("kind") != "subtitles" or not lines:
-        return caps
-    end = max(float(ln.get("to", 0.0)) for ln in lines) + 1.0
-    return [c for c in caps if float(c["start"]) < end]
+    """Transcribed subtitles in a recipe reel: none. The words a reference shows are copied from it, exactly,
+    where and when it shows them (exact_overlays); a transcript of its sound would put a second, often wrong,
+    version on screen (misspelt dialogue, misheard lyrics)."""
+    return []
 
 
 def label_lead(recipe: dict) -> str:
@@ -882,9 +971,17 @@ def reference_lines(recipe: dict) -> dict:
     """The reference's own text for the copywriter to model ours on: {"tease", "payoff", "title", "label"}.
     A reference that shows several payoff lines, or a label per shot, gives a list (up to 8)."""
     rows: dict = {}
-    for ln in (recipe.get("text") or {}).get("lines") or []:
+    t = recipe.get("text") or {}
+    exact = t.get("exact") or []
+    for ln in t.get("lines") or []:
         if str(ln.get("text") or "").strip():
-            rows.setdefault(ln.get("role") or "title", []).append(str(ln["text"]).strip())
+            txt = str(ln["text"]).strip()
+            if exact:  # the words exactly as the reference writes them (reftext), at about the same time
+                a, b = float(ln.get("from") or 0), float(ln.get("to") or 0)
+                best = max(exact, key=lambda e: min(b, e["to"]) - max(a, e["from"]))
+                if min(b, best["to"]) - max(a, best["from"]) > 0:
+                    txt = best["text"].replace("\n", " ")
+            rows.setdefault(ln.get("role") or "title", []).append(txt)
     return {k: (v[:8] if k == "label" or (k == "payoff" and len(v) > 1) else v[0]) for k, v in rows.items()}
 
 

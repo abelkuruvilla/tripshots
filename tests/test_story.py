@@ -146,6 +146,17 @@ def test_parallax_depth_estimate_and_shift():
     assert a.shape == img.shape and np.abs(a.astype(int) - b.astype(int)).mean() > 0.5
 
 
+def test_parallax_moves_a_subject_without_bending_it():
+    h, w = 600, 400
+    d = np.tile(np.linspace(0.1, 0.6, h, dtype=np.float32)[:, None], (1, w))      # the ground
+    yy, xx = np.mgrid[:h, :w]
+    person = ((xx - 200) / 50) ** 2 + ((yy - 300) / 140) ** 2 < 1
+    d[person] = 0.75 + 0.2 * (yy[person] - 160) / 280                             # nearer at the feet than the head
+    f = parallax.rigid_layers(d)
+    assert f[person].std() < 0.005 and d[person].std() > 0.04                    # one layer: shifted, not bent
+    assert abs(f[50, 20] - d[50, 20]) < 0.02 and abs(f[590, 20] - d[590, 20]) < 0.02  # the ground still slides
+
+
 def test_hook_rules():
     from tripshots.ai import _hook_rules
     assert _hook_rules("3 stops in Utah you can't skip", "list") > _hook_rules("Wanderlust vibes in paradise forever and ever", "list")

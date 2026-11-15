@@ -36,9 +36,14 @@ def _style(*recs):
     return st
 
 
-def _hold_recipe(own=True):
-    r = recipes.build(_measure(HOLD, aspect=1.78), {"format": "montage", "open": "person", "text": LYRICS},
-                      "https://www.instagram.com/reel/AAA/", 1)
+def _hold_recipe(own=True, exact=False):
+    card = {"format": "montage", "open": "person", "text": LYRICS}
+    if exact:  # its words as reftext copied them off the reference: one per sung word, before the turn
+        card["_exact"] = {"events": [{"t0": 0.4 + 0.5 * i, "t1": 0.85 + 0.5 * i, "text": w, "box": [0.4, 0.45, 0.6, 0.53],
+                                      "size": 0.08, "lines": 1, "color": [252, 236, 160]}
+                                     for i, w in enumerate(("WHEN", "I", "GET", "OLDER"))],
+                          "font": {"font": "gf:Oswald:700", "score": 0.8}}
+    r = recipes.build(_measure(HOLD, aspect=1.78), card, "https://www.instagram.com/reel/AAA/", 1)
     return {**r, "_own": own}
 
 
@@ -357,18 +362,16 @@ def test_text_overlays_do_what_the_reference_text_does():
     r = _hold_recipe()
     plan = _plan(r, [9.1, 0.6, 1.2, 0.8, 0.6, 0.8, 0.7, 2.3, 0.6, 0.7], {0: "hook", 1: "peak"})
     assert recipes.turn_time(plan) == 9.1 and plan["recipe"]["hold"] == 9.25 and plan["recipe"]["lens"][0] == 9.25
-    ov = recipes.text_overlays(plan, r, {"lines": SUNG}, {})
-    assert len(ov) == 17 and {o["type"] for o in ov} == {"caption"} and {o["recipe"] for o in ov} == {"lyric"}
+    assert recipes.text_overlays(plan, r, {"lines": SUNG}, {}) == []    # a transcript is never put on screen
+    rx = _hold_recipe(exact=True)
+    ov = recipes.text_overlays(plan, rx, {"lines": SUNG}, {})
+    assert [o["text"] for o in ov] == ["WHEN", "I", "GET", "OLDER"] and {o["recipe"] for o in ov} == {"lyric"}
     s = ov[0]["style"]
-    assert s["font"] == "anton" and s["uppercase"] and s["anim"] == "cut" and s["position"] == "center"
-    assert s["color"][0] > 240 and s["color"][2] < 200 and s["size"] > 120                 # big pale-yellow caps
-    assert max(o["start"] + o["duration"] for o in ov) <= 9.1 + 1e-6                       # none over the burst
-    # no transcript: the words the AI read off the reference's frames
-    assert [o["text"] for o in recipes.text_overlays(plan, r, None, {})] == ["WHEN", "I", "GET", "OLDER"]
-    # a song without words: hold a line instead of nothing
+    assert s["font"] == "gf:Oswald:700" and s["uppercase"] and s["anim"] == "cut" and s["y"] == 0.49
+    assert s["color"][0] > 240 and s["color"][2] < 200 and 40 < s["size"] < 60 and ov[0]["start"] == 0.4  # by width
+    # lyrics we can't copy: no line of our own over someone else's song
     silent = {**r, "text": {**r["text"], "lines": []}}
-    one = recipes.text_overlays(plan, silent, None, {"hook": "eleven days out west"})
-    assert [o["recipe"] for o in one] == ["tease"] and abs(one[0]["start"] + one[0]["duration"] - 9.1) < 1e-6
+    assert recipes.text_overlays(plan, silent, None, {"hook": "eleven days out west"}) == []
     # tease, then the payoff from the turn on
     tease = {**recipes.build(_measure(FLASH), {"text": {"kind": "tease", "look": "sans", "size": "small", "lines": [
         {"text": "this is", "from": 0, "to": 2, "role": "tease"}]}}, "t.mp4", 1), "_own": True}
@@ -550,7 +553,7 @@ def test_critic_checks_the_plan_against_its_reference():
     by = {f"S{i:03d}": _shot(i) for i in range(10)}
     rows = {k: (ok, fix) for k, ok, _w, _why, fix in recipes.checks(plan, by)}
     assert rows["opening_hold"] == (True, None) and rows["reference_text"][0] is False    # no words yet
-    plan["overlays"] = recipes.text_overlays(plan, r, {"lines": SUNG}, {})
+    plan["overlays"] = recipes.text_overlays(plan, _hold_recipe(exact=True), {"lines": SUNG}, {})
     assert all(ok for _k, ok, *_ in recipes.checks(plan, by))
     by["S000"] = _shot(0, kind="photo")                             # a photo can't be a 9 s opening
     rows = {k: (ok, fix) for k, ok, _w, _why, fix in recipes.checks(plan, by)}
@@ -667,7 +670,7 @@ def test_a_labels_recipe_names_each_shot_like_its_reference():
     assert [(o["text"], o["start"], o["duration"]) for o in ov] == [
         ("Yosemite", 0.1, 2.9), ("Cannon Beach", 3.0, 1.5), ("Washington", 6.0, 1.45)]
     assert all(o["type"] == "label" and o["recipe"] == "label" and o["lead"] == "Greetings From..." for o in ov)
-    assert ov[0]["shots"] == ["S000", "S001"] and ov[0]["style"]["fixed"] and ov[0]["style"]["colors"]
+    assert ov[0]["shots"] == ["S000", "S001"] and ov[0]["style"]["fixed"] and ov[0]["style"]["fill"] == "picture"
     assert "color" not in ov[0]["style"] and ov[0]["style"]["anim"] == "cut"
     plan["overlays"] = ov
     assert not recipes.labels_stale(plan)
@@ -742,16 +745,22 @@ def test_a_name_that_stays_put_sits_where_the_shots_leave_room():
     assert ov[0]["style"]["lead_size"] >= 0.5 * ov[0]["style"]["size"]
 
 
-def test_subtitles_stop_where_the_reference_stops_them():
+def test_a_recipe_reel_never_shows_transcribed_words():
     from tripshots import recipes
-    rec = {"_own": True, "text": {"kind": "subtitles", "lines": [{"text": "a", "from": 0.0, "to": 2.4},
-                                                                 {"text": "b", "from": 2.4, "to": 14.5}]}}
-    caps = [{"type": "caption", "text": "spoken", "start": 11.4, "duration": 2.8},
-            {"type": "caption", "text": "Show me", "start": 16.45, "duration": 2.1}]
-    assert [c["text"] for c in recipes.subtitled(rec, caps)] == ["spoken"]
-    assert len(recipes.subtitled({**rec, "_own": False}, caps)) == 2  # another sound: its own words decide
-    assert recipes.subtitled({"_own": True, "text": {"kind": "none"}}, caps) == []  # a voice it left bare
-    assert recipes.subtitled({"_own": True, "text": {"kind": "tease"}}, caps) == []  # its note is the words
+    caps = [{"type": "caption", "text": "misheard", "start": 1.0, "duration": 2.0}]
+    for kind in ("subtitles", "lyrics", "tease", "none"):
+        assert recipes.subtitled({"_own": True, "text": {"kind": kind}}, caps) == []
+    plan = {"duration": 10.0, "music": {"start": 0.0}, "segments": [{"out_start": 0.0, "dur": 10.0}]}
+    rec = {"_own": True, "duration": 10.0, "text": {"kind": "lyrics", "lines": [{"text": "guess", "from": 0, "to": 2}]}}
+    assert recipes.text_overlays(plan, rec, {"lines": [{"text": "wrong words", "start": 0, "end": 2}]}, {}) == []
+    rec["text"]["exact"] = [{"text": "lately", "from": 0.4, "to": 1.2, "x": 0.5, "y": 0.4, "size": 0.03,
+                             "lines": 1, "color": [250, 250, 250]}]
+    assert recipes.text_overlays(plan, rec, None, {}) == []          # no face like its lettering: no words
+    rec["text"]["font"] = "gf:Tinos:400"
+    got = recipes.text_overlays(plan, rec, None, {})
+    assert [o["text"] for o in got] == ["lately"] and got[0]["start"] == 0.4 and got[0]["style"]["y"] == 0.4
+    assert got[0]["style"]["font"] == "gf:Tinos:400"
+    assert recipes.text_overlays(plan, {**rec, "_own": False}, None, {}) == []   # another sound: not its words
 
 
 def test_an_unanswered_tease_trails_off_with_dots():

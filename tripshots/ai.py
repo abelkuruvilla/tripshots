@@ -619,13 +619,19 @@ def write_story_copy(backend: Backend, plan: dict, shots_by_id: dict, style: dic
                     "the reference payoff finishes the tease's sentence (\"this is\" -> \"the faroe islands\"), ours "
                     "finishes it too and reads as a sentence; when it answers or turns it, ours does that. Each line "
                     "is something a person would say: a payoff that stands alone names what the shots after it are "
-                    "(\"The gallery\", \"The camera roll\"), never a bare month, season or adjective (\"The October\").")
+                    "(\"The gallery\", \"The camera roll\"), never a bare month, season or adjective (\"The October\"). "
+                    "When the reference's own lines are true of any trip (they name none of its places: \"Money comes "
+                    "back.\" -> \"This age never does. Go live it.\"), use them word for word: they are the reel's "
+                    "voice, and a rewrite around one of our places is weaker.")
         elif kind == "title":
             more = ', "title": "..."'
             rule = ("- title: the one title of this reel, built like the reference title: the same device, the same "
                     "number of words give or take one, nothing added (a reference that is just a place and a year "
                     "gives just our place and our year; a place name gives our place name). True to the places and "
-                    "dates above.")
+                    "dates above. It says what this reel is to someone who sees only the title: our trip, a place or "
+                    "region on it, or the season of it. A reference title in another language or a word you don't "
+                    "recognise is a name for ITS trip: ours names our trip in English (\"West Coast\", \"Out West\"), "
+                    "never a lone verb or adjective (\"Touched\", \"Wander\").")
         elif kind == "labels" and facts:
             more = f', "labels": [{len(facts)} strings]'
             n_ref = len(ref["label"]) if isinstance(ref.get("label"), list) else 1

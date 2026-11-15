@@ -402,7 +402,7 @@ class _SegReader:
 
 # what an overlay's own `style` may set (the rest comes from the plan's text preset)
 OVERLAY_STYLE = ("font", "size", "uppercase", "anim", "position", "color", "line_gap", "exit", "legible",
-                 "colors", "fit", "fixed", "lead_font", "lead_size", "y")
+                 "colors", "fit", "fixed", "lead_font", "lead_size", "y", "x", "fill", "lead_color", "shadow")
 
 
 class TextTrack:

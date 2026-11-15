@@ -50,14 +50,18 @@ the code private, publish releases to a separate public repository and build the
 
 ## Release
 
-```sh
-python tools/set_version.py 0.2.0        # engine + app versions in one go
-git commit -am "Release 0.2.0" && git tag v0.2.0 && git push origin main v0.2.0
-```
+A tag is the whole release; nothing is run or committed locally. Any of these starts it:
 
-`release.yml` then builds and smoke-tests the engine on 4 runners, signs and uploads it with `engine.json`, builds
-the app (.dmg for Apple Silicon and Intel, .msi/.exe, .deb/.rpm/.AppImage) with `latest.json` for app updates,
-and publishes the release.
+- GitHub > Actions > release > **Run workflow**, version `0.2.0` (tags the selected branch as `v0.2.0`)
+- GitHub > Releases > **Draft a new release**, new tag `v0.2.0` on `main`, Publish
+- `git tag v0.2.0 && git push origin v0.2.0`
+
+`release.yml` takes the version from the tag and writes it into the engine and the app inside CI
+(`tools/set_version.py`), builds and smoke-tests the engine on 4 runners, signs and uploads it with `engine.json`,
+builds the app (.dmg for Apple Silicon and Intel, .msi/.exe, .deb/.rpm/.AppImage) with `latest.json` for app
+updates, and publishes the release with generated notes. About 30 minutes. Re-running it for the same version
+rebuilds and replaces the files. An engine `X.Y.Z` declares `min_app: X.Y.0`, so patch releases of either side work
+together; change the minor version when the engine API changes.
 
 ### Secrets (repository Settings > Secrets and variables > Actions)
 

@@ -1,7 +1,10 @@
 name: release
 
-# Push a tag vX.Y.Z (after `python tools/set_version.py X.Y.Z`): builds the engine and the desktop app for macOS
-# (Apple Silicon + Intel), Windows and Linux, signs them, and publishes one GitHub release with:
+# One tag does the whole release. Either push a tag (git tag v0.1.0 && git push origin v0.1.0, or create it on
+# GitHub with "Draft a new release"), or run this workflow from the Actions tab and type the version. The version
+# comes from the tag and is written into the engine and the app inside CI: nothing to bump or commit beforehand.
+# It builds the engine and the desktop app for macOS (Apple Silicon + Intel), Windows and Linux, signs them, and
+# publishes one GitHub release with:
 #   tripshots-engine-<v>-<platform>.tar.gz|zip (+ .sig)   the engine the app downloads on first run / updates
 #   engine.json                                          the manifest the app reads (releases/latest/download/)
 #   TripShots_<v>_*.dmg / .msi / .exe / .deb / .rpm / .AppImage, latest.json (the app's own updates)
@@ -16,15 +19,19 @@ on:
     tags: ["v*.*.*"]
   workflow_dispatch:
     inputs:
-      tag:
-        description: "existing tag to (re)build, e.g. v0.2.0"
+      version:
+        description: "version to release, e.g. 0.1.0 (tags the selected branch as v0.1.0, or rebuilds that tag)"
         required: true
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event.inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
 env:
-  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  TAG: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
 
 jobs:
   prepare:
@@ -34,21 +41,32 @@ jobs:
       release_id: ${{ steps.rel.outputs.id }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
       - id: v
-        name: versions agree with the tag
+        name: the version is the tag
         run: |
           V="${TAG#v}"
-          python tools/set_version.py --check "$V"
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::tag $TAG isn't vMAJOR.MINOR.PATCH"; exit 1; }
           echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: signing key is set up
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::add the TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets (desktop/README.md)"; exit 1; }
+      - name: tag (when started from the Actions tab)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$TAG" -f sha="${{ github.sha }}"
+          fi
       - id: rel
         name: draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --draft --title "TripShots $TAG" --notes "See CHANGELOG.md."
+            gh release create "$TAG" --draft --verify-tag --title "TripShots $TAG" --generate-notes
           fi
           echo "id=$(gh release view "$TAG" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
 
@@ -74,6 +92,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: stamp the version
+        run: python tools/set_version.py ${{ needs.prepare.outputs.version }}
       - name: install the engine and PyInstaller
         run: |
           python -m pip install --upgrade pip
@@ -169,6 +189,9 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
+      - name: stamp the version
+        shell: bash
+        run: $(command -v python3 || command -v python) tools/set_version.py ${{ needs.prepare.outputs.version }}
       - run: npm ci
         working-directory: desktop
       - uses: tauri-apps/tauri-action@v0

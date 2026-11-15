@@ -17,7 +17,8 @@ def main() -> None:
     ap.add_argument("--version", required=True)
     ap.add_argument("--repo", required=True, help="owner/name of the repository the release is on")
     ap.add_argument("--dir", required=True, type=Path)
-    ap.add_argument("--min-app", default=None, help="oldest app version that understands this engine")
+    ap.add_argument("--min-app", default=None,
+                    help="oldest app version that understands this engine (default: this minor version, X.Y.0)")
     ap.add_argument("--notes", default="")
     ap.add_argument("--out", type=Path, default=Path("engine.json"))
     a = ap.parse_args()
@@ -32,7 +33,9 @@ def main() -> None:
             "sha256": meta["sha256"], "size": meta["size"], "signature": sig.read_text().strip()}
     if not platforms:
         raise SystemExit(f"no engine archives in {a.dir}")
-    man = {"version": a.version, "min_app": a.min_app or a.version, "notes": a.notes, "platforms": platforms}
+    # an engine patch release works with any app of the same minor version: the API only changes in a minor one
+    min_app = a.min_app or ".".join(a.version.split(".")[:2] + ["0"])
+    man = {"version": a.version, "min_app": min_app, "notes": a.notes, "platforms": platforms}
     a.out.write_text(json.dumps(man, indent=2))
     print(f"{a.out}: engine {a.version} for {', '.join(sorted(platforms))}")
 

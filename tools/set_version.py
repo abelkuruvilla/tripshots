@@ -1,8 +1,11 @@
 """Set one version everywhere a release reads it: the engine (pyproject, tripshots/__init__.py) and the desktop app
 (package.json, Cargo.toml, tauri.conf.json).
 
-    python tools/set_version.py 0.2.0          # then commit, tag v0.2.0 and push the tag: CI builds the release
-    python tools/set_version.py --check 0.2.0  # CI: fail when anything disagrees with the tag
+The release workflow runs this with the version from the tag, so a release needs nothing but the tag; the versions
+committed in the repository are only what local builds call themselves.
+
+    python tools/set_version.py 0.2.0
+    python tools/set_version.py --check 0.2.0   # fail when anything disagrees
 """
 from __future__ import annotations
 

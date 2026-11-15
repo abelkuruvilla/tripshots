@@ -52,6 +52,4 @@ jobs:
       - name: shell compiles and its tests pass
         working-directory: desktop/src-tauri
         run: cargo test --locked
-      - name: versions agree
-        run: python3 tools/set_version.py --check "$(python3 -c "import json; print(json.load(open('desktop/package.json'))['version'])")"
 

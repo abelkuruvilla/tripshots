@@ -375,13 +375,16 @@ class Gemini:
             cfg = types.GenerateContentConfig(response_mime_type="application/json", response_json_schema=SCHEMA)
             last = None
             attempt = waits = 0
+            skip_pace = False  # True after dropping a missing/quota model: try the next one at once
             while attempt < 3:
                 models = list(self.models)
                 if not models:
                     raise GeminiUnavailable("no Gemini model works for this key")
                 busy = len(models) > 1 and time.time() < self._busy_until
                 model = models[1] if busy else models[0]
-                self.pacer.wait()
+                if not skip_pace:
+                    self.pacer.wait()
+                skip_pace = False
                 try:
                     r = self.client.models.generate_content(model=model, contents=[up, PROMPT.format(duration=duration)],
                                                             config=cfg)
@@ -397,6 +400,7 @@ class Gemini:
                         raise GeminiUnavailable(f"the Gemini key was refused ({str(e)[:100]})")
                     if _gone(e):
                         self._drop(model, str(e))  # raises when none are left
+                        skip_pace = True
                         continue  # straight to the next model, no wait, no attempt used
                     q = _quota(e)
                     if q and (q["daily"] or q["limit"] == 0):
@@ -408,6 +412,7 @@ class Gemini:
                                 "run again after it resets (midnight Pacific time) to watch the rest" if q["daily"]
                                 else f"{model} is {why}")
                         self._drop(model, why)
+                        skip_pace = True
                         continue
                     if q:  # requests or tokens a minute: everyone waits, then goes slower
                         waits += 1

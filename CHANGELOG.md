@@ -91,6 +91,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **Loudness:** a peaky song that the limiter held down is lifted into its remaining headroom, so the master lands at -14 LUFS instead of around -16.
 
 ### Fixed
+- **Gemini watch** switches to the next model at once when one answers "not found" or its daily quota is used up, instead of waiting on the request pacer first.
 - **Mastering a reel whose encode overshot its peaks** turned the whole mix down and stopped there, leaving it around -16 LUFS; it now lowers the limiter's ceiling instead and keeps -14 LUFS. Music turned down in the editor is made up in the master rather than making the reel quieter.
 - **Editing a plan:** swapping, moving or exchanging shots keeps each slot's place in the story (`role`, the opening hold), reframes the new shot for a letterbox picture, and drops an in-camera whip that belonged to the old footage (which also left a whoosh on a plain cut).
 - Drone clips with a clock but no time zone were sorted hours away from the phone footage of the same moment.

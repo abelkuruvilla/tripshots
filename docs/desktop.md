@@ -12,9 +12,10 @@ Download the installer for your computer from the latest release:
 | | File |
 |---|---|
 | Mac (Apple Silicon) | `TripShots_<version>_aarch64.dmg` |
-| Mac (Intel) | `TripShots_<version>_x64.dmg` |
 | Windows | `TripShots_<version>_x64-setup.exe` or `.msi` |
 | Linux | `.deb`, `.rpm` or `.AppImage` |
+
+Intel Macs aren't supported: libraries the engine needs (numba, onnxruntime) no longer ship for them.
 
 On first launch, **Download the engine** fetches it (about 200 MB; it is checked against TripShots' signature before
 it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Windows and Linux engines include it.

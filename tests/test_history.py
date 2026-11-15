@@ -117,3 +117,12 @@ def test_the_payoff_of_a_tease_and_the_long_slots_get_the_best_shots():
              {"role": "build", "dur": 0.3}]
     story._long_slots_first(order, [1, 2, 3], slots)
     assert [o and o["id"] for o in order] == [None, "b", "a", "c"]            # (another part of the story stays)
+
+
+def test_a_long_series_still_remembers_its_first_reels(tmp_path, monkeypatch):
+    _made(tmp_path, monkeypatch, "first.mp4")                       # shows /x/0.mp4 .. /x/3.mp4
+    for k in range(30):                                               # thirty more reels of other shots
+        _made(tmp_path, monkeypatch, f"r{k}.mp4", _plan((f"/y/{k}.mp4", 0.0, 2.0, "hook")))
+    shots = [_shot(i) for i in range(4)] + [_shot(100 + k, src=f"/y/{k}.mp4") for k in range(30)]
+    seen = history.shown(shots)
+    assert seen["shot"].get("S000", 0) > 0 and len(seen["reels"]) == 31

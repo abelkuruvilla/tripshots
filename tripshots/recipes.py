@@ -670,10 +670,9 @@ def text_overlays(plan: dict, recipe: dict, words_rel: dict | None, copy: dict |
     if kind in ("lyrics", "subtitles"):
         # sung or spoken words go on screen only as the reference shows them on its own sound: copied, never
         # transcribed (a transcript of a song is too often wrong, and wrong lyrics ruin a reel)
-        out = exact_overlays(plan, recipe) if recipe.get("_own") else []
-        if out or kind == "subtitles" or not recipe.get("_own") or not (hook or copy.get("hook")):
-            return out
-        kind = "tease"                      # its own sound, no words to copy: hold a line instead
+        # its own sound and words we can't copy (lettering nothing matches): none, not a line of our own over
+        # someone else's lyrics
+        return exact_overlays(plan, recipe) if recipe.get("_own") else []
     if kind == "labels":
         return label_overlays(plan, recipe, label_names(facts or [{} for _ in plan["segments"]],
                                                         copy.get("labels")))
@@ -712,6 +711,15 @@ def text_overlays(plan: dict, recipe: dict, words_rel: dict | None, copy: dict |
     line = hook or copy.get("tease") or copy.get("hook")
     if not line:
         return out
+    exact = t.get("exact") or []
+    kept = copy.get("payoff")
+    mine = {_plain(x) for x in [line] + (kept if isinstance(kept, list) else [kept]) if x}
+    if recipe.get("_own") and exact and all(_plain(e["text"]) in mine for e in exact):
+        # the copywriter kept ALL of the reference's own words (they fit any trip): show them as and when it does.
+        # (one kept line is not enough: "this is" then the reference's "the faroe islands" would be copied too)
+        got = exact_overlays(plan, recipe)
+        if got:
+            return [{**o, "recipe": "lyric"} for o in got]
     pay = copy.get("payoff")
     pay = [p for p in (pay if isinstance(pay, list) else [pay]) if p]
     ref_pay = sorted((ln for ln in ref if ln.get("role") == "payoff"), key=lambda ln: float(ln["from"]))
@@ -753,6 +761,10 @@ def trail_off(line: str) -> str:
     if words and t[-1].isalnum() and words[-1].lower().strip(",") in DANGLING:
         return t.rstrip(",") + "..."
     return line
+
+
+def _plain(s: str) -> str:
+    return " ".join("".join(c for c in str(s).lower() if c.isalnum() or c.isspace()).split())
 
 
 def exact_overlays(plan: dict, recipe: dict) -> list[dict]:

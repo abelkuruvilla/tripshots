@@ -369,10 +369,9 @@ def test_text_overlays_do_what_the_reference_text_does():
     s = ov[0]["style"]
     assert s["font"] == "gf:Oswald:700" and s["uppercase"] and s["anim"] == "cut" and s["y"] == 0.49
     assert s["color"][0] > 240 and s["color"][2] < 200 and 40 < s["size"] < 60 and ov[0]["start"] == 0.4  # by width
-    # a song without words: hold a line instead of nothing
+    # lyrics we can't copy: no line of our own over someone else's song
     silent = {**r, "text": {**r["text"], "lines": []}}
-    one = recipes.text_overlays(plan, silent, None, {"hook": "eleven days out west"})
-    assert [o["recipe"] for o in one] == ["tease"] and abs(one[0]["start"] + one[0]["duration"] - 9.1) < 1e-6
+    assert recipes.text_overlays(plan, silent, None, {"hook": "eleven days out west"}) == []
     # tease, then the payoff from the turn on
     tease = {**recipes.build(_measure(FLASH), {"text": {"kind": "tease", "look": "sans", "size": "small", "lines": [
         {"text": "this is", "from": 0, "to": 2, "role": "tease"}]}}, "t.mp4", 1), "_own": True}

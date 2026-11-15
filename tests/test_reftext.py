@@ -52,3 +52,18 @@ def test_ink_colour_reads_the_letters_not_the_ground():
     img[20:40, 31:170:12] = 255
     img[20:40, 32:170:12] = 255
     assert reftext.ink_colour(img) == [255, 255, 255]
+
+
+def test_a_kept_tease_does_not_copy_the_references_place():
+    plan = {"duration": 8.0, "music": {"start": 0.0}, "overlays": [],
+            "segments": [{"shot_id": f"S{i}", "out_start": i * 1.0, "dur": 1.0, "role": "hook" if i == 0 else "build"}
+                         for i in range(8)]}
+    rec = {"_own": True, "duration": 8.0, "shots": [1.0] * 8, "text": {
+        "kind": "tease", "font": "gf:Outfit:800", "lines": [{"text": "this is", "from": 0, "to": 4, "role": "tease"},
+                                                             {"text": "the faroe islands", "from": 4, "to": 8, "role": "payoff"}],
+        "exact": [{"text": "this is", "from": 0.0, "to": 3.9, "x": 0.5, "y": 0.5, "size": 0.02, "lines": 1},
+                  {"text": "the faroe islands", "from": 3.9, "to": 7.7, "x": 0.5, "y": 0.5, "size": 0.02, "lines": 1}]}}
+    got = recipes.text_overlays(plan, rec, None, {"tease": "this is", "payoff": "the american west"})
+    assert "the faroe islands" not in [o["text"] for o in got] and "the american west" in [o["text"] for o in got]
+    same = recipes.text_overlays(plan, rec, None, {"tease": "this is", "payoff": "the faroe islands"})
+    assert [o["text"] for o in same] == ["this is", "the faroe islands"]          # all of its words kept: copied

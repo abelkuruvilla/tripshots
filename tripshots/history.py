@@ -19,8 +19,9 @@ from .config import HOME
 from .util import log, read_json, write_json
 
 STORE = HOME / "history.json"
-KEEP = 60          # reels remembered
-LOOK_BACK = 12     # earlier reels of the same footage that count
+KEEP = 300         # reels remembered
+LOOK_BACK = KEEP   # earlier reels of the same footage that count: all of them (a series of 30 reels from one trip
+                   # forgot its first reels after 12 and kept going back to the same best shots)
 LEAD_ROLES = ("hook", "peak", "ending")
 LEAD, BODY, SAME_MOMENT, CAP = 1.0, 0.5, 0.7, 2.0
 

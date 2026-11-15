@@ -37,6 +37,10 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **The critic keeps a place-by-place reel in order:** its swaps stay inside a chapter.
 - **Captions and lines stick to the facts:** the Instagram caption never puts a place in the wrong state, what it says about the light is said of the right shot, and it is written again when the critic changes the shots. A tease's answer names what the reel shows, and a line that trails off does so with three dots.
 - **Colour:** a grade at most doubles a flat scene's own contrast (haze and fog used to come out harsh).
+- **A long series uses the whole trip.** The shown-before memory only counted the last 12 reels, so a series of 30 reels from one trip forgot its first reels and went back to the same top-scored clips (31 reels used 294 of 6,770 usable shots; the later reels were almost all repeats). Every remembered reel of the same footage now counts (up to 300).
+- **A universal note is shown as written.** When the copywriter keeps all of a reference's own words (they fit any trip), the reel shows them exactly as and when the reference does; keeping one line ("this is") no longer copies the rest ("the faroe islands").
+- **No line of our own over someone else's lyrics:** a lyrics reference whose words can't be copied gets no text.
+- **Loudness:** after lifting a quiet master, peaks that AAC pushes over -1 dBTP are trimmed again.
 - **Parallax no longer bends people.** Photo parallax moved every pixel by its own depth, so a person (nearer at the feet than the head) was sheared. Things that stand out in front now move as one flat layer; only the background just outside them stretches.
 - **Titles name the trip:** a title modelled on a reference title in another language (\"Engotta\") is no longer a lone word like \"Touched\"; it names our trip, place or season.
 - **Balanced lines:** a title that needs two lines splits them evenly ("The urge to / keep driving."), never one word hanging under a full line.

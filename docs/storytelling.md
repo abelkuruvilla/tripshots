@@ -104,7 +104,8 @@ Pick one with `make --recipe N`, or `--recipe off` for the style's averaged prof
 
 Every rendered reel is noted in `~/.tripshots/history.json` (which shots it showed, and which opened it). The next
 `make` from the same footage marks those shots down, the opening shot most, so five reels from one trip are five
-different reels rather than the same best ten shots in a new order. A shot from the same moment as one already shown
+different reels rather than the same best ten shots in a new order. Every earlier reel counts, however long the
+series (up to 300 remembered reels). A shot from the same moment as one already shown
 counts as (nearly) shown. Re-rendering a reel replaces its own note, and a reel whose file you deleted is forgotten.
 `make --fresh off` (style `shots.fresh: 0`) ignores the memory.
 

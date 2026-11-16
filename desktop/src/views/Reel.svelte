@@ -5,7 +5,8 @@
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import { app, api, media, startJob, tc } from "../lib/store.svelte.js";
   import Icon from "../lib/Icon.svelte";
-  import { ed, load, edit, undo, redo, setExpert, frames, select } from "./reel/editor.svelte.js";
+  import { ed, load, edit, undo, redo, setExpert, frames, select, loadNotes } from "./reel/editor.svelte.js";
+  import NotesPanel from "./reel/NotesPanel.svelte";
   import TextPanel from "./reel/TextPanel.svelte";
   import PostPanel from "./reel/PostPanel.svelte";
   import Timeline from "./reel/Timeline.svelte";
@@ -27,12 +28,12 @@
     ed.now = 0;
     ed.preview = false;
     ed.tab = ed.expert ? "shot" : "text";
-    load().then(() => (ed.preview = !ed.reel?.video));
+    load().then(() => ((ed.preview = !ed.reel?.video), loadNotes()));
   });
   let reel = $derived(ed.reel);
   let tabs = $derived(ed.expert
-    ? [["shot", "Shot"], ["text", "Text"], ["colour", "Colour"], ["sound", "Sound"], ["post", "Post"]]
-    : [["text", "Text"], ["colour", "Colour"], ["post", "Post"]]);
+    ? [["shot", "Shot"], ["text", "Text"], ["colour", "Colour"], ["sound", "Sound"], ["notes", "Notes"], ["post", "Post"]]
+    : [["text", "Text"], ["colour", "Colour"], ["notes", "Notes"], ["post", "Post"]]);
 
   // a render of this plan finished: show the new video
   let lastRender = null;
@@ -43,6 +44,20 @@
       lastRender = done.id;
     }
   });
+  // notes were turned into edits (and rendered): show the result
+  let lastRevise = null;
+  $effect(() => {
+    const done = app.jobs.find((j) => j.kind === "revise" && j.state === "done" && reel && j.label === reel.name + ".plan.json");
+    if (done && done.id !== lastRevise) {
+      if (lastRevise !== null) load().then(() => ((bust = Date.now()), (ed.preview = false), (ed.tab = "notes")));
+      lastRevise = done.id;
+    }
+  });
+  function noteHere() {
+    video?.pause();
+    ed.tab = "notes";
+    ed.noting = true;
+  }
 
   // the playhead follows the video smoothly while it plays
   $effect(() => {
@@ -192,6 +207,9 @@
         ed.sel = null;
         edit({ op: "delete", segment: sel.slot });
       }
+    } else if (e.key.toLowerCase() === "n" && !mod) {
+      e.preventDefault();
+      noteHere();
     } else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && el?.type !== "range") {
       e.preventDefault();
       seek(ed.now + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 1 : 1 / 30));
@@ -260,6 +278,7 @@
             <button role="radio" aria-checked={!ed.preview} disabled={!reel.video} onclick={() => (ed.preview = false)}><Icon name="play" size={14} /> Last render</button>
           </div>
           <span class="meta now">{tc(ed.now)} / {tc(reel.duration)}</span>
+          <button class="btn sm ghost" onclick={noteHere} title="Pause and note what should change here (N)"><Icon name="message" size={14} /> Note</button>
           <span class="quiet small hint-line">{ed.preview ? (ed.split ? "Drag the divider to compare" : selText ? "Click the picture to place the text" : "A still of your edit, without motion") : reel.stale ? "Older than your edits" : ""}</span>
         </div>
       </div>
@@ -269,7 +288,7 @@
         <div class="tabs" role="tablist" aria-label="Edit" bind:this={tabsEl} onkeydown={tabKeys}>
           {#each tabs as [id, label]}
             <button role="tab" id={`tab-${id}`} aria-selected={ed.tab === id} aria-controls="tabpanel" tabindex={ed.tab === id ? 0 : -1}
-                    onclick={() => (ed.tab = id)}>{label}</button>
+                    onclick={() => (ed.tab = id)}>{label}{#if id === "notes" && ed.notes.length} <span class="count">{ed.notes.length}</span>{/if}</button>
           {/each}
         </div>
         <div class="pane" id="tabpanel" role="tabpanel" aria-labelledby={`tab-${ed.tab}`}>
@@ -277,6 +296,7 @@
           {:else if ed.tab === "text"}<TextPanel />
           {:else if ed.tab === "colour"}<ColourPanel />
           {:else if ed.tab === "sound"}<SoundPanel />
+          {:else if ed.tab === "notes"}<NotesPanel onseek={seek} pause={() => video?.pause()} />
           {:else}<PostPanel />{/if}
         </div>
       </aside>
@@ -285,7 +305,7 @@
     <section class="tl" aria-label="Timeline">
       <Timeline onseek={seek} onpick={pick} />
       <p class="quiet keys">
-        <kbd>Space</kbd> play · <kbd>⌘Z</kbd> undo · <kbd>⌫</kbd> remove · <kbd>←</kbd><kbd>→</kbd> a frame{#if ed.expert} · <kbd>S</kbd> split · drag a shot to move it, its edge to change its length{/if}
+        <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>⌘Z</kbd> undo · <kbd>⌫</kbd> remove · <kbd>←</kbd><kbd>→</kbd> a frame{#if ed.expert} · <kbd>S</kbd> split · drag a shot to move it, its edge to change its length{/if}
       </p>
     </section>
   {:else if !ed.error}
@@ -360,6 +380,7 @@
 
   .inspector { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .tabs { padding: 0 8px; flex: none; }
+  .count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 600; }
   .pane { flex: 1; min-height: 0; overflow: auto; }
 
   .tl { flex: none; }

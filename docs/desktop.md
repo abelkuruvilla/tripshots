@@ -49,6 +49,11 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
     **Use on every shot**. The look strip filters built-in looks, yours and each LUT pack; **More looks** adds your
     own LUT files (`.cube`, HaldCLUT images, zips) or fetches a free pack. **Hold to compare** (or hold Space on it) shows the shot as filmed; **Before and after**
     splits the viewer between the shot as filmed and your edit, with a divider to drag (or move with ← →).
+  - **Notes**: watch the reel, and where something is off press **N** (or **Note** under the viewer): it pauses
+    and you say what you see ("too dark", "swap this for the canyon", "the words cover her face"). Each note is
+    pinned to that moment (a dot on the timeline, a still in the list) and kept until you **Send** them all at
+    once: the reel is edited to match (`tripshots revise`) and rendered again, and the tab then says what was done
+    for each note.
   - **Post**: what to upload and which sound to add, then the caption, with the length of its first line (about
     125 characters show before "more"). **Write it for reach** writes the post (`tripshots caption`): a hook
     first line that names the place, search keywords worked into the words (Instagram search reads captions),

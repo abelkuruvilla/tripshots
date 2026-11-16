@@ -20,4 +20,4 @@ export function steps(kind, log = [], state = "running") {
 }
 
 export const kindName = { make: "Make", render: "Render", ask: "Ask", learn: "Learn a style", find: "Find footage", trips: "Trips",
-  music: "Sound", qa: "Check", analyze: "Analyse", discover: "People", caption: "Caption", looks: "Looks" };
+  music: "Sound", qa: "Check", analyze: "Analyse", discover: "People", caption: "Caption", looks: "Looks", revise: "Notes" };

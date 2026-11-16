@@ -6,6 +6,40 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **The grid trend.**
+  - A fine grid of light lines over the whole reel (plan `grid`).
+  - The `cells` transition fills the next shot in cell by cell, spreading from one spot, with soft colour blocks on the way.
+  - A photo wall (`motion.mosaic`): mid-reel, the cells round you fill with pictures of other moments of the trip, one per moment, hold, and clear again; the cells you stand in stay clear.
+  - The new `grid-mosaic` style puts it together, in 4:3 with an 8x6 grid like the trend.
+- **4:3, 4:5 and square reels.** `--orientation 4:3` (1440x1080), `4:5` (1080x1350) or `1:1` (1080x1080), or style `frame.output`: the picture fills that shape.
+- **`make --light golden|sunset|blue|day|night`** holds a reel (and its photo wall) to shots in that light, from what the AI saw in each shot. It prefers them instead when too few are.
+- Styles without the story planner also use one shot per landmark, and the photo wall shows each landmark once and none the reel already shows.
+- **Masked reveals on the beat, and a style built on them.**
+  - Three new transitions: `split` (a line swings round a corner, 45° on each beat), `vsplit` (a V opens from the bottom or top edge) and `iris` (a circle grows from the middle with a soft rim, a ripple and a glow).
+  - The line and the V snap on every beat and hold in between, with a thin white edge, the way CapCut masking tutorials keyframe them.
+  - The new `mask-reveal` style puts one on every cut (line reveals, then V reveals, then circles) via style `transitions.order` and `transitions.beats`.
+  - Also available in the app's Shot tab and through `edit_plan` `transition`.
+- **Paper-shape cuts and colour that blooms in.**
+  - Three more transitions build the next shot from pieces, each a cream paper block before the picture shows through: `slats`, `stripes` and `diamond`.
+  - `motion.colour_in` makes each shot arrive in black and white and bloom into colour.
+  - `frame` builds the next shot as a centred window, then panels round it, with thin gaps still showing the old shot, until it snaps whole.
+  - `motion.silhouette` flashes the people in a shot paper-white for two frames as it lands. Only upright figures are used, so a car or a rock never flashes.
+  - The new widescreen `shape-cut` style uses all of these.
+  - The stutter check no longer counts the frames inside transitions.
+- **Cut to the song as it is, not to a metronome.**
+  - Every song is read for where it has a beat to cut on. Beatless stretches (a pad intro, an ambient bridge, a quiet outro) hold their shots longer, melt them together with soft dissolves and don't pulse; segment `beatless`.
+  - The song's climaxes are found (loudness, attack and brightness rising together) and the payoff goes on the biggest one. When the song goes quiet just before it, the shot before the payoff holds that breath and cuts cleanly on the hit (segment `breath`). The build into it shows something new every 1 to 1.5 s.
+  - A reel speaks in at most three kinds of transition.
+- **Movement that carries across every cut.** The camera at the end of each shot and the start of the next is measured. A pan left cut into a pan right, a push-in into a pull-back, or a fast move that stops dead is fixed where it can be: a Ken Burns move or a pan follows the camera, or a clip starts a moment earlier or later. Plan `continuity` lists what still jars, and the critic checks it.
+- **The editor's habits, learned.**
+  - `learn` measures where the references put a cut against the beat (a frame early, on the off-beat) and copies a clear habit; the beat check reports the reel's own offset.
+  - It fits the references' camera moves to named eases; Ken Burns moves and pans follow the most common one (style and segment `ease`).
+- **A critic that works in rounds.** Each round a fresh AI reviewer marks what is wrong as a blocker (fixed) or polish (noted). The next round first checks the changes with before/after proof and undoes any that made the reel worse. It stops when nothing blocks, when the list stops shrinking, or after `story.critic_rounds` rounds (default 3; the last only checks).
+- **Notes on the finished reel.** `tripshots revise PLAN --note "12.3: too dark"`, MCP `revise_reel`, and the app's **Notes** tab (press N: it pauses, you say what you see, pins show on the timeline, send them together). The AI turns them into safe edits with a still of each moment (plain rules without an AI), renders again and says what it did for each note (`NAME.revise.json`).
+- **More checks after every render.** `flash` (a stray bright frame), `cut_light` (a jarring brightness jump across a hard cut), `stutter` (repeated frames in a moving shot). A render that writes no new file now stops with an error instead of leaving the old video in place.
+- **Reference reels recorded off a phone screen.** `learn` and `clone` cut the reel out of the phone's interface (keeping its own letterbox) and fix phase-cancelled stereo before measuring.
+- **Subtitles in groups the eye takes in:** a long line is split into 2-3 words when said fast, up to 6 when slow, only while each group stays long enough to read.
+- **Posting.** `tripshots post NAME.mp4 --platforms instagram,tiktok [--at ... --tz ...] [--send]` through Upload-Post. It is a dry run unless `--send`, takes only reels whose checks passed, and never sends the same post twice. MCP `post_reel`.
 - **Grading parts of the frame, like a colourist.** Each shot gets layers after the primary grade, each with its own exposure, contrast, saturation, warmth, tint and hue:
   - Regions: sky (above the skyline, clouds included), subject (found in the frame from faces or a quick cut-out), skin, greens, water, ground (a graduated filter) and edges (a relight around the subject).
   - The AI colourist looks at each frame and proposes what it needs; without an AI, rules hold back bright skies, lift people in shade and ease the edges down.

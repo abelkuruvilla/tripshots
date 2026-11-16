@@ -44,7 +44,7 @@ def cmd_make(a):
                        "speed_up": a.speed_up, "drop_speed": a.drop_speed, "smooth": a.slowmo_smooth,
                        "format": a.format, "arc": a.arc, "captions": a.captions, "critic": a.critic,
                        "parallax": a.parallax, "recipe": a.recipe, "orientation": a.orientation, "fresh": a.fresh,
-                       "text_motion": a.text_motion, "name": a._label},
+                       "light": a.light, "text_motion": a.text_motion, "name": a._label},
                look=a.look, grade_strength=a.grade_strength, route_map=a.route_map, sound=sound_args(a))
     print(json.dumps(res, indent=2))
 
@@ -266,6 +266,21 @@ def cmd_qa(a):
 def cmd_caption(a):
     from .social import write
     print(json.dumps(write(Path(a.plan), a.tone, a.extra), indent=2, ensure_ascii=False))
+
+
+def cmd_revise(a):
+    from .revise import parse_note, revise
+    notes = [parse_note(n) for n in a.note or []]
+    if a.notes_json:
+        src = Path(a.notes_json).read_text() if Path(a.notes_json).is_file() else a.notes_json
+        notes += [{"t": float(n["t"]), "text": str(n["text"])} for n in json.loads(src)]
+    print(json.dumps(revise(Path(a.plan), notes, a.backend, render=not a.no_render), indent=2, ensure_ascii=False))
+
+
+def cmd_post(a):
+    from .post import post
+    res = post(Path(a.video), a.platforms.split(","), a.at, a.tz, a.title, send=a.send, force=a.force, again=a.again)
+    print(json.dumps({k: v for k, v in res.items() if k != "key"}, indent=2, ensure_ascii=False))
 
 
 def cmd_skills(a):
@@ -576,10 +591,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="a style learned from several reels keeps each one's recipe (its cut, picture shape and text). "
                         "auto (default): the recipe of the reel whose sound you use, else the one that fits the song; "
                         "N: the N-th reference's; off: the style's average")
-    m.add_argument("--orientation", choices=["auto", "vertical", "horizontal"],
+    m.add_argument("--orientation", choices=["auto", "vertical", "horizontal", "4:3", "4:5", "1:1"],
                    help="shape of the file. auto (default): upright 1080x1920, or horizontal 1920x1080 when the "
                         "style or recipe is widescreen or the footage only works wide (no black bars); "
-                        "vertical: always upright (a wide picture sits in a band); horizontal: always 1920x1080")
+                        "vertical: always upright (a wide picture sits in a band); horizontal: always 1920x1080; "
+                        "4:3 (1440x1080), 4:5 (1080x1350), 1:1 (1080x1080): the picture fills that shape")
+    m.add_argument("--light", choices=["golden", "sunset", "blue", "day", "night", "any"],
+                   help="only shots in this light (golden: golden hour, sunset and sunrise; blue: blue hour and night; "
+                        "day: morning to afternoon), the photo wall too; when too few are, they are preferred instead")
     m.add_argument("--fresh", choices=["on", "off"],
                    help="on (default): shots your earlier reels of this footage showed are marked down, and this "
                         "reel opens and ends on something else; off: the best shots, whatever was posted before")
@@ -663,6 +682,29 @@ def build_parser() -> argparse.ArgumentParser:
     cp.add_argument("--tone", help="the voice, e.g. 'funny, short'")
     cp.add_argument("--extra", help="anything the caption should mention or do")
     cp.set_defaults(fn=cmd_caption)
+
+    rv = sub.add_parser("revise", help="notes on a finished reel, each pinned to a time (\"12.3: too dark here\"), "
+                                       "turned into edits by the AI (plain rules without one), then rendered again")
+    rv.add_argument("plan")
+    rv.add_argument("--note", action="append", help="TIME: what to change, e.g. \"12.3: swap this for the canyon\" "
+                                                     "(repeat for more)")
+    rv.add_argument("--notes-json", help="notes as JSON [{\"t\": 12.3, \"text\": \"...\"}] (or a file holding it)")
+    rv.add_argument("--no-render", action="store_true", help="edit the plan only")
+    rv.add_argument("--backend", help="AI backend: auto|claude-cli|api|minimax|none")
+    rv.set_defaults(fn=cmd_revise)
+
+    po = sub.add_parser("post", help="post a finished reel (now or at a set time) through Upload-Post; a dry run "
+                                     "unless --send (needs UPLOAD_POST_KEY and UPLOAD_POST_USER)")
+    po.add_argument("video", help="NAME.mp4 (or its NAME.plan.json)")
+    po.add_argument("--platforms", default="instagram", help="comma-separated: instagram,tiktok,youtube,facebook,x,"
+                                                             "threads,linkedin,pinterest,bluesky")
+    po.add_argument("--at", help="schedule it: 2026-12-01T18:00")
+    po.add_argument("--tz", help="the time zone of --at, e.g. Europe/Madrid")
+    po.add_argument("--title", help="the title (default: the reel's hook)")
+    po.add_argument("--send", action="store_true", help="really post it (without: show what would be posted)")
+    po.add_argument("--force", action="store_true", help="post even though its quality checks didn't all pass")
+    po.add_argument("--again", action="store_true", help="post it again, though it was posted already")
+    po.set_defaults(fn=cmd_post)
 
     sk = sub.add_parser("skills", help="agent skills that work next to TripShots (HyperFrames, Remotion, "
                                        "one-take, Lemo-Opuscar): what they add, whether installed, how to install")

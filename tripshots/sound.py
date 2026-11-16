@@ -627,6 +627,9 @@ def _place(stem: np.ndarray, x: np.ndarray, meta: dict, t: float, align: str, ga
         seg = clip[lo - pos:hi - pos].copy()
         if lo > pos and fade:  # cut into the head: tiny fade so it can't click
             seg[:fade] *= np.linspace(0, 1, fade)[:, None]
+        tail = min(int(0.03 * SR), len(seg) // 4)  # the take is trimmed at its end (or the reel's): ease it out
+        if tail:
+            seg[-tail:] *= np.linspace(1, 0, tail)[:, None]
         stem[lo:hi] += seg
     return {"placed_at": round((pos + anchor) / SR, 4), "err_ms": round(((pos + anchor) / SR - t) * 1000, 2)}
 

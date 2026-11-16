@@ -204,9 +204,14 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         stc["captions"] = caption_mode(stc["captions"])  # a bad language fails here, not after the analysis
     if ex.get("orientation"):
         o = str(ex["orientation"]).lower()
-        if o not in ("auto", "vertical", "horizontal"):
-            raise ReelError(f"--orientation {o}: use auto, vertical or horizontal")
+        if o not in ("auto", "vertical", "horizontal", "4:3", "4:5", "1:1"):
+            raise ReelError(f"--orientation {o}: use auto, vertical, horizontal, 4:3, 4:5 or 1:1")
         style["frame"] = {**(style.get("frame") or {}), "output": o}
+    if ex.get("light") and str(ex["light"]).lower() != "any":
+        from .shots import LIGHTS
+        if str(ex["light"]).lower() not in LIGHTS:
+            raise ReelError(f"--light {ex['light']}: use {', '.join(LIGHTS)} or any")
+        style["shots"]["light"] = str(ex["light"]).lower()
     if ex.get("fresh"):
         f = str(ex["fresh"]).lower()
         if f not in ("on", "off"):
@@ -305,6 +310,9 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         from .framing import picture_aspect
         style["_audition"] = lambda cands, need, spans: recipes_mod.audition(
             cands, need, work, backend, recipe, spans, picture_aspect(style.get("frame")))
+    if style["shots"].get("light"):
+        from .shots import in_light
+        shots = in_light(shots, style["shots"]["light"], style)
     plan = build_plan(shots, mus, style, duration, str(music.resolve()) if music else None)
     from .framing import better_horizontal
     if better_horizontal(plan, by_id, style.get("frame")):
@@ -469,6 +477,10 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
             plan["overlays"] = [o for o in plan["overlays"] if o.get("recipe") != "label"] + recipes.label_overlays(
                 plan, recipe, recipes.label_names(facts, again.get("labels")))
             log("names on the shots written again after the critic's changes")
+        if {sg.get("shot_id") for sg in plan["segments"]} != was \
+                and str(st.get("match_cuts", True)).lower() not in ("false", "off", "0"):
+            from . import matchcut
+            matchcut.carry(plan, by_id)  # the critic's swaps: the movement across their cuts is looked at again
     from . import grade as grade_mod
     grade_img = None
     try:

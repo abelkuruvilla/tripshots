@@ -109,6 +109,10 @@
       {#if ed.expert}
         {#each reel.beats || [] as b}<span class="beat" style="left: {x(b)}px"></span>{/each}
       {/if}
+      {#each ed.notes as n}
+        <button class="pin" style="left: {x(n.t)}px" title={`${tc(n.t)}: ${n.text}`} aria-label={`Note at ${tc(n.t)}: ${n.text}`}
+                onclick={(e) => (e.stopPropagation(), onseek(n.t), (ed.tab = "notes"))}></button>
+      {/each}
     </div>
 
     <div class="clips">
@@ -167,6 +171,8 @@
   .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line-strong); padding-left: 4px; }
   .tick .meta { font-size: 11px; line-height: 14px; }
   .beat { position: absolute; bottom: 0; width: 1px; height: 6px; background: var(--accent); opacity: 0.6; }
+  .pin { position: absolute; top: 3px; width: 12px; height: 12px; margin-left: -6px; padding: 0; border: 2px solid var(--card); border-radius: 50%; background: var(--accent); cursor: pointer; z-index: 3; }
+  .pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .clips { position: relative; height: 80px; }
   .slot { position: absolute; top: 0; height: 80px; }
   .shot { width: 100%; height: 100%; border: 0; padding: 0; border-radius: 4px; overflow: hidden; cursor: pointer; background: var(--raised); position: relative; }

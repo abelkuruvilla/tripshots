@@ -74,6 +74,18 @@ def test_jobs_are_only_the_known_kinds_built_from_fields():
         server.job_args("rm", {})
 
 
+def test_notes_become_a_revise_job(tmp_path):
+    import json
+    plan = tmp_path / "r.plan.json"
+    plan.write_text("{}")
+    args, label = server.job_args("revise", {"plan": str(plan), "notes": [{"t": 3.25, "text": "too dark"},
+                                                                         {"t": 5, "text": " "}, "junk"]})
+    assert args[:2] == ["revise", str(plan.resolve())] and label == "r.plan.json"
+    assert json.loads(args[args.index("--notes-json") + 1]) == [{"t": 3.25, "text": "too dark"}]
+    with pytest.raises(server.ReelError):
+        server.job_args("revise", {"plan": str(plan), "notes": []})
+
+
 def test_a_key_pasted_into_the_wrong_setting_is_not_shown(monkeypatch):
     monkeypatch.setenv("TRIPSHOTS_MODEL", "sk-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG")
     monkeypatch.setenv("GEMINI_API_KEY", "secret")

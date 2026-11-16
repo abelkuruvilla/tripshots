@@ -52,7 +52,8 @@ from .util import ReelError, read_json, write_json
 
 SLOT_KEYS = {"dur", "out_start", "idx", "level", "drop", "trans_out", "trans_dur", "trans_params", "incam_out",
              "incam_in", "hero", "role", "hold"}   # a slot's place in the story stays when its shot changes
-TRANSITIONS = {None, "whip", "zoom_in", "zoom_out", "spin", "flash", "glitch", "blur", "dissolve", "dip", "leak"}
+TRANSITIONS = {None, "whip", "zoom_in", "zoom_out", "spin", "flash", "glitch", "blur", "dissolve", "dip", "leak",
+               "split", "vsplit", "iris", "slats", "stripes", "diamond", "frame", "cells"}
 
 
 def _content(seg: dict) -> dict:
@@ -394,6 +395,11 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             segs[i].pop("incam_out", None)
             if not to:
                 segs[i]["trans_dur"] = 0.0
+            elif i + 1 < len(segs):
+                from .planner import fit_transition
+                d, prm = fit_transition(segs[i], segs[i + 1], to, plan.get("tempo"), ed.get("beats"))
+                segs[i]["trans_dur"] = d
+                segs[i]["trans_params"] = {**prm, **(ed.get("params") or {})}
             done.append(f"slot {i + 1} out: {to or 'hard cut'}")
         elif op == "speed":
             from .retime import SPEED_MAX, SPEED_MIN
@@ -444,6 +450,9 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             done.append(f"slot {i + 1} {kind or 'custom'} ramp")
         elif op == "frame":
             i = _slot(plan, ed["segment"])
+            if segs[i].get("panel"):
+                raise ReelError(f"slot {i + 1} is a split screen: to show one shot full screen there, swap it "
+                                "(op swap with a shot id)")
             for k in ("subject_x", "layout", "pan_from", "pan_to"):
                 if k in ed:
                     segs[i][k] = ed[k]

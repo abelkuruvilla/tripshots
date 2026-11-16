@@ -129,8 +129,20 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
         end_i -= 1
     total = clock.t(end_i)
     drops = _drops(beats, energy, total)
-    # the payoff: the biggest drop in the middle of the reel, else 55 % of the way, on a bar line
-    mid = [d for d in drops if 0.3 * total <= d <= 0.75 * total]
+    flow = grid.get("flow_all") or []
+    peaks = [p for p in grid.get("peaks") or [] if p["t"] < total - 0.5]
+    for p in peaks:  # the song's climaxes (music.peaks) are drops too
+        if not any(abs(p["t"] - d) < 1.0 for d in drops):
+            drops = sorted(drops + [p["t"]])
+    # the payoff: the song's biggest climax in the middle of the reel, else its biggest energy drop there, else
+    # 55 % of the way, on a bar line
+    mid = [p["t"] for p in sorted(peaks, key=lambda p: (p["kind"] != "drop", -p["rise"]))
+           if 0.3 * total <= p["t"] <= 0.75 * total]
+    mid += [d for d in drops if 0.3 * total <= d <= 0.75 * total and d not in mid]
+
+    def flowing(pos: float) -> bool:
+        """No drum pulse here (music.sections): hold shots longer and let them flow, don't cut to a metronome."""
+        return bool(flow) and flow[min(int(pos), len(flow) - 1)]
     if words and words.get("punch_t") is not None and 0.25 * total <= words["punch_t"] <= 0.85 * total:
         peak_i = clock.index_at(words["punch_t"])
     elif mid:
@@ -154,12 +166,13 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
         avail = grid.get("avail")
         limit = clock.x_at(avail) if avail and target >= avail - 0.3 else float(clock.index_at(target))
         lengths = recipes.slots(recipe, {**grid, "drops": _drops(beats, energy, clock.t(limit))}, clock, limit)
-        if lengths:
+        if lengths:  # (a reference's own cut stays as it was: no flowing sections, no breath)
             total = clock.t(sum(n for n, _ in lengths))
             return _to_segments(lengths, clock, energy, th, _drops(beats, energy, total), 0.0)
     att = style.get("attention") or {}
     if att.get("curve") and att.get("shot_sec"):
-        return _curve_rhythm(att, clock, bl, end_i, energy, th, drops, mid, words, variant)
+        return _curve_rhythm(att, clock, bl, end_i, energy, th, drops, mid, words, variant, flow, peaks,
+                             cut_shift(style))
 
     lengths: list[tuple[float, str]] = []   # (beats, role)
     # hook: one shot, about 1-2 s, then the setup
@@ -174,8 +187,8 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
     k = int(_rand("setup", variant) * 6)
     while pos < setup_end - 0.01:
         lvl = _level(energy[min(int(pos), len(energy) - 1)] if energy else 0.5, th)
-        pat = PATTERNS["calm" if lvl == "calm" else "medium"]
-        n = fit(pat[k % len(pat)] * pace)
+        pat = PATTERNS["calm" if lvl == "calm" or flowing(pos) else "medium"]
+        n = fit(pat[k % len(pat)] * pace * (1.4 if flowing(pos) else 1.0), hi=max_s * (1.5 if flowing(pos) else 1.0))
         k += 1
         if pos + n > setup_end:
             n = setup_end - pos
@@ -192,7 +205,10 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
     rem = peak_i - pos
     bi = 0
     while rem > 0.01:
-        n = fit(BUILD[min(bi, len(BUILD) - 1)] * pace, min_s * 0.8, max_s)
+        n = fit(BUILD[min(bi, len(BUILD) - 1)] * pace, min_s * 0.8, max_s) if not flowing(pos) else \
+            fit(2 * pace * 1.4, hi=max_s * 1.5)  # no beat to accelerate on: the run-in flows too
+        while n * bl > 1.5 and n > 1 and not flowing(pos):  # into a climax: something new every 1-1.5 s
+            n = n / 2 if n >= 2 else n - 0.5
         n = min(n, rem)
         if n * bl < max(0.3, min_s * 0.7):
             if lengths:
@@ -212,8 +228,8 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
     k = int(_rand("release", variant) * 9)
     while pos < rel_end - 0.01:
         lvl = _level(energy[min(int(pos), len(energy) - 1)] if energy else 0.5, th)
-        pat = PATTERNS[lvl]
-        n = fit(pat[k % len(pat)] * pace)
+        pat = PATTERNS["calm" if flowing(pos) else lvl]
+        n = fit(pat[k % len(pat)] * pace * (1.4 if flowing(pos) else 1.0), hi=max_s * (1.5 if flowing(pos) else 1.0))
         k += 1
         if pos + n > rel_end:
             n = rel_end - pos
@@ -225,7 +241,7 @@ def rhythm(grid: dict, style: dict, target: float, words: dict | None = None, va
     if pos > rel_end + 0.01:  # the peak ran past: shorten the ending, keep the total
         end_n = max(end_n - (pos - rel_end), fit(2, 1.0, 3.0))
     lengths.append((end_n, "ending"))
-    return _to_segments(lengths, clock, energy, th, drops, peak_i)
+    return _to_segments(lengths, clock, energy, th, drops, peak_i, flow, peaks, cut_shift(style))
 
 
 def _snap(sec: float, bl: float) -> float:
@@ -239,7 +255,7 @@ def _snap(sec: float, bl: float) -> float:
 
 
 def _curve_rhythm(att: dict, clock: _BeatClock, bl: float, end_i: float, energy, th, drops, mid, words,
-                  variant: int = 0) -> dict:
+                  variant: int = 0, flow=None, peaks=None, shift=None) -> dict:
     """Shot slots that follow a learned style's own rhythm (style `attention`, measured by `learn`): the
     reference's shot length at each point of its length, its opening hold and where it holds its payoff, on
     this song's beats. A fast montage stays fast where the reference was fast; a slow reel keeps its holds."""
@@ -252,7 +268,8 @@ def _curve_rhythm(att: dict, clock: _BeatClock, bl: float, end_i: float, energy,
         x = u * len(curve) - 0.5  # bin centres, linear in between
         i = int(max(0, min(len(curve) - 2, x // 1)))
         f = min(1.0, max(0.0, x - i))
-        return med * (curve[i] * (1 - f) + curve[i + 1] * f)
+        held = 1.4 if flow and flow[min(int(pos_b), len(flow) - 1)] else 1.0  # no beat to cut on: hold longer
+        return held * med * (curve[i] * (1 - f) + curve[i + 1] * f)
 
     # where the payoff is held: the reference's place, moved to a drop of this song when one is near
     peak_u = att.get("peak_at")
@@ -310,20 +327,45 @@ def _curve_rhythm(att: dict, clock: _BeatClock, bl: float, end_i: float, energy,
         elif k < k_peak:
             lengths[k][1] = "build" if k >= k_peak - 3 and k > 1 else "setup"
     return _to_segments([(n, r) for n, r in lengths], clock, energy, th, drops,
-                        peak_i if peak_i is not None else starts[k_peak] if k_peak else 0.0)
+                        peak_i if peak_i is not None else starts[k_peak] if k_peak else 0.0, flow, peaks, shift)
 
 
-def _to_segments(lengths, clock: _BeatClock, energy, th, drops, peak_i) -> dict:
+def cut_shift(style: dict) -> dict:
+    """The learned editor's habit of where a cut sits against the beat (learn: attention `cut_phase`):
+    {"frames": cut this many frames early (-) or late (+), "beats": 0.5 = on the off-beat}. Only a habit the
+    references show clearly (consistent and common) is copied."""
+    cp = (style.get("attention") or {}).get("cut_phase") or {}
+    if cp.get("n", 0) < 8 or cp.get("R", 0) < 0.45:
+        return {}
+    if abs(float(cp.get("phase", 0)) - 0.5) < 0.15 and cp.get("on_beat", 1) < 0.35 and cp["R"] >= 0.55:
+        return {"beats": 0.5}
+    f = max(-3, min(3, int(cp.get("offset_f") or 0)))
+    return {"frames": f} if f and cp.get("on_beat", 0) >= 0.25 else {}
+
+
+def _to_segments(lengths, clock: _BeatClock, energy, th, drops, peak_i, flow=None, peaks=None, shift=None) -> dict:
     segs = []
     x = 0.0
     fprev = 0
-    for n, role in lengths:
+    shift = shift or {}
+    for k_l, (n, role) in enumerate(lengths):
         x2 = x + n
         f2 = int(round(clock.t(x2) * OUT_FPS))
+        if shift and k_l < len(lengths) - 1:
+            # the editor's habit: a frame or two before the beat, or on the off-beat (never the cut into the
+            # payoff or onto a drop: those land on the hit)
+            nxt_role = lengths[k_l + 1][1]
+            on_hit = nxt_role == "peak" or any(abs(clock.t(x2) - d) < 0.12 for d in drops)
+            if shift.get("beats") and not on_hit:
+                f2 = int(round(clock.t(x2 + shift["beats"]) * OUT_FPS))
+            f2 += int(shift.get("frames", 0))
         if f2 - fprev >= 6:
             e = energy[min(int(x), len(energy) - 1)] if energy else 0.5
+            fl = flow[int(x):max(int(x) + 1, int(x2))] if flow else []
+            calm = bool(fl) and sum(fl) * 2 > len(fl)  # mostly without a beat to cut on (music.sections)
             segs.append({"out_start": round(fprev / OUT_FPS, 4), "dur": round((f2 - fprev) / OUT_FPS, 4),
-                         "level": _level(e, th), "role": role, "beats": n})
+                         "level": "calm" if calm else _level(e, th), "role": role, "beats": n,
+                         **({"beatless": True} if calm else {})})
             fprev = f2
         elif segs:  # too short to stand: belongs to the shot before
             segs[-1]["dur"] = round((f2 - round(segs[-1]["out_start"] * OUT_FPS)) / OUT_FPS, 4)
@@ -334,6 +376,12 @@ def _to_segments(lengths, clock: _BeatClock, energy, th, drops, peak_i) -> dict:
             s["level"] = "intense" if s["level"] != "calm" else "medium"
     total = round(fprev / OUT_FPS, 4)
     peak_t = next((s["out_start"] for s in segs if s["role"] == "peak"), None)
+    # the breath: when the song goes quiet just before its climax, so does the picture (planner holds the shot
+    # before the payoff still: no transition out of it but a clean cut on the hit, no beat punches)
+    k = next((i for i, s in enumerate(segs) if s["role"] == "peak"), None)
+    hit = next((p for p in peaks or [] if peak_t is not None and abs(p["t"] - peak_t) < 0.2), None)
+    if k and hit and hit.get("breath", 0) >= 0.25 and segs[k - 1]["role"] != "hook":
+        segs[k - 1]["breath"] = round(min(0.75, float(hit["breath"])), 2)
     return {"segments": segs, "duration": total, "drops": [d for d in drops if d < total - 0.5],
             "peak": peak_t}
 
@@ -842,6 +890,8 @@ def restrain_transitions(segs: list[dict]) -> int:
             since += 1
             continue
         into_peak = peak is not None and i == peak - 1
+        if s.get("beatless") and segs[i + 1].get("beatless") and tr in ("dissolve", "blur", "fade", "dip"):
+            continue  # shots flowing into each other where the music has no beat: these are the edit, not effects
         level = s.get("level", "medium")
         wild = tr in ("glitch", "spin", "flash") and level != "intense"
         if into_peak and not wild:
@@ -853,6 +903,15 @@ def restrain_transitions(segs: list[dict]) -> int:
             since += 1
         else:
             since = 0
+    # a reel speaks in two or three kinds of transition, not a catalogue: keep the most used ones
+    from collections import Counter
+    kinds = Counter(s["trans_out"] for s in segs[:-1] if s.get("trans_out") and not s.get("incam_out"))
+    keep = {k for k, _ in kinds.most_common(3)}
+    for i, s in enumerate(segs[:-1]):
+        if s.get("trans_out") and not s.get("incam_out") and s["trans_out"] not in keep \
+                and not (peak is not None and i == peak - 1):
+            s.update({"trans_out": None, "trans_dur": 0.0, "trans_params": {}})
+            removed += 1
     return removed
 
 

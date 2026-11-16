@@ -1,0 +1,37 @@
+name: shape-cut
+description: A widescreen editorial cut. Each shot is built from paper pieces on the beat (upright slats, a diamond and its corners, stripes down the frame), each piece a cream block before the picture shows through, and arrives in black and white before its colour blooms in. Muted film grade.
+direction: "Graphic and calm: each new shot is assembled from paper pieces, then held while its colour comes in. Choose wide, strong compositions with one subject (a person against mountains, a lone peak, a lake): the pieces read best on simple shapes. People seen from behind or in profile, looking out. No text over the pieces."
+duration: {target: 12, min: 8, max: 20}
+frame: {aspect: "16:9", output: horizontal}
+cuts:
+  beats_per_cut: {calm: 4, medium: 4, intense: 2}
+  hook_beats: 4
+  min_shot_sec: 1.1
+  max_shot_sec: 2.4
+shots: {min_score: 6, ordering: energy, max_per_source: 2, slowmo: true}
+layout: {landscape: auto, photo_motion: kenburns, photo_zoom: 1.1}
+story: {arc: "off"}
+transitions:
+  order: [slats, frame, diamond, stripes, frame, diamond]
+  beats: 2
+  density: 1.0
+  at: all
+grade: {look: cinematic-film, strength: 0.8, ai: true}
+color: {saturation: 0.95, contrast: 1.05, brightness: 0.0, gamma: 1.0, warmth: 0.03, vignette: true, sharpen: 0.25}
+text:
+  preset: editorial
+  hook: {mode: "off"}
+  location: {mode: "off"}
+  cta: {mode: "off"}
+caption: {tone: 'quiet, cinematic, first person', hashtags: 8}
+motion:
+  beat_punch: 0.0
+  shake_on_drop: false
+  freeze: false
+  rgb_split: 0.0
+  video_push: 0.04
+  colour_in: 0.6
+  silhouette: true
+panels: {use: 0.0}
+velocity: {use: 0.0}
+speed: {ramps: [], fast: 0.0, drop: "off", smooth: flow}

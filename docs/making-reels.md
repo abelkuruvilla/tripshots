@@ -65,8 +65,18 @@ Instead of folders you can pass a search result: `tripshots find --place Lisbon`
 | `cinematic` | Long shots, slow motion, crossfades, warm grade with vignette |
 | `slow-scenic` | Calm and chronological, one cut per bar, gentle pans, natural colour |
 | `split-beat` | Split screens, speed ramps, bass-hit pulses and shot labels on a fast grid |
+| `mask-reveal` | Every shot comes in through a shape on the beat: line and V reveals with a white edge, then growing circles with a glow (no text) |
+| `grid-mosaic` | 4:3. A fine grid over the reel, shots filling in cell by cell, and a photo wall of the trip round you mid-reel |
+| `shape-cut` | Widescreen and editorial: each shot built from cream paper pieces (slats, a diamond, stripes), arriving in black and white before its colour blooms in |
 
 Make your own with `tripshots learn` (below) or by copying one: see [Styles](styles.md).
+
+## Holding a reel to one light
+
+`make --light golden` uses only shots in golden light (golden hour, sunset and sunrise), the photo wall's pictures
+too; `sunset`, `blue` (blue hour and night), `day` (morning to afternoon) and `night` work the same way. The light
+is what the AI saw in each shot when it judged it. When fewer than about 40 shots are in that light, they are
+preferred instead of required (style `shots.light`).
 
 ## Horizontal reels
 
@@ -136,6 +146,12 @@ A learned style copies more than timing:
 
 **Several examples per style.** A style is what its examples have in common, so 2–3 similar reels give a steadier profile than one. Add more any time: `tripshots learn <new links> -n my-vibe --add`, or in the app's **Styles** tab **Add example reels…**. The tab shows each learned style's examples and its attention profile in one line, and **Re-learn** rebuilds it from the saved examples (nothing is downloaded again). Keep different kinds of reels in different styles.
 
+**Reels recorded off a phone screen work too.** A screen recording of a reel is the reel inside the phone's interface:
+the status bar, the buttons, the caption and the counts. Before it is measured, the reel's 9:16 window is cut out
+around the moving picture (a letterbox inside the reel is part of its look and stays), and sound whose left and
+right cancel each other out (some recordings) is fixed, so the beat can be heard. The cleaned copy is kept in
+`~/.tripshots/learn/clean/`; reels downloaded normally are used as they are.
+
 Styles learned before this version don't have these: re-learn one with `tripshots learn -n my-vibe` (no links: it uses the reels it was learned from, already downloaded). Instagram usually needs your browser login for downloads, which is what `--cookies-from-browser` is for. You can also pass local `.mp4` files you saved.
 
 ## Checks after every render
@@ -151,8 +167,12 @@ After each render TripShots checks the file the way an editor would before posti
 | text_safe | every title clear of Instagram's buttons, name and caption |
 | text_size | hook at least about 88 px tall at 1080 wide, labels 64, captions 54 |
 | text_time | each line on screen for at least its words at 3.5 a second, plus half a second |
+| flash | no single white frame or exposure pop the plan didn't ask for (flash transitions and the freeze excepted) |
+| cut_light | no jump of more than about a third of the brightness range across a hard cut (bright noon straight into a dark room) |
+| stutter | no repeated frames inside a moving shot: a variable-frame-rate phone clip, or slow motion without in-between frames, hitches |
 
-The results are in `NAME.qa.json`; `NAME.qa.jpg` shows 12 frames with their times. Run them again on any video with
+The results are in `NAME.qa.json`; `NAME.qa.jpg` shows 12 frames with their times. A render that doesn't write a
+new file stops with an error, so a failed re-render never hands back the previous video. Run them again on any video with
 `tripshots qa NAME.mp4` (MCP `check_reel`). The set of checks follows the [one-take](https://github.com/KaranO-Dev/one-take-skill) skill's QA pass.
 
 ## Edit by hand (or with Claude)
@@ -166,6 +186,26 @@ tripshots render reels/Banff-beat-montage-2026....plan.json
 To swap a shot, set `shot_id` to another id from `tripshots scan`. Only changed segments are re-rendered.
 
 **Easiest:** open this folder in Claude Code and talk to it ("make a 15s reel from my Banff folder with this song, cinematic, and swap shot 4 for something with water"). `CLAUDE.md` and the bundled `make-reel` skill tell it how to drive TripShots and review the storyboard.
+
+**Notes on the finished reel.** Watch it, and where something is off say what you see, pinned to that moment:
+
+```bash
+tripshots revise reels/NAME.plan.json --note "3.5: way too dark" --note "12.1: swap this for the canyon" \
+  --note "0:18 the words cover her face"
+```
+
+Each note is tied to the shot and the text on screen at its time. The AI gets a still of the reel at every note
+and the other shots available, and answers with safe plan edits (a shot swapped, colour, text, framing, speed);
+without an AI, plain rules handle the common ones (brighter, darker, warmer, cooler, replace this shot, cut it,
+faster, slower, remove the text). The reel is rendered again (`--no-render` to only edit the plan), every edit
+can be undone, and `NAME.revise.json` says what was done for each note. In the app: the **Notes** tab
+([desktop app](desktop.md)); MCP `revise_reel`.
+
+**Posting.** `tripshots post NAME.mp4 --platforms instagram,tiktok [--at 2026-12-01T18:00 --tz Europe/Madrid]`
+posts through [Upload-Post](https://upload-post.com) (set `UPLOAD_POST_KEY` and `UPLOAD_POST_USER` in
+`~/.tripshots/.env`). It is a dry run that shows what would be posted unless you add `--send`; it takes only reels
+whose checks passed (`--force` otherwise), uses the caption written for the reel and its hook as the title, and
+never sends the same post twice (`--again` to repost). MCP `post_reel` (always a dry run first).
 
 The full plan format is in [plan.json reference](plan-format.md). Agents can use `edit_plan` instead of editing JSON: see [AI agents](agents.md).
 

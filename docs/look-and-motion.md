@@ -7,6 +7,9 @@ Everything that moves on screen: transitions, beat-synced motion, text, framing,
 Every reel is composited frame by frame, so movement is tied to the music:
 
 * **Transitions at the cut:** `whip` (fast swipe with motion blur), `zoom_in`/`zoom_out` (punch through with radial blur), `spin`, `flash`, `glitch` (RGB split), `blur`, `dissolve`, `dip` and `leak` (warm film light washing across the frame while the shots dissolve under it; used between calm shots). Each is centred on the beat. Which ones are used depends on the song's energy at that moment. Energy changes and drops always get one. Other cuts get one at the style's `density`; the rest are hard cuts on the beat, which is what keeps it punchy.
+* **Masked reveals, keyframed on the beat:** the next shot comes in through a shape, the way CapCut masking tutorials teach. `split`: a line swings round a corner of the frame, 45° on each beat (the four corners in turn). `vsplit`: a V opens from the middle of the bottom (or top) edge. Both snap on every beat inside the transition and hold in between, with a thin white edge along the mask. `iris`: a circle grows from the middle to the whole frame with a soft rim, a ripple running round it and a glow as it opens. They last whole beats (`transitions.beats`, default 2; `trans_params.steps` = the beats), and a reveal may take its shots whole, so one runs into the next. The `mask-reveal` style puts one on every cut: line reveals, then V reveals, then circles (`transitions.order`).
+* **Paper shapes:** the next shot is built from pieces, each a plain cream block first and then the picture through it, with thin seams while it builds: `slats` (upright slats, left to right), `stripes` (stripes down the frame), `diamond` (a diamond from the middle, then the four corners round it). `frame`: the next shot as a window in the middle first, then panels round it (left, bottom, top, right); thin gaps between them keep showing the old shot like lines framing the window, until it snaps into the whole picture. With `motion.colour_in` (seconds) every shot arrives in black and white and its colour blooms in (segment `colour_in`). With `motion.silhouette`, the people in a shot (an upright figure the cut-out finds) flash paper-white for two frames as it lands (segment `silhouette`). The widescreen `shape-cut` style uses all of these.
+* **The grid:** plan `grid` {cols, alpha} (style `motion.grid`) lays a fine grid of light lines over the whole reel. `cells`: the next shot fills in cell by cell, spreading from one spot (a third of the cells show a soft block of their colour first). With `motion.mosaic`, one held shot of a person near the middle becomes a photo wall: the cells round them fill one by one with pictures of other moments of the trip, hold, and clear again (segment `mosaic`; the cells the person stands in, found with the cut-out, stay clear). The `grid-mosaic` style is this trend.
 * **Beat punch:** a quick zoom bump on every beat in energetic sections. **Shake** hits on the drop.
 * **Photos:** stronger Ken Burns that varies per photo: zoom in or out, pans left, right or up, and a slow rotating zoom.
 * **Static video clips** get a slow push-in, so nothing sits dead still.
@@ -18,6 +21,8 @@ transitions:
   palette: {calm: [dissolve, blur], medium: [whip, zoom_in], intense: [flash, spin, glitch]}
   density: 0.5      # share of ordinary cuts with a transition (0 = all hard cuts)
   speed: 1.0        # <1 snappier, >1 slower
+  # order: [split, vsplit, iris]   # instead of the palette: one on every cut, these in turn through the reel
+  # beats: 2                        # how long a masked reveal lasts, in beats
 motion:
   beat_punch: 0.06  # zoom bump per beat (0 = off)
   punch_on: [medium, intense]

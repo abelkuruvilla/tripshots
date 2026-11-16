@@ -115,9 +115,12 @@ def measure(path: Path, work: Path) -> dict:
             beats = np.array(m["beats"])
             bl = 60.0 / m["tempo"] if m["tempo"] else 0.5
             near = [float(np.min(np.abs(beats - c))) for c in cuts] if len(beats) else []
+            from .music import phase_stats
+            ph = phase_stats(cuts, beats) if len(beats) > 8 and any(s["mode"] == "beat" for s in m.get("sections") or [{"mode": "beat"}]) else None
             res.update({"tempo": m["tempo"],
                         "cuts_on_beat_pct": round(100 * float(np.mean([d < 0.09 for d in near])), 0) if near else None,
-                        "beats_per_shot_median": round(float(np.median(lens)) / bl, 2)})
+                        "beats_per_shot_median": round(float(np.median(lens)) / bl, 2),
+                        **({"cut_phase": ph} if ph else {})})
     # sample frames: middle of each shot (max 16) for grade + AI look
     mids = [(a + b) / 2 for a, b in zip(bounds[:-1], bounds[1:])]
     if len(mids) > 16:
@@ -161,8 +164,10 @@ def measure(path: Path, work: Path) -> dict:
             {"id": f"R{i + 1:02d}", "t0": a, "t1": b} for i, (a, b) in enumerate(zip(bounds[:-1], bounds[1:]))]})
         dxs = [abs(v["dx"]) for v in mv.values()]
         zs = [v["zoom"] for v in mv.values()]
+        eases = [v["ease"] for v in mv.values() if v.get("ease")]
         res["camera"] = {"pan_speed": round(float(np.median(dxs)), 4) if dxs else None,
-                         "push": round(float(np.median(zs)), 4) if zs else None}
+                         "push": round(float(np.median(zs)), 4) if zs else None,
+                         **({"eases": eases} if eases else {})}
     except Exception as e:
         log(f"  camera motion not measured ({str(e)[:80]})")
     # does the end flow back into the start (a loop)? compare the first and the last picture
@@ -201,6 +206,7 @@ def attention_profile(measures: list[dict]) -> dict:
       loop      the last picture looks like the first
     Several references are averaged, so a style is what they have in common."""
     curves, holds, peaks, varis, meds, loops, means = [], [], [], [], [], [], []
+    phases = [m["cut_phase"] for m in measures if (m.get("cut_phase") or {}).get("n", 0) >= 4]
     for m in measures:
         lens = [float(x) for x in m.get("shot_lens") or []]
         dur = float(m.get("duration") or 0)
@@ -237,6 +243,16 @@ def attention_profile(measures: list[dict]) -> dict:
         out["peak_at"] = round(float(np.median(peaks)), 2)
     if loops:
         out["loop"] = bool(float(np.median(loops)) > 0.97)
+    if sum(p["n"] for p in phases) >= 8:
+        # where the editor puts a cut against the beat (music.phase_stats): pooled, weighted by number of cuts
+        w = np.array([p["n"] for p in phases], float)
+        ang = 2 * np.pi * np.array([p["phase"] for p in phases])
+        R = np.array([p["R"] for p in phases])
+        mc, ms = float(np.sum(w * R * np.cos(ang)) / w.sum()), float(np.sum(w * R * np.sin(ang)) / w.sum())
+        out["cut_phase"] = {"n": int(w.sum()), "on_beat": round(float(np.average([p["on_beat"] for p in phases], weights=w)), 2),
+                            "offset_f": int(round(float(np.median([p["offset_f"] for p in phases])))),
+                            "phase": round(float((np.arctan2(ms, mc) / (2 * np.pi)) % 1.0), 3),
+                            "R": round(float(np.hypot(mc, ms)), 2)}
     return out
 
 
@@ -258,6 +274,13 @@ def describe_profile(a: dict) -> str:
         parts.append("mix " + ", ".join(f"{k} {int(float(v) * 100)}%" for k, v in a["mix"].items() if float(v) > 0.04))
     if a.get("speed") and a["speed"] != "normal":
         parts.append(f"speed: {a['speed']}")
+    cp = a.get("cut_phase") or {}
+    if cp.get("R", 0) >= 0.45:
+        if abs(cp["phase"] - 0.5) < 0.15:
+            parts.append("cuts on the off-beat")
+        elif cp.get("offset_f"):
+            parts.append(f"cuts {abs(cp['offset_f'])} frame{'s' if abs(cp['offset_f']) > 1 else ''} "
+                         + ("before" if cp["offset_f"] < 0 else "after") + " the beat")
     if a.get("reveal"):
         parts.append("builds to a reveal")
     if a.get("loop"):
@@ -494,6 +517,8 @@ def learn(refs: list[str], name: str, backend_name: str | None, cookies_browser:
             if not re.match(r"https?://", r):
                 raise ReelError(f"not a file or URL: {r}")
             p = fetch_video(r, work / "downloads", cookies_browser, cookies_file)
+        from .refprep import clean
+        p = clean(p)  # a reel recorded off a phone screen: the picture without the interface
         log(f"measuring {p.name}")
         measures.append(measure(p, work))
     write_json(work / "measurements.json", measures)
@@ -619,6 +644,14 @@ def learn(refs: list[str], name: str, backend_name: str | None, cookies_browser:
         style.setdefault("layout", {})["pan_speed"] = round(min(0.08, max(0.015, ps * 1.1)), 3)
         push = float(np.median([c.get("push") or 0 for c in cams]))
         style.setdefault("motion", {})["video_push"] = round(min(0.1, max(0.0, push * 0.6)), 3)
+        # how their camera moves ease (clone.ref_motion fits each clear move): the most common curve, when one
+        # stands out, drives the Ken Burns moves and pans of the reels made in this style
+        from collections import Counter
+        ez = Counter(e for c in cams for e in c.get("eases") or [])
+        if sum(ez.values()) >= 3:
+            name, k = ez.most_common(1)[0]
+            if k >= 0.4 * sum(ez.values()):
+                style["motion"]["ease"] = name
     # how the references hold attention: their own rhythm over time, opening, payoff, shot mix
     prof = attention_profile(measures)
     seen = style.get("attention") if isinstance(style.get("attention"), dict) else {}

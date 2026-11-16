@@ -5,6 +5,7 @@
     film: "M3 5h18v14H3z M7 5v14 M17 5v14 M3 9.5h4 M3 14.5h4 M17 9.5h4 M17 14.5h4",
     plus: "M12 5v14 M5 12h14",
     message: "M21 12a8 8 0 0 1-11.7 7.1L4 20l.9-4.6A8 8 0 1 1 21 12z",
+    send: "M22 2L11 13 M22 2l-7 20-4-9-9-4z",
     layers: "M12 3l9 5-9 5-9-5z M3 13l9 5 9-5",
     activity: "M3 12h4l3-8 4 16 3-8h4",
     settings: "M4 6h10 M18 6h2 M4 12h4 M12 12h8 M4 18h12 M20 18h0 M16 4v4 M10 10v4 M18 16v4",

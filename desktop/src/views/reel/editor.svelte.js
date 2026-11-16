@@ -26,7 +26,38 @@ export const ed = $state({
   split: false, // the viewer shows as filmed | your edit side by side, with a divider
   splitAt: 0.5, // where the divider is, 0 (left) to 1 (right)
   mask: null, // a colour layer's region shown on the picture (Colour > Layers)
+  notes: [], // the user's notes on the reel, each pinned to a moment: [{ t, text }] (kept per reel, sent together)
+  noting: false, // the note box is open
 });
+
+// notes stay on this computer until they are sent (one list per reel)
+const notesKey = () => `tripshots.notes:${ed.reel?.plan || app.reel}`;
+export function loadNotes() {
+  try {
+    ed.notes = JSON.parse(localStorage.getItem(notesKey()) || "[]");
+  } catch {
+    ed.notes = [];
+  }
+}
+function saveNotes() {
+  try {
+    localStorage.setItem(notesKey(), JSON.stringify(ed.notes));
+  } catch {}
+}
+export function addNote(t, text) {
+  text = text.trim();
+  if (!text) return;
+  ed.notes = [...ed.notes, { t: Math.round(t * 100) / 100, text }].sort((a, b) => a.t - b.t);
+  saveNotes();
+}
+export function removeNote(i) {
+  ed.notes = ed.notes.filter((_, k) => k !== i);
+  saveNotes();
+}
+export function clearNotes() {
+  ed.notes = [];
+  saveNotes();
+}
 
 export function setExpert(on) {
   ed.expert = on;

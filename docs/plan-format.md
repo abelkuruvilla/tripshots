@@ -18,6 +18,9 @@ Only segments whose content changed are re-rendered.
 | `color`, `text`, `photo_zoom`, `transition_duration` | Copied from the style at plan time |
 | `freeze` | `{t, dur}`: hero freeze-frame on a drop. Delete to turn off |
 | `loop` | `true`: the end dissolves into the first frame |
+| `frame.canvas` | The file's size: `[1080, 1920]` (upright, the default), `[1920, 1080]`, `[1440, 1080]` (4:3), `[1080, 1350]` (4:5), `[1080, 1080]` (1:1) |
+| `grid` | `{"cols": 6, "alpha": 0.4}`: a fine grid of light lines over the whole reel (style `motion.grid`) |
+| `continuity` | How the camera's movement carries across the cuts (written when the plan is made): `cuts`, `carried`, `fixed` and `left` (cuts that still jar, e.g. "cut 4-5: moves left, then moves right"), `notes` |
 | `frame` | `{aspect, ar, canvas: [w, h], band}`: only on a wide reel. `canvas` `[1920, 1080]` = a horizontal file the picture fills; `[1080, 1920]` with `band` (px) = an upright file with the picture in a band. Change it with `make --orientation`, not by hand: shots are framed for it |
 | `recipe` | `{id, source, structure, hold, frame, text, lens, own_sound, why}`: the reference recipe this reel follows (learned styles). For reading; the segments and overlays already carry it |
 | `sound` | `{sfx, ambience, native, level_db, licenses}`; effects follow the edit on every render |
@@ -47,12 +50,18 @@ changing lengths.
 | `pan_from`, `pan_to`, `pan_reverse` | Pan range across the source (0..1) and direction |
 | `track` | `true`: the crop follows a moving subject |
 | `kb` | Photos: `in`, `out`, `left`, `right`, `up`, `down`, `in_rot` |
-| `trans_out` | Transition into the next segment: `null` (hard cut on the beat), `whip`, `zoom_in`, `zoom_out`, `spin`, `flash`, `glitch`, `blur`, `dissolve`, `dip` |
-| `trans_dur`, `trans_params` | Transition length (s, centred on the cut); `whip: {"direction": "left\|right\|up\|down"}`, `spin: {"clockwise": true}` |
+| `trans_out` | Transition into the next segment: `null` (hard cut on the beat), `whip`, `zoom_in`, `zoom_out`, `spin`, `flash`, `glitch`, `blur`, `dissolve`, `dip`, `leak`, the masked reveals `split`, `vsplit`, `iris`, and the paper shapes `slats`, `stripes`, `diamond`, `frame`, and `cells` (cell by cell on the grid) |
+| `trans_dur`, `trans_params` | Transition length (s, centred on the cut); `whip: {"direction": "left\|right\|up\|down"}`, `spin: {"clockwise": true}`, `split: {"pivot": "bl\|br\|tl\|tr", "steps": beats}`, `vsplit: {"side": "bottom\|top", "steps": beats}`, `iris: {"cx": 0.5, "cy": 0.45}` |
 | `incam_out`, `incam_in` | In-camera whip: the cut sits inside the camera's own swing (`trans_out` is `null`). Delete `incam_out` and set `trans_out` to drop it |
 | `rgb` | `true`: colour-split glitch on the first frames |
 | `lut`, `grade_note` | This shot's colour LUT (`.cube`) and what the colourist saw. To regrade, re-run `make --look X --dry-run` instead of editing these |
 | `level` | Song energy here: `calm`, `medium`, `intense` |
+| `beatless` | `true`: the song has no beat to cut on here (an intro, a bridge): held longer, soft dissolves, no beat punches ([storytelling](storytelling.md#listening-to-the-song-first)) |
+| `breath` | Seconds the song goes quiet before the payoff: this shot (the one before the peak) holds still and cuts cleanly on the hit |
+| `mosaic` | The photo wall on this shot: `{"cells": {cell index: picture}, "cols", "seed"}` (style `motion.mosaic`) |
+| `silhouette` | `true`: the people in this shot flash paper-white for two frames as it lands (style `motion.silhouette`) |
+| `colour_in` | Seconds over which the shot's colour blooms in after it arrives in black and white (style `motion.colour_in`) |
+| `ease` | How a Ken Burns move or a pan speeds up and settles: `linear`, `sine` (default), `in`, `out`, `expo_out`, `power3` (a learned style sets it) |
 | `role`, `hold` | The slot's place in the story (`hook`, `setup`, `build`, `peak`, `release`, `ending`); `hold: true` marks a long opening shot that must stay one continuous clip. Both stay with the slot when its shot is swapped |
 | `clone_of` | Clone plans: the reference shot this slot copies. Keep `dur`, only swap `shot_id` |
 

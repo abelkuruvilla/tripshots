@@ -6,7 +6,7 @@ from collections import Counter
 
 import numpy as np
 
-from .config import OUT_FPS
+from .config import OUT_FPS, OUT_H, OUT_W
 from .framing import crop_fraction, decide_layout, focus_box, subject_for
 from .panels import layout_rects, plan_panel_clips
 from .music import beats_in_window, choose_window
@@ -99,7 +99,14 @@ def cut_grid(music: dict | None, style: dict, target: float) -> dict:
         if nxt - prev > 0.22 and 0.3 < beats[j] - offset < total - 0.5:
             if not drops or beats[j] - offset - drops[-1] > 2.0:
                 drops.append(round(beats[j] - offset, 4))
+    # which beats have a drum pulse to cut on (music.sections), and the song's climaxes (music.peaks), from here
+    from .music import section_at
+    msecs = (music or {}).get("sections")
+    flow_all = [section_at(msecs, b + start + offset) == "flow" for b in beats_all] if msecs else []
+    peaks = [{**pk, "t": round(pk["t"] - start - offset, 4)} for pk in (music or {}).get("peaks") or []
+             if pk["t"] - start - offset > 0.3]
     return {"music_start": round(start + offset, 4), "segments": segs, "tempo": tempo,
+            "flow_all": flow_all, "peaks": peaks,
             "duration": round(total, 4), "beat_len": beat_len, "beats": beats_out, "drops": drops,
             "energy": energy_out, "beats_all": beats_all, "energy_all": energy_all,
             "thresholds": (lo_th, hi_th),
@@ -376,13 +383,18 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
                music_path: str | None = None) -> dict:
     target = float(target or style["duration"]["target"])
     target = clamp(target, style["duration"]["min"], style["duration"]["max"])
-    from .framing import band_height, output_for, picture_aspect, set_canvas, set_frame
+    from .framing import band_height, canvas_for, picture_aspect, set_canvas, set_frame
     fcfg = style.get("frame") or {}
-    canvas = set_canvas(output_for(fcfg))  # a wide picture gets a horizontal file, not black bars in an upright one
+    canvas = set_canvas(canvas_for(fcfg))  # a wide picture gets a horizontal file, not black bars in an upright one
     ar = set_frame(picture_aspect(fcfg))
     letterbox = ar > 1.0
     if letterbox:  # a wide picture: upright full-screen layouts (split screens, pop-out frames) don't fit it
-        style.setdefault("panels", {})["use"] = 0.0
+        from .panels import _strips
+        kinds = (style.get("panels") or {}).get("kinds") or []
+        if band_height(ar) < canvas[1] or not any(_strips(k) for k in kinds):
+            style.setdefault("panels", {})["use"] = 0.0  # (strip collages fill a wide file as well as an upright one)
+        else:
+            style["panels"]["kinds"] = [k for k in kinds if _strips(k)]
         style.setdefault("popout", {})["use"] = 0.0
     grid = cut_grid(music, style, target)
     segs = grid["segments"]
@@ -447,7 +459,17 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
             else:
                 log(f"no clip lasts the {normal[0]['dur']:.1f}s opening shot: the best shot is slowed to cover it")
     opener = [hold[min(variant, len(hold) - 1)][0]] if hold else None
-    chosen = select_shots(shots, len(normal) + panel_need + spare, style, cast=opener)
+    need = len(normal) + panel_need + spare
+    chosen = select_shots(shots, need + (0 if arc else 6), style, cast=opener)
+    if not arc:  # one landmark per reel here too (the story engine does this while casting)
+        from .story import landmark
+        seen, kept, rest = set(), [], []
+        for s in chosen:
+            k = landmark(s)
+            (rest if k and k in seen else kept).append(s)
+            if k:
+                seen.add(k)
+        chosen = (kept + rest)[:need]
     # the strongest shots go full-screen; the rest fill panels (they're seen smaller anyway)
     ranked = sorted(chosen, key=_quality, reverse=True)
     full, extra = ranked[:len(normal) + spare], ranked[len(normal) + spare:]
@@ -486,18 +508,37 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         ps = (style.get("layout") or {}).get("pan_speed")
         if ps is not None and e.get("layout") in ("pan", "kenburns"):
             e["pan_speed"] = float(ps)
+        if (style.get("motion") or {}).get("silhouette") and e.get("people") and not seg.get("panel"):
+            e["silhouette"] = True  # its people flash paper-white for a moment as it lands (render)
+        ci = (style.get("motion") or {}).get("colour_in")
+        if ci and not seg.get("panel"):
+            e["colour_in"] = float(ci)  # arrives in black and white, its colour blooms in (render)
+        ez = (style.get("motion") or {}).get("ease")
+        if ez and e.get("layout") in ("pan", "kenburns"):
+            e["ease"] = ez  # the references' way of moving (learn)
         if seg.get("role"):
             e["role"] = seg["role"]
             if seg["role"] in ("hook", "peak", "ending") and e.get("layout") == "kenburns":
                 e["kb"] = "in"  # the moments that matter push in on their subject, no sideways drift
+        for k in ("beatless", "breath"):  # no beat to cut on here / the held breath before the climax (story.rhythm)
+            if seg.get(k):
+                e[k] = seg[k]
+        if seg.get("breath") and e.get("layout") == "kenburns":
+            e["kb"] = "in"
         e["drop"] = any(abs(e["out_start"] - d) < 0.12 for d in grid["drops"]) or e.get("role") == "peak"
         out.append(e)
     apply_speed(out, {s["id"]: s for s in shots}, grid, style)
+    style["_tempo"] = grid["tempo"]
     choose_transitions(out, style)
-    if arc:
+    if (style.get("motion") or {}).get("mosaic"):
+        plan_mosaic(out, shots, style)
+    if (style.get("motion") or {}).get("backdrop"):
+        plan_backdrops(out, shots, style, grid["beat_len"])
+    if arc and not (style.get("transitions") or {}).get("order"):  # (a style with a transition on every cut keeps them)
         from . import story
         story.restrain_transitions(out)
-    use_incam(out, {s["id"]: s for s in shots}, style)
+    if not (style.get("transitions") or {}).get("order"):  # (a reveal on every cut: the camera's whips stay inside)
+        use_incam(out, {s["id"]: s for s in shots}, style)
     return {
         "version": 1, "style": style["name"], "duration": grid["duration"], "tempo": round(grid["tempo"], 1),
         "music": {"path": music_path, "start": grid["music_start"], "fade_out": style["music"].get("fade_out", 0.8)},
@@ -509,9 +550,13 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         "motion": {**style.get("motion", {}), **({"hook_punch": True} if arc and st.get("hook_punch", True) else {})},
         "loop": bool(style.get("loop", False)) or (arc and bool(st.get("loop", True))),
         **({"story": {"format": fmt, "arc": [s.get("role") for s in out]}} if arc else {}),
+        **({"grid": {"cols": int(g.get("cols", 8)), "alpha": float(g.get("alpha", 0.3))}}
+           if isinstance(g := (style.get("motion") or {}).get("grid"), dict) else {}),
         **({"frame": {"aspect": picture_aspect(fcfg), "ar": round(ar, 4),
                       "canvas": list(canvas),
-                      **({"band": band_height(ar)} if band_height(ar) < canvas[1] else {})}} if letterbox else {}),
+                      **({"band": band_height(ar)} if band_height(ar) < canvas[1] else {}),
+                      **({"rotate": 90} if str(fcfg.get("output") or "").lower() == "sideways" else {})}}
+           if letterbox or tuple(canvas) != (OUT_W, OUT_H) else {}),
     }
 
 
@@ -770,8 +815,8 @@ def plan_panels(segs: list[dict], grid: dict, style: dict, avail: int) -> tuple[
     beat_len = grid["beat_len"]
     if use <= 0 or len(segs) < 5:
         return segs, beat_len
-    kinds = [k for k in (pc.get("kinds") or ["split2", "grid4", "split3", "columns3"])
-             if k in ("split2", "split3", "grid4", "columns3")] or ["split2"]
+    from .panels import KINDS
+    kinds = [k for k in (pc.get("kinds") or ["split2", "grid4", "split3", "columns3"]) if k in KINDS] or ["split2"]
     mode = pc.get("mode", "mixed")
     max_n = int(pc.get("max", 2))
     step_beats = 1 if beat_len >= 0.38 else 2
@@ -826,6 +871,138 @@ def _stable_rand(*parts) -> float:
     return int(h[:8], 16) / 0xFFFFFFFF
 
 
+def _flat_colours(thumb: str | None, n: int = 3) -> list[list[int]]:
+    """A few flat colours from a picture's own palette (its most colourful clusters, softened): the plain grounds
+    a person is set against."""
+    import cv2
+    im = cv2.imread(str(thumb)) if thumb else None
+    if im is None:
+        return [[214, 132, 84], [128, 196, 140], [150, 150, 152]][:n]
+    px = cv2.cvtColor(cv2.resize(im, (48, 48)), cv2.COLOR_BGR2RGB).reshape(-1, 3).astype(np.float32)
+    _, lab, cen = cv2.kmeans(px, 6, None, (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0), 3,
+                             cv2.KMEANS_PP_CENTERS)
+    sat = cen.max(1) - cen.min(1)
+    cols = [cen[k] for k in np.argsort(-sat)[:n]]
+    return [[int(v) for v in np.clip(0.75 * c + 0.25 * c.mean() + 18, 0, 255)] for c in cols]
+
+
+def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: float) -> list[int]:
+    """The person stays, the world behind them changes (motion.backdrop: places, colour or both): a held shot of a
+    person gets, on each beat, a picture of another place of the trip (or a flat colour from its own palette) behind
+    them; its last beat is its real background again. The opening person shot gets the places, a later one colour."""
+    want = (style.get("motion") or {}).get("backdrop")
+    modes = ["places", "colour"] if want in (True, "both") else [str(want)]
+    every = beat_len if beat_len >= 0.38 else 2 * beat_len
+    def size(s):  # how much of the frame the subject (the person) fills
+        b = s.get("subject") or {}
+        return (float(b.get("x1", 0)) - float(b.get("x0", 0))) * (float(b.get("y1", 0)) - float(b.get("y0", 0)))
+    cand = [i for i, s in enumerate(segs) if s.get("people") and s.get("kind") == "video" and not s.get("panel")
+            and float(s["dur"]) >= 3 * every and not s.get("mosaic") and size(s) >= 0.03]
+    cand = sorted(cand, key=lambda i: -size(segs[i]))[:2]   # the person big in frame: the swap reads
+    cand.sort()
+    by_id = {s["id"]: s for s in shots}
+    used = {s.get("shot_id") for s in segs}
+    from .story import has_people
+    places = [s for s in sorted(shots, key=lambda s: -_quality(s)) if s.get("thumb") and s["id"] not in used
+              and not has_people(s) and (s.get("ai") or {}).get("usable", True)]
+    done = []
+    for mode, i in zip(modes, cand[:1] + cand[-1:] if len(cand) > 1 else cand):
+        beats = max(1, int(float(segs[i]["dur"]) / every) - 1)
+        if mode == "places":
+            from .story import landmark
+            seen, items = set(), []
+            for s in places:
+                m = landmark(s) or s["id"]
+                if m not in seen:
+                    seen.add(m)
+                    items.append(s["thumb"])
+                if len(items) >= beats:
+                    break
+        else:
+            cols = _flat_colours((by_id.get(segs[i].get("shot_id")) or {}).get("thumb"))
+            items = [cols[k % len(cols)] for k in range(beats)]
+        if items:
+            segs[i]["backdrop"] = {"mode": mode, "items": items, "every": round(every, 4)}
+            done.append(i)
+    return done
+
+
+def plan_mosaic(segs: list[dict], shots: list[dict], style: dict) -> int | None:
+    """The photo wall: one shot near the middle of the reel (one with a person, held at least 1.5 s) gets the
+    cells round its subject filled with little pictures of other shots from the trip (motion.mosaic). The subject
+    keeps its cells clear. Returns the slot, or None."""
+    from .config import CANVAS
+    from .motion import grid_shape
+    g = (style.get("motion") or {}).get("grid") or {}
+    cols = int(g.get("cols", 8)) if isinstance(g, dict) else 8
+    c, r = grid_shape(CANVAS.w, CANVAS.h, cols)
+    total = sum(float(s["dur"]) for s in segs)
+    cand = [i for i, s in enumerate(segs) if 0 < i < len(segs) - 1 and not s.get("panel") and float(s["dur"]) >= 1.5]
+    if not cand:
+        return None
+    k = min(cand, key=lambda i: (not segs[i].get("people"), abs(float(segs[i]["out_start"]) + float(segs[i]["dur"]) / 2
+                                                                 - 0.5 * total)))
+    used = {s.get("shot_id") for s in segs}
+    from .diversity import scene_groups
+    ok = [s for s in sorted(shots, key=lambda s: -_quality(s)) if s.get("thumb") and s["id"] not in used
+          and s.get("ai", {}).get("usable", True)]
+    from .story import landmark
+    groups, seen, pool = scene_groups(ok) if ok else {}, set(), []
+    marks = {landmark(s) for s in shots if s["id"] in used} - {""}
+    for s in ok:  # one picture per moment and per landmark: the wall shows the trip, not Half Dome three times
+        g, m = groups.get(s["id"], s["id"]), landmark(s)
+        if g in seen or (m and m in marks):
+            continue
+        seen.add(g)
+        if m:
+            marks.add(m)
+        pool.append(s)
+    if not pool:
+        return None
+    sb = segs[k].get("subject_out") or {}
+    sy = (float(sb.get("y0", 0.3)) + float(sb.get("y1", 0.8))) / 2
+    cells = {}
+    n = 0
+    for ri in range(r):
+        for ci in range(c):
+            x, y = (ci + 0.5) / c, (ri + 0.5) / r
+            if ((x - 0.5) / 0.24) ** 2 + ((y - sy) / 0.3) ** 2 < 1.0:  # the subject's cells stay clear
+                continue
+            if _stable_rand("mos", k, ri, ci) < 0.55:  # about half the cells: a wall with gaps, not a carpet
+                cells[str(ri * c + ci)] = pool[n % len(pool)]["thumb"]
+                n += 1
+    segs[k]["mosaic"] = {"cells": cells, "cols": cols, "seed": k}
+    return k
+
+
+def fit_transition(e: dict, nxt: dict, name: str, tempo: float | None, beats: float | None = None,
+                   side: int = 0, speed: float = 1.0) -> tuple[float, dict]:
+    """(length, params) of a transition from e into nxt. A masked reveal (split, vsplit, iris) lasts whole beats
+    (`beats`, default 2), keyframed on each, and may take both shots whole; the others their natural length."""
+    from .motion import MASKS, NATURAL
+    if name not in MASKS:
+        return round(NATURAL.get(name, 0.4) * speed, 4), {}
+    bl = 60.0 / float(tempo) if tempo else 0.5
+    room = min(float(e["dur"]), float(nxt["dur"]))
+    n = float(beats or 2)
+    while n > 1 and n * bl > room + 1e-3:
+        n -= 1
+    d = min(n * bl, room)
+    frames = max(2, int(d * OUT_FPS / 2) * 2)
+    steps = max(1, int(round(d / bl)))
+    params = {"steps": steps}
+    if name == "split":
+        params["pivot"] = ("bl", "br", "tr", "tl")[side % 4]
+    elif name == "vsplit":
+        params["side"] = "bottom" if side % 3 != 2 else "top"
+    elif name == "iris":
+        params.update({"cx": 0.5, "cy": 0.45})
+    elif name == "cells":  # spreads from a different spot each time
+        params.update({"seed": side, "ox": round(0.2 + 0.6 * _stable_rand("ox", side), 3),
+                       "oy": round(0.2 + 0.6 * _stable_rand("oy", side), 3)})
+    return round(frames / OUT_FPS, 4), params
+
+
 def choose_transitions(segs: list[dict], style: dict) -> None:
     """Decide the transition at every cut (stored on the outgoing segment as trans_out).
 
@@ -846,6 +1023,8 @@ def choose_transitions(segs: list[dict], style: dict) -> None:
         density = float(tr.get("density", 0.5))  # share of ordinary cuts that get a transition
         force_sections = tr.get("at", "sections") != "none"
     speed = float(tr.get("speed", 1.0) or 1.0)
+    order = [normalize(x) for x in tr.get("order") or [] if normalize(x)]
+    tempo = style.get("_tempo")
     last = None
     side = 0
     for i, e in enumerate(segs):
@@ -853,6 +1032,32 @@ def choose_transitions(segs: list[dict], style: dict) -> None:
         if i == len(segs) - 1:
             break
         nxt = segs[i + 1]
+        if order:
+            # the style runs its transitions in order through the reel (a run of line wipes, then circles...),
+            # one on every cut, each fitted to the beat
+            name = order[min(len(order) - 1, int(i * len(order) / max(1, len(segs) - 1)))]
+            d, params = fit_transition(e, nxt, name, tempo or (60.0 * float(e.get("beats") or 1) / float(e["dur"])
+                                                              if e.get("beats") else None),
+                                       tr.get("beats"), side, speed)
+            side += 1
+            g = (style.get("motion") or {}).get("grid")
+            if name == "cells" and g:
+                params["cols"] = int(g.get("cols", 8) if isinstance(g, dict) else 8)
+            e["trans_out"], e["trans_dur"], e["trans_params"] = name, d, params
+            continue
+        if e.get("beatless") and nxt.get("beatless"):
+            # no beat to cut on (music.sections): most shots melt into the next with a long, soft dissolve
+            if _stable_rand("flow", e["shot_id"], nxt["shot_id"], i) < max(0.6, density):
+                d = min(NATURAL["dissolve"] * 1.6 * speed, 0.9 * min(e["dur"], nxt["dur"]))
+                if d >= 0.3:
+                    e["trans_out"], e["trans_dur"] = "dissolve", round(max(2, int(round(d * OUT_FPS / 2)) * 2) / OUT_FPS, 4)
+                    last = "dissolve"
+            continue
+        if e.get("breath"):
+            # the held breath before the climax: a clean cut on the hit (or a flash, if this style flashes)
+            if nxt.get("drop") and "flash" in [normalize(x) for x in palette.get(nxt["level"], [])]:
+                e["trans_out"], e["trans_dur"] = "flash", round(max(2, int(round(NATURAL["flash"] * speed * OUT_FPS / 2)) * 2) / OUT_FPS, 4)
+            continue
         changed = nxt["level"] != e["level"]
         want = (force_sections and (changed or nxt.get("drop"))) or \
             _stable_rand(e["shot_id"], nxt["shot_id"], i, *([style["shots"]["variant"]] if style.get("shots", {}).get("variant") else [])) < density

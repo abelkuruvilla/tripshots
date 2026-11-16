@@ -42,7 +42,38 @@ def layout_rects(kind: str) -> list[tuple[int, int, int, int]]:
     if kind == "columns3":  # three tall columns
         w = _even((CANVAS.w - 2 * g) / 3)
         return [(i * (w + g), 0, w if i < 2 else CANVAS.w - 2 * (w + g), CANVAS.h) for i in range(3)]
+    strips = _strips(kind)
+    if strips:  # a strip collage: N bands across (rows) or down (cols) the frame, thin black seams between them
+        axis, n = strips
+        g = STRIP_GAP
+        if axis == "rows":
+            ys = [_even(i * (CANVAS.h + g) / n) for i in range(n + 1)]
+            return [(0, ys[i], CANVAS.w, _even(ys[i + 1] - ys[i] - g) if i < n - 1 else CANVAS.h - ys[i]) for i in range(n)]
+        xs = [_even(i * (CANVAS.w + g) / n) for i in range(n + 1)]
+        return [(xs[i], 0, _even(xs[i + 1] - xs[i] - g) if i < n - 1 else CANVAS.w - xs[i], CANVAS.h) for i in range(n)]
     raise ValueError(kind)
+
+
+STRIP_GAP = 6
+
+
+def _strips(kind: str) -> tuple[str, int] | None:
+    """("rows" | "cols", n) for a strip collage kind like rows3 or cols7 (2 to 9 bands)."""
+    import re
+    m = re.fullmatch(r"(rows|cols)([2-9])", str(kind))
+    return (m.group(1), int(m.group(2))) if m else None
+
+
+def intros(kind: str) -> list[str]:
+    """How each panel comes in: strips slide in from alternate sides (rows) or drop in alternately (columns)."""
+    if kind in INTRO_FOR:
+        return INTRO_FOR[kind]
+    axis, n = _strips(kind)
+    return [("slide_left", "slide_right")[i % 2] if axis == "rows" else ("wipe_down", "wipe_up")[i % 2]
+            for i in range(n)]
+
+
+KINDS = ("split2", "split3", "grid4", "columns3") + tuple(f"{a}{n}" for a in ("rows", "cols") for n in range(2, 10))
 
 
 INTRO_FOR = {"split2": ["slide_left", "slide_right"], "split3": ["slide_left", "slide_right", "slide_left"],
@@ -164,7 +195,7 @@ def plan_panel_clips(kind: str, dur: float, beats_rel: list[float], shots: list[
     """Assign shots to panels and times. reveal: one panel appears per step;
     cycle: after all are shown, panels keep cutting to new shots on each step."""
     rects = layout_rects(kind)
-    intros = INTRO_FOR[kind]
+    intro_l = intros(kind)
     step_beats = 1 if beat_len >= 0.38 else 2
     steps = [b for b in beats_rel[::step_beats] if b < dur - 0.25]
     if not steps or steps[0] > 0.05:
@@ -186,7 +217,7 @@ def plan_panel_clips(kind: str, dur: float, beats_rel: list[float], shots: list[
         if prev is not None:
             prev["t1"] = round(t + INTRO_DUR, 4)  # stays underneath while the new one slides in
         c = {"rect": list(rects[r]), "t0": round(t, 4), "t1": round(dur, 4),
-             "intro": intros[r] if si < len(rects) else intros[r], "shot": sh}
+             "intro": intro_l[r], "shot": sh}
         clips.append(c)
         current[r] = c
     return clips

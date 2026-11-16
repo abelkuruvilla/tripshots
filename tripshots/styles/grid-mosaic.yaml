@@ -1,0 +1,37 @@
+name: grid-mosaic
+description: The grid trend. A fine grid of light lines over the whole reel; each new shot fills in cell by cell from one spot (a cell shows as a soft block of its colour first), and once, mid-reel, the cells round you fill with little pictures from the rest of the trip like a photo wall, hold, and clear again. Warm, soft film colour.
+direction: "A calm, warm travel diary built on a grid: each shot fills in cell by cell, so choose shots with clear, simple shapes and soft light (sunsets, water, a person seen from behind). The photo wall goes on a held shot of a person in the middle of the reel, with the trip's other places round them. No text."
+duration: {target: 13, min: 9, max: 20}
+frame: {aspect: "4:3", output: "4:3"}
+cuts:
+  beats_per_cut: {calm: 4, medium: 4, intense: 4}
+  hook_beats: 4
+  min_shot_sec: 1.2
+  max_shot_sec: 2.6
+shots: {min_score: 6, ordering: energy, max_per_source: 2, slowmo: true}
+layout: {landscape: auto, photo_motion: kenburns, photo_zoom: 1.08}
+story: {arc: "off"}
+transitions:
+  order: [cells]
+  beats: 3
+  density: 1.0
+  at: all
+grade: {look: portrait-film, strength: 0.8, ai: true}
+color: {saturation: 1.05, contrast: 1.0, brightness: 0.02, gamma: 1.0, warmth: 0.05, vignette: false, sharpen: 0.2}
+text:
+  preset: minimal
+  hook: {mode: "off"}
+  location: {mode: "off"}
+  cta: {mode: "off"}
+caption: {tone: 'soft, nostalgic, first person', hashtags: 8}
+motion:
+  beat_punch: 0.0
+  shake_on_drop: false
+  freeze: false
+  rgb_split: 0.0
+  video_push: 0.04
+  grid: {cols: 8, alpha: 0.4}
+  mosaic: true
+panels: {use: 0.0}
+velocity: {use: 0.0}
+speed: {ramps: [], fast: 0.0, drop: "off", smooth: flow}

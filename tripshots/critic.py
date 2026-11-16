@@ -10,9 +10,16 @@ Rules (each with a weight; the score is out of 100):
   no repeats     no moment twice, no source twice in a row
   movement       not more than half the shots static
   ending         the ending loops back (or a closing line)
+  flow           the camera's movement carries across the cuts (matchcut.carry: no left-then-right, no
+                 push-in into a pull-back that it couldn't fix)
 Fixes: turn on the hook punch, move the hook line to the third frame, swap a shot with a person into the first
-3 s, swap repeated moments apart, turn on the loop. With an AI backend it also looks at the storyboard and may
-suggest up to three swaps or text changes (applied through planedit's safe operations).
+3 s, swap repeated moments apart, turn on the loop. With an AI backend it also looks at the storyboard, in
+rounds: each round a fresh reviewer (nothing to defend) lists what is wrong as "blocker" (worth a change) or
+"polish" (noted, never holds the reel up) with the change that fixes it (applied through planedit's safe
+operations). The next round's reviewer first sees the changes with before/after proof (the old and the new shot
+side by side) and says whether each one helped; one that made it worse is undone. It stops when no blocker is
+left, when the list stops shrinking (it must halve, or be down to a few), or after `story.critic_rounds` rounds
+(default 3: review and fix, check and fix, check; the last round never changes anything it can't check).
 """
 from __future__ import annotations
 
@@ -102,6 +109,11 @@ def checks(plan: dict, by_id: dict, shots: list[dict]) -> list[dict]:
         add("ending", abs(end - plan["duration"]) < 0.05, 15, "ends on the last beat of the montage")
     else:
         add("ending", loop, 15, "the ending loops back or closes with a line", None if loop else "loop")
+    cont = plan.get("continuity")
+    if cont and cont.get("cuts"):
+        left = cont.get("left") or []
+        add("flow", len(left) <= 1, 5, "the camera's movement carries across the cuts"
+            + (f" ({'; '.join(left[:2])})" if left else ""))
     if rec:
         from . import recipes
         for key, ok, weight, why, fx in recipes.checks(plan, by_id):
@@ -227,12 +239,23 @@ Plan: {summary}
 Other shots available (id: note): {cands}
 Direction for this reel (the house notes, then this style's own):
 {direction}
-Judge the hook (does slot 1 stop the scroll?), the story (is there a build and a payoff?), variety, and whether
-the best shots are used. Suggest at most 3 changes that would most improve retention, as operations:
+{earlier}Judge the hook (does slot 1 stop the scroll?), the story (is there a build and a payoff?), variety, and whether
+the best shots are used. List what is wrong, each with a severity:
+  "blocker": a viewer would scroll away or the reel is visibly worse for it (a weak opening, a flat payoff, the
+             same view twice, a dull or broken shot where it matters). Give the change that fixes it.
+  "polish":  it could be nicer, but the reel works. A polish item never needs a change.
+Changes are operations:
   {{"op": "swap", "segment": N, "shot_id": "S…"}}  put another available shot in slot N
   {{"op": "exchange", "a": N, "b": M}}            swap two slots' shots
   {{"op": "text", "type": "hook", "text": "…"}}    a better hook line (max 7 words)
-Reply with JSON only: {{"score": 0-100, "verdict": "one sentence", "ops": [...]}} (ops may be empty)."""
+Reply with JSON only: {{"score": 0-100, "verdict": "one sentence",{verify_key} "issues": [{{"slot": N or null,
+"issue": "…", "severity": "blocker"|"polish", "op": {{…}} or null}}]}} (issues may be empty)."""
+
+VERIFY = """
+Earlier round: another editor changed these (the second image shows each slot before | after):
+{changes}
+First check each change on the storyboard: did it help? Then judge the reel as it is now.
+"""
 
 
 def direction(style_note: str | None = None) -> str:
@@ -266,7 +289,38 @@ def spares(plan: dict, by_id: dict, style: dict | None = None, n: int = 20) -> l
                   + 1.5 * grey.get(s["id"], 0.0) + misfit(s))[:n]
 
 
-def ai_review(plan_path: Path, plan: dict, by_id: dict, backend, style: dict | None = None) -> dict | None:
+def proof_sheet(changes: list[dict], by_id: dict, out: Path) -> Path | None:
+    """Before | after for each change of the last round: the old shot and the new one in that slot."""
+    from PIL import Image, ImageDraw
+    from .text import load_font
+    rows = [c for c in changes if c.get("slot") and (c.get("before") or c.get("after"))][:6]
+    if not rows:
+        return None
+    tw, th = 160, 284
+    sheet = Image.new("RGB", (2 * tw + 3 * 8 + 120, len(rows) * (th + 8) + 8), (24, 24, 24))
+    d = ImageDraw.Draw(sheet)
+    font = load_font(20)
+    for k, c in enumerate(rows):
+        y = 8 + k * (th + 8)
+        d.text((8, y + th // 2 - 12), f"slot {c['slot']}", fill=(235, 235, 235), font=font)
+        for j, sid in enumerate((c.get("before"), c.get("after"))):
+            th_p = (by_id.get(sid) or {}).get("thumb")
+            x = 120 + j * (tw + 8)
+            try:
+                im = Image.open(th_p).convert("RGB")
+                sc = max(tw / im.width, th / im.height)
+                im = im.resize((int(im.width * sc) + 1, int(im.height * sc) + 1))
+                l, t = (im.width - tw) // 2, (im.height - th) // 2
+                sheet.paste(im.crop((l, t, l + tw, t + th)), (x, y))
+            except Exception:
+                d.rectangle((x, y, x + tw, y + th), outline=(90, 90, 90))
+            d.text((x + 6, y + 6), ("before " if j == 0 else "after ") + str(sid or ""), fill=(255, 220, 120), font=font)
+    sheet.save(out, quality=88)
+    return out
+
+
+def ai_review(plan_path: Path, plan: dict, by_id: dict, backend, style: dict | None = None,
+              changes: list[dict] | None = None) -> dict | None:
     from .ai import extract_json
     from .history import mark_down
     from .text import storyboard
@@ -289,12 +343,27 @@ def ai_review(plan_path: Path, plan: dict, by_id: dict, backend, style: dict | N
     if led:
         summary += (f". {', '.join(dict.fromkeys(led))} opened or ended an earlier reel of this series: "
                     "leave them in the middle, never in slot 1 or the last slot")
+    imgs = [sb]
+    earlier, verify_key = "", ""
+    if changes:
+        proof = proof_sheet(changes, by_id, plan_path.with_suffix(".proof.jpg"))
+        if proof:
+            imgs.append(proof)
+        earlier = VERIFY.format(changes="\n".join(f"  {k + 1}. {c['what']} (for: {c.get('why') or 'a better reel'})"
+                                                   for k, c in enumerate(changes)))
+        verify_key = ' "verified": [{"change": K, "helped": true|false}],'
     try:
         data = extract_json(backend.ask(AI_PROMPT.format(
             summary=summary, cands="; ".join(f"{s['id']}: {s.get('ai', {}).get('note', '')}" for s in cands),
-            direction=direction(plan.get("direction"))),
-            [sb], max_tokens=700))
-        return data if isinstance(data, dict) else None
+            direction=direction(plan.get("direction")), earlier=earlier, verify_key=verify_key),
+            imgs, max_tokens=900))
+        if not isinstance(data, dict):
+            return None
+        if "issues" not in data and data.get("ops"):  # an older-style reply: every change counts as a blocker
+            data["issues"] = [{"slot": o.get("segment"), "issue": "", "severity": "blocker", "op": o}
+                              for o in data["ops"] if isinstance(o, dict)]
+        data["issues"] = [i for i in data.get("issues") or [] if isinstance(i, dict)]
+        return data
     except Exception as e:
         log(f"critic: AI review skipped ({str(e)[:100]})")
         return None
@@ -305,18 +374,45 @@ def review(plan: dict, by_id: dict, shots: list[dict], style: dict, backend=None
     before = score(cs)
     done = fix(plan, by_id, shots, cs, style.get("_places") if (plan.get("story") or {}).get("format") == "list"
                else None)
-    ai = None
+    ai, rounds = None, []
     if backend is not None and work is not None:
         tmp = Path(work) / "critic.plan.json"
-        ai = ai_review(tmp, plan, by_id, backend, style)
-        ops = [o for o in (ai or {}).get("ops") or [] if isinstance(o, dict)
-               and o.get("op") in ("swap", "exchange", "text")][:3]
-        if ops:
-            did = apply_ops(plan, by_id, style, ops)
-            done += did
-            if any(d.startswith("AI: slot") for d in did):  # a shot put in by eye may have landed in a flash
+        limit = max(1, min(4, int((style.get("story") or {}).get("critic_rounds", 3) or 3)))
+        changes, last_n = None, None
+        for r in range(limit):
+            ai = ai_review(tmp, plan, by_id, backend, style, changes)  # a fresh reviewer every round
+            if not ai:
+                break
+            # the last round's changes, judged with proof: one that made the reel worse is undone
+            undone = []
+            for v in ai.get("verified") or []:
+                try:
+                    c = changes[int(v.get("change")) - 1]
+                except (TypeError, ValueError, IndexError):
+                    continue
+                if v.get("helped") is False and c.get("undo"):
+                    c["undo"]()
+                    undone.append(c["what"])
+            blockers = [i for i in ai["issues"] if str(i.get("severity", "")).lower() == "blocker"]
+            polish = [i for i in ai["issues"] if i not in blockers]
+            rounds.append({"round": r + 1, "score": ai.get("score"), "verdict": ai.get("verdict"),
+                           "blockers": [i.get("issue") for i in blockers], "polish": [i.get("issue") for i in polish],
+                           **({"undone": undone} if undone else {})})
+            log(f"critic round {r + 1}: {len(blockers)} blocker(s), {len(polish)} polish"
+                + (f"; undone: {'; '.join(undone)}" if undone else ""))
+            if not blockers or (r == limit - 1 and limit > 1):
+                break  # (the last round only checks: a change nobody checks isn't made)
+            if last_n is not None and len(blockers) > 3 and len(blockers) > last_n / 2:
+                log("critic: the list isn't shrinking: stopping here")
+                break
+            last_n = len(blockers)
+            changes = _apply_issues(plan, by_id, style, blockers[:3])
+            done += [c["what"] for c in changes]
+            if any(c["what"].startswith("AI: slot") for c in changes):  # a shot put in by eye may land in a flash
                 done += long_slots(plan, by_id, style.get("_places")
                                    if (plan.get("story") or {}).get("format") == "list" else None)
+            if not changes:
+                break
     cs2 = checks(plan, by_id, shots)
     after = score(cs2)
     log(f"critic: {before}/100 -> {after}/100" + (f"; fixed: {'; '.join(done)}" if done else "")
@@ -325,7 +421,45 @@ def review(plan: dict, by_id: dict, shots: list[dict], style: dict, backend=None
         if not c["ok"]:
             log(f"  still weak: {c['why']}")
     return {"score": after, "score_before": before, "checks": cs2, "fixed": done,
-            "ai": {k: ai.get(k) for k in ("score", "verdict", "ops")} if ai else None}
+            "ai": {k: ai.get(k) for k in ("score", "verdict", "issues")} if ai else None,
+            **({"rounds": rounds} if rounds else {})}
+
+
+def _apply_issues(plan: dict, by_id: dict, style: dict, issues: list[dict]) -> list[dict]:
+    """Apply each blocker's change; return what changed, with its before/after shots and a way to undo it."""
+    import copy
+    segs = plan["segments"]
+    out = []
+    for it in issues:
+        op = it.get("op")
+        if not isinstance(op, dict) or op.get("op") not in ("swap", "exchange", "text"):
+            continue
+        snap_s, snap_o = copy.deepcopy(segs), copy.deepcopy(plan.get("overlays") or [])
+        did = apply_ops(plan, by_id, style, [op])
+        if not did:
+            continue
+        slot = op.get("segment") or op.get("a")
+        try:
+            k = int(slot) - 1
+            before, after = snap_s[k].get("shot_id"), segs[k].get("shot_id")
+        except (TypeError, ValueError, IndexError):
+            before = after = None
+
+        idx = [int(op[k]) - 1 for k in ("segment", "a", "b") if str(op.get(k, "")).lstrip("-").isdigit()]
+
+        def undo(s0=snap_s, o0=snap_o, idx=idx, text=op["op"] == "text"):
+            # only what this change touched: later changes to other slots stay
+            for k in idx:
+                if 0 <= k < len(segs):
+                    segs[k].clear()
+                    segs[k].update(s0[k])
+            if text:
+                for ov, was in zip(plan.get("overlays") or [], o0):
+                    if ov.get("type") == "hook" and was.get("type") == "hook":
+                        ov["text"] = was["text"]
+        out.append({"what": did[0], "why": it.get("issue"), "slot": slot, "before": before, "after": after,
+                    "undo": undo})
+    return out
 
 
 def apply_ops(plan: dict, by_id: dict, style: dict, ops: list[dict]) -> list[str]:

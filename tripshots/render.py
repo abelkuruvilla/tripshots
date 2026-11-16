@@ -50,7 +50,8 @@ def _video_layout(e: dict, length: float, size: tuple[int, int] | None = None) -
         if e.get("pan_reverse"):
             a, b = b, a
         x0, x1 = max(0.0, min(excess, a)), max(0.0, min(excess, b))
-        ease = f"(0.5-0.5*cos(PI*min(t/{length:.3f}\\,1)))"
+        from .motion import EASE_EXPR  # the learned style's way of moving (learn: camera `ease`), else gentle
+        ease = EASE_EXPR.get(e.get("ease") or "sine", EASE_EXPR["sine"]).format(x=f"min(t/{length:.3f}\\,1)")
         return [scale, f"crop={OW}:{OH}:x='{x0:.1f}+({x1 - x0:.1f})*{ease}':y='(ih-{OH})/2'"]
     if lay == "crop" and excess > 4:
         track = e.get("_track_pts")
@@ -112,8 +113,9 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
         raise ReelError(f"segment render failed for {Path(e['src']).name}: {proc.stderr[-600:]}")
 
 
-def _ease(x: float) -> float:
-    return 0.5 - 0.5 * math.cos(math.pi * max(0.0, min(1.0, x)))
+def _ease(x: float, name: str | None = None) -> float:
+    from .motion import ease
+    return ease(name, x)
 
 
 def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path,
@@ -160,7 +162,7 @@ def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path
     rots = []
     for k in range(n):
         lin = k / max(1, n - 1)
-        p = _ease(lin) if mode in ("in", "out", "in_rot") else 0.35 * lin + 0.65 * _ease(lin)
+        p = _ease(lin, e.get("ease")) if mode in ("in", "out", "in_rot") else 0.35 * lin + 0.65 * _ease(lin, e.get("ease"))
         rot = 0.0
         if mode in ("in", "in_rot"):
             z = 1 + (zoom - 1) * p
@@ -569,7 +571,8 @@ def _prepare_transitions(plan: dict) -> None:
             e["trans_dur"] = 0.0
             continue
         d = float(e.get("trans_dur") or NATURAL.get(name, legacy_d))
-        d = min(d, 0.9 * min(e["dur"], segs[i + 1]["dur"]))
+        from .motion import MASKS  # a masked reveal may take its shots whole: one reveal runs into the next
+        d = min(d, (1.0 if name in MASKS else 0.9) * min(e["dur"], segs[i + 1]["dur"]))
         e["trans_dur"] = max(2, int(round(d * OUT_FPS / 2)) * 2) / OUT_FPS
         e.setdefault("trans_params", {})
 
@@ -595,7 +598,94 @@ def render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_text
             raise
         encode.disable(str(e))
         out = _render(plan, out_path, work, workers, native_text, info)
+    # a render that "succeeds" without writing a new file would hand back the previous video: never
+    p = Path(out)
+    if not p.exists() or p.stat().st_size == 0 or p.stat().st_mtime < t0 - 2:
+        raise ReelError(f"the render wrote no new video ({p.name}): the previous file is still there")
     log(f"render took {time.time() - t0:.0f}s")
+    return out
+
+
+class Backdrops:
+    """Backdrop swaps (segment `backdrop` {items, every}): on each beat the person is set in front of another place
+    (a picture) or a flat colour, and the last beat shows their real background again. The person is cut out of
+    every other frame (rembg u2netp) and the mask is smoothed over time, so the edge doesn't boil."""
+
+    def __init__(self):
+        self.masks: dict = {}
+        self.bgs: dict = {}
+
+    def _bg(self, item, w: int, h: int) -> np.ndarray:
+        key = (str(item), w, h)
+        if key not in self.bgs:
+            if isinstance(item, (list, tuple)):
+                self.bgs[key] = np.full((h, w, 3), [int(v) for v in item[:3]], np.uint8)
+            else:
+                im = cv2.imread(str(item))
+                if im is None:
+                    self.bgs[key] = None
+                else:
+                    im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+                    s = max(w / im.shape[1], h / im.shape[0])
+                    im = cv2.resize(im, (int(im.shape[1] * s + 1), int(im.shape[0] * s + 1)), interpolation=cv2.INTER_AREA)
+                    y, x = (im.shape[0] - h) // 2, (im.shape[1] - w) // 2
+                    self.bgs[key] = np.ascontiguousarray(im[y:y + h, x:x + w])
+        return self.bgs[key]
+
+    def frame(self, i: int, seg: dict, fr: np.ndarray, t: float) -> np.ndarray:
+        bd = seg["backdrop"]
+        items = bd.get("items") or []
+        k = int((t - float(seg["out_start"])) / max(0.1, float(bd.get("every") or 0.5)))
+        if t < float(seg["out_start"]) or k >= len(items):
+            return fr  # (on the way in, and the last beat: the real place)
+        h, w = fr.shape[:2]
+        bg = self._bg(items[k], w, h)
+        if bg is None:
+            return fr
+        n = int(round(t * OUT_FPS))
+        last = self.masks.get(i)
+        if last is not None and last[1] is None:
+            return fr  # no person to keep in front: the shot plays as it is
+        if last is None or n - last[0] >= 2:
+            from . import nodes
+            m = nodes.people_mask(fr, width=320)  # the person only (upright figures), never a truck or a road
+            if m is None:
+                if last is None:
+                    self.masks[i] = (n, None)
+                    return fr
+                m = last[1]
+            elif last is not None:
+                m = 0.55 * m + 0.45 * last[1]
+            self.masks[i] = last = (n, m)
+        return cv2.blendLinear(fr, bg, last[1], 1.0 - last[1])
+
+
+def _wall_tiles(mo: dict, w: int, h: int, shot: np.ndarray | None = None) -> dict:
+    """The photo wall's pictures, each cut to its cell's shape: {cell index: RGB array}. With the shot's own frame,
+    the cells its subject stands in are left clear (found with the cut-out; the plan only guessed)."""
+    from .motion import grid_shape
+    c, r = grid_shape(w, h, int(mo.get("cols", 8)))
+    cw, ch = max(2, w // c), max(2, h // r)
+    clear = set()
+    if shot is not None:
+        from . import nodes
+        m = nodes.cutout(cv2.resize(shot, (c * 24, r * 24), interpolation=cv2.INTER_AREA))
+        if m is not None and 0.01 < float((m > 0.5).mean()) < 0.5:
+            cover = cv2.resize((m > 0.5).astype(np.float32), (c, r), interpolation=cv2.INTER_AREA)
+            clear = {int(k) for k in np.nonzero(cover.ravel() > 0.06)[0]}
+    out = {}
+    for k, path in (mo.get("cells") or {}).items():
+        if int(k) in clear:
+            continue
+        im = cv2.imread(str(path))
+        if im is None:
+            continue
+        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        s = max(cw / im.shape[1], ch / im.shape[0])
+        im = cv2.resize(im, (max(cw, int(im.shape[1] * s + 0.5)), max(ch, int(im.shape[0] * s + 0.5))),
+                        interpolation=cv2.INTER_AREA)
+        y, x = (im.shape[0] - ch) // 2, (im.shape[1] - cw) // 2
+        out[int(k)] = np.ascontiguousarray(im[y:y + ch, x:x + cw])
     return out
 
 
@@ -720,6 +810,10 @@ def still(plan: dict, t: float, out: Path, raw: bool = False, mask: str | None =
         from . import nodes
         Image.fromarray(nodes.mask_view(np.ascontiguousarray(frame), mask, seg)).save(out, quality=88)
         return out
+    if plan.get("grid") and not raw:  # the reel's grid, as the render draws it
+        from .motion import grid_overlay
+        frame = grid_overlay(np.ascontiguousarray(frame), int(plan["grid"].get("cols", 8)),
+                             float(plan["grid"].get("alpha", 0.3)))
     texts = TextTrack(plan, [float(b) for b in plan.get("beats") or []], fx=False)
     frame = texts.draw(np.ascontiguousarray(frame).copy(), t, seg)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -781,7 +875,10 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
 
     # ---- final encode: frames from the compositor + text overlays + music
     total = total_f / fps
-    inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CANVAS.w}x{CANVAS.h}", "-r", str(fps), "-i", "-"]
+    # a sideways reel (frame `rotate`: "turn your phone"): made widescreen, written on its side in an upright file
+    turn = int((plan.get("frame") or {}).get("rotate") or 0) % 360
+    fw, fh = (CANVAS.h, CANVAS.w) if turn in (90, 270) else (CANVAS.w, CANVAS.h)
+    inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{fw}x{fh}", "-r", str(fps), "-i", "-"]
     vfade = min(float(plan.get("fade_out_video") or 0), total_f / fps * 0.5)
     fc, n_in = [f"[0:v]{f'fade=t=out:st={total_f / fps - vfade:.3f}:d={vfade:.3f},' if vfade > 0.05 else ''}"
                 "format=yuv420p[vout]"], 1
@@ -830,6 +927,12 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                         graded.clear()
                     graded[key] = nodes.apply(fr, segs[i]["layers"], masks[i])
                 fr = graded[key]
+            if segs[i].get("backdrop"):  # the person stays, the world behind them changes on the beat
+                fr = backdrop.frame(i, segs[i], fr, n / fps)
+            ci = float(segs[i].get("colour_in") or 0)
+            if ci > 0:  # arrives in black and white (through the transition too), then its colour blooms
+                from .motion import colour_in, ease_in_out
+                fr = colour_in(fr, ease_in_out(max(0.0, min(1.0, (n / fps - segs[i]["out_start"] - 0.15) / ci))))
             sc, ang, tx, ty = shot_motion(n / fps, segs[i], beats, mcfg)
             fr = affine(fr, sc, ang, tx, ty)
             k = pulse_amount(n / fps, segs[i], beats, mcfg)
@@ -840,6 +943,10 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         fz0 = int(round(float(fz.get("t", -1)) * fps)) if fz else -1
         fzn = int(round(float(fz.get("dur", 0)) * fps)) if fz else 0
         frozen = None
+        sil: dict = {}  # each shot's people mask for its silhouette flash, found once
+        backdrop = Backdrops()
+        walls: dict = {}  # each photo wall's little pictures, loaded once
+        grid = plan.get("grid")
         try:
             i = 0
             for n in range(total_f):
@@ -857,6 +964,16 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                         break
                 if frame is None:
                     frame = shot_frame(i, n)
+                if segs[i].get("silhouette") and not segs[i].get("panel"):
+                    # the people flash paper-white for two frames, as the shot snaps whole (after its way in)
+                    snap = start_f[i] + (half[i - 1] if i else 0)
+                    at = snap - 2 if i and half[i - 1] else start_f[i] + 9
+                    if at <= n < at + 2:
+                        if i not in sil:
+                            sil[i] = nodes.people_mask(shot_frame(i, at))
+                        if sil[i] is not None:
+                            from .motion import silhouette
+                            frame = silhouette(frame, sil[i])
                 if fzn and fz0 <= n < fz0 + fzn:  # hero freeze on the biggest beat
                     if frozen is None:
                         frozen = frame.copy()
@@ -870,6 +987,16 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                     if n >= total_f - loop_f:
                         q = (n - (total_f - loop_f) + 1) / loop_f
                         frame = cv2.addWeighted(frame, 1 - q * q, first_frame, q * q, 0)
+                if segs[i].get("mosaic"):  # the photo wall round the subject
+                    mo = segs[i]["mosaic"]
+                    if i not in walls:
+                        walls[i] = _wall_tiles(mo, frame.shape[1], frame.shape[0], shot_frame(i, n))
+                    u = (n / fps - float(segs[i]["out_start"])) / max(0.1, float(segs[i]["dur"]))
+                    from .motion import mosaic as _mosaic
+                    frame = _mosaic(frame, walls[i], int(mo.get("cols", 8)), u, int(mo.get("seed", 0)))
+                if grid:  # the fine grid over everything
+                    from .motion import grid_overlay
+                    frame = grid_overlay(frame, int(grid.get("cols", 8)), float(grid.get("alpha", 0.3)))
                 if bar:  # motion and transitions move the whole frame: keep the letterbox bars clean
                     if not frame.flags.writeable:
                         frame = frame.copy()
@@ -878,6 +1005,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                 if maps is not None:
                     frame = maps.draw(frame, n / fps)
                 frame = texts.draw(frame, n / fps, segs[i])
+                if turn:
+                    frame = np.rot90(frame, {90: -1, 180: 2, 270: 1}[turn])  # (90 = the top of the picture to the right)
                 enc.stdin.write(np.ascontiguousarray(frame).tobytes())
                 for r_i in range(0, max(0, i - 1)):  # free decoders we're done with
                     readers[r_i].close()

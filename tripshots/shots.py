@@ -259,3 +259,24 @@ def heuristic_scores(shots: list[dict]) -> dict[str, dict]:
             "motion": "static" if m["pan"] < 0.002 else "pan", "note": "heuristic", "source": "heuristic",
         }
     return out
+
+
+# the light a reel can be held to (make --light, style shots.light): the AI's time_of_day for each shot
+LIGHTS = {"golden": ("golden-hour", "sunset", "sunrise"), "sunset": ("sunset", "golden-hour"),
+          "blue": ("blue-hour", "night"), "day": ("morning", "midday", "afternoon"), "night": ("night", "blue-hour")}
+
+
+def in_light(shots: list[dict], light: str, style: dict, need: int = 40) -> list[dict]:
+    """Only the shots in this light, when there are enough of them for a reel (and its photo wall); otherwise all of
+    them, with the ones in this light preferred (the style's taste learns to want that light)."""
+    want = set(LIGHTS.get(light, ()))
+    hit = [s for s in shots if str((s.get("ai") or {}).get("time_of_day") or "").lower() in want]
+    good = [s for s in hit if (s.get("ai") or {}).get("usable", True)]
+    if len(good) >= need:
+        log(f"light: {len(good)} shots in {light} light (of {len(shots)}): only those")
+        return hit
+    t = style.setdefault("taste", {})
+    t["light"] = sorted(set(t.get("light") or []) | {w.replace("-", "_") for w in want})
+    t["weight"] = max(float(t.get("weight", 0) or 0), 0.8)
+    log(f"light: only {len(good)} shots in {light} light: they are preferred, not required")
+    return shots

@@ -29,6 +29,35 @@ the photo and clip of one view count once.
 
 **Turn it off** with `make --arc off` (the older even cut grid) or `story: {arc: off}` in a style.
 
+### Listening to the song first
+
+A reel is cut to its song, and songs aren't metronomes. Before anything is laid out, the music is read for two
+things (`music.sections`, `music.peaks`, cached with the beats):
+
+- **Where there is a beat to cut on.** The drums' hits on the beat are compared with the level between beats, bar
+  by bar. Where the pulse is clear, shots cut on the beat as before. Where it isn't (a pad or piano intro, an
+  ambient bridge, a quiet outro), the section *flows*: shots are held about 1.4 times longer, melt into each other
+  with long soft dissolves, the build-up doesn't race, and nothing pulses on beats that aren't there. The log says
+  so (`6s without a beat to cut on`), and those segments carry `beatless: true`.
+- **Where the climaxes are.** Loudness, attack and brightness rising together, the next second against the two
+  before, snapped to a beat: a big rise is a `drop`, a smaller one a `lift`. The reel's payoff goes on the biggest
+  one in its middle. Many songs go quiet just before the hit (the held note before a drop): that **breath** is
+  measured, and the shot before the payoff holds it too (segment `breath`): it pushes in slowly, doesn't pulse, and
+  cuts cleanly on the hit (or flashes, if the style flashes). Into a climax, the build shows something new every
+  1 to 1.5 seconds.
+
+A reel that follows one reference's recipe keeps that reference's own cut: none of this changes it.
+
+### Where a cut sits in the beat
+
+Editors have habits: many cut a frame or two before the beat, so the new picture is already there when the hit
+lands; some cut on the off-beat. `learn` measures where each reference's cuts fall against its own beat (the
+typical offset in frames, and how consistently, from circular statistics of the cut's phase in the beat) and keeps
+it in the style (`attention.cut_phase`; the Styles tab says "cuts 1 frame before the beat"). A habit the
+references show clearly is copied: every cut moves by those frames (or half a beat), except the cut onto the payoff
+and onto a drop, which land on the hit. The beat check after rendering reports the reel's own offset next to the
+style's.
+
 ## Formats
 
 `make --format auto|montage|pov|list|series|reveal` (default `auto`):
@@ -154,6 +183,19 @@ With `pip install faster-whisper`, sounds are transcribed locally when Gemini is
 - **Match cuts.** The camera's movement in each clip is measured; neighbouring middle shots are reordered so the
   movement continues across the cut, whip transitions swipe the way the camera was going, and a soft dissolve
   between two shots moving the same way becomes a clean cut. Segments carry `flow` and `match: "motion"`.
+- **Movement that carries across every cut** (`matchcut.carry`). Then each cut itself is looked at: the camera in
+  the last 0.4 s of one shot and the first 0.4 s of the next (sideways, up and down, pushing in or pulling back).
+  What jars is fixed where it can be:
+  - a pan left cut into a pan right ("ping-pong"), or a push-in cut into a pull-back: a Ken Burns move or a pan
+    next to it turns to follow the camera, or a clip starts up to a second earlier or later, where its camera
+    already moves the right way;
+  - a fast move that stops dead on a still shot.
+  What it couldn't fix is listed in plan `continuity` (and checked by the critic); two sides moving the same way
+  at very different speeds are noted, not changed.
+- **Moves that ease like the references'.** `learn` fits each clear camera move in the references to a named
+  curve (steady, gentle in and out, gathering speed, settling, a snap that glides, a firm push). When one curve is
+  most common, the style's Ken Burns moves and pans use it (`motion.ease`: `linear`, `sine`, `in`, `out`,
+  `expo_out`, `power3`); a segment's own `ease` overrides it.
 - **Photos in depth.** Photos get a 2.5D parallax: a depth map (Depth Anything V2 Small, about 27 MB, downloaded
   once to `~/.tripshots/models`; or an estimate from the picture when it can't be downloaded) lets the foreground
   slide against the background. Flat pictures keep the plain zoom. `--parallax off` to turn it off.
@@ -177,8 +219,21 @@ With a learned style, the rhythm check compares the reel with the style's own re
 theirs) instead of asking for varied lengths. One more check: the hook must not name a landmark that is only shown
 later (10); the fix opens on the shot it names.
 
+One more: the camera's movement carries across the cuts (5): no ping-pong left then right, no push-in into a
+pull-back that couldn't be fixed.
+
 It fixes what it can (the hook punch, the hook's timing, a shot of you moved early, repeats swapped apart, the
-loop). With an AI backend it also looks at the storyboard and may apply up to three swaps or a better hook line.
+loop). With an AI backend it also reviews the storyboard **in rounds**:
+
+- each round a fresh reviewer, with nothing of its own to defend, lists what is wrong as a **blocker** (a viewer
+  would scroll away: a weak opening, a flat payoff, the same view twice) with the change that fixes it, or as
+  **polish** (could be nicer; never holds the reel up, never changed);
+- up to three blockers are fixed (a swap, two slots exchanged, a better hook line);
+- the next reviewer first sees those changes with proof (the old and the new shot of each slot side by side) and
+  says whether each helped; one that made the reel worse is undone;
+- it stops when no blocker is left, when the list stops shrinking (it must halve or be down to three), or after
+  the last round (`story.critic_rounds`, default 3), which only checks. `NAME.critic.json` keeps each round (`rounds`: blockers, polish, what was undone).
+
 The spare shots it may swap in are ones that fit the reel: not shown in an earlier reel, not grey in a colourful
 reel, not upright in a horizontal one. When it changes the shots, the Instagram caption is written again for them.
 `--critic rules` skips the AI review, `--critic off` skips it all.

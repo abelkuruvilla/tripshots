@@ -19,6 +19,7 @@
   let style = $state(app.prefill?.style || "");
   let name = $state("");
   let orientation = $state("auto");
+  let light = $state("any");
   let variants = $state(1);
   let hook = $state("");
   let planOnly = $state(false);
@@ -77,7 +78,8 @@
   function make() {
     if (!sources.length) return toast("Add a folder of photos and clips first", "error");
     run("make", { sources, music: sound.trim() || null, style: style || null, name: name.trim() || null,
-                  orientation, variants, dry_run: planOnly, hook: hook.trim() || null }, name.trim() || "New reel");
+                  orientation, light: light === "any" ? null : light, variants, dry_run: planOnly,
+                  hook: hook.trim() || null }, name.trim() || "New reel");
   }
   async function add(directory) {
     const got = await open(directory ? { directory: true, multiple: true, title: "Footage folders" } : { multiple: true, title: "Photos and clips" });
@@ -152,12 +154,23 @@
         </div>
         <div class="grid2">
           <div class="field">
-            <span class="lbl">Shape</span>
-            <div class="seg" role="radiogroup" aria-label="Shape">
-              {#each [["auto", "Automatic"], ["vertical", "Upright 9:16"], ["horizontal", "Wide 16:9"]] as [id, label]}
-                <button role="radio" aria-checked={orientation === id} onclick={() => (orientation = id)}>{label}</button>
+            <label class="lbl" for="mk-shape">Shape</label>
+            <select id="mk-shape" bind:value={orientation}>
+              {#each [["auto", "Automatic (the style decides)"], ["vertical", "Upright 9:16"], ["horizontal", "Wide 16:9"],
+                      ["4:3", "Classic 4:3"], ["4:5", "Portrait 4:5"], ["1:1", "Square 1:1"],
+                      ["sideways", "Sideways (turn your phone)"]] as [id, label]}
+                <option value={id}>{label}</option>
               {/each}
-            </div>
+            </select>
+          </div>
+          <div class="field">
+            <label class="lbl" for="mk-light">Light <span class="hint">· only shots in it</span></label>
+            <select id="mk-light" bind:value={light}>
+              {#each [["any", "Any light"], ["golden", "Golden hour and sunset"], ["sunset", "Sunset"], ["blue", "Blue hour"],
+                      ["day", "Daylight"], ["night", "Night"]] as [id, label]}
+                <option value={id}>{label}</option>
+              {/each}
+            </select>
           </div>
           <div class="field">
             <span class="lbl">Versions <span class="hint">· to compare</span></span>

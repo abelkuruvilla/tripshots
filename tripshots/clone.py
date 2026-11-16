@@ -112,6 +112,8 @@ def analyze_reference(ref: str, work: Path, cookies: dict | None = None) -> dict
         log(f"downloading the reference reel {ref}")
         cookies = cookies or {}
         p = fetch_video(ref, HOME / "learn" / "downloads", cookies.get("cookies_browser"), cookies.get("cookies_file"))
+    from .refprep import clean
+    p = clean(p)  # a reel recorded off a phone screen: the picture without the interface, the sound fixed
     key = short_hash(f"{p.resolve()}|{p.stat().st_size}", 12)
     rdir = work / f"ref_{key}"
     rdir.mkdir(parents=True, exist_ok=True)
@@ -219,7 +221,7 @@ def ref_motion(ref: dict) -> dict[str, dict]:
     camera moves right), "zoom": per second (+ = pushes in)}. Cached next to the reference."""
     rdir = Path(ref["dir"])
     cache = read_json(rdir / "motion.json")
-    if cache and len(cache) == len(ref["shots"]) and all("shake" in v for v in cache.values()):
+    if cache and len(cache) == len(ref["shots"]) and all("shake" in v and "ease" in v for v in cache.values()):
         return cache
     w, h, fps = 160, 284, 10
     proc = subprocess.run(ffmpeg_base() + ["-i", ref["file"], "-vf", f"fps={fps},scale={w}:{h},format=gray",
@@ -246,8 +248,18 @@ def ref_motion(ref: dict) -> dict[str, dict]:
         jit = np.hypot(np.diff(dxs), np.diff(dys)) * w if len(dxs) > 3 else np.zeros(0)
         early, rest = jit[:5], jit[5:]
         shake = bool(len(early) and early.max() > 3.0 and early.max() > 3 * (float(np.median(rest)) if len(rest) else 0.5))
+        # how the move eases: its progress over the shot fitted to a named curve (motion.fit_ease); only a clear
+        # move (sideways over a tenth of the frame, or a push/pull over 4 %) says anything about it
+        fit = None
+        if len(dxs) >= 5 and not shake:
+            from .motion import fit_ease
+            lat, zz = np.cumsum(dxs), np.cumsum(zs)
+            path = lat if abs(lat[-1]) >= 0.1 or abs(lat[-1]) * 2.5 >= abs(zz[-1]) else (zz if abs(zz[-1]) >= 0.04 else None)
+            if path is not None and abs(path[-1]) > 1e-6:
+                fit = fit_ease(np.r_[0.0, path / path[-1]])
         out[rs["id"]] = {"dx": round(float(np.median(dxs)) * fps, 4) if dxs else 0.0,
-                         "zoom": round(float(np.median(zs)) * fps, 4) if zs else 0.0, "shake": shake}
+                         "zoom": round(float(np.median(zs)) * fps, 4) if zs else 0.0, "shake": shake,
+                         "ease": fit[0] if fit and fit[1] < 0.07 else None}
     write_json(rdir / "motion.json", out)
     return out
 

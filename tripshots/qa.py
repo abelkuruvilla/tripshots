@@ -10,6 +10,10 @@ What a careful editor checks before posting, measured on the file itself:
   text_safe   every title inside the part of the screen Instagram's buttons and caption don't cover
   text_size   the main words big enough to read on a phone at arm's length
   text_time   each line on screen long enough to read (about 3.5 words a second, plus half a second)
+  flash       no single-frame white flash or exposure pop the plan didn't ask for (a flash transition did)
+  cut_light   no jarring jump in brightness across a hard cut (bright noon straight into a dark interior)
+  stutter     no repeated frames inside a moving shot (variable-frame-rate phone clips, slow motion without
+              in-between frames): the picture hitches
 Writes NAME.qa.json and NAME.qa.jpg (a contact sheet: 12 frames with their times). The idea and the
 set of checks follow the one-take skill's QA pass (KaranO-Dev/one-take-skill, MIT).
 """
@@ -65,10 +69,12 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
     aus = next((s for s in info.get("streams", []) if s.get("codec_type") == "audio"), None)
     fps = parse_rate(vs.get("avg_frame_rate") or vs.get("r_frame_rate"))
     dur = float(info.get("format", {}).get("duration") or 0)
-    fmt_ok = vs.get("width") == CANVAS.w and vs.get("height") == CANVAS.h and abs(fps - OUT_FPS) < 0.6 \
+    turned = int((plan.get("frame") or {}).get("rotate") or 0) % 180 == 90  # a sideways reel is written turned
+    want_w, want_h = (CANVAS.h, CANVAS.w) if turned else (CANVAS.w, CANVAS.h)
+    fmt_ok = vs.get("width") == want_w and vs.get("height") == want_h and abs(fps - OUT_FPS) < 0.6 \
         and vs.get("codec_name") == "h264" and (aus is None or aus.get("codec_name") == "aac")
     add("format", fmt_ok, f"{vs.get('width')}x{vs.get('height')} {fps:.2f} fps {vs.get('codec_name')}"
-        f"{'/' + aus.get('codec_name') if aus else ' (no sound)'}", f"{CANVAS.w}x{CANVAS.h} {OUT_FPS} fps h264/aac",
+        f"{'/' + aus.get('codec_name') if aus else ' (no sound)'}", f"{want_w}x{want_h} {OUT_FPS} fps h264/aac",
         "the size and codecs Instagram expects")
     add("length", 3.0 <= dur <= MAX_LEN, round(dur, 2), f"3-{MAX_LEN:.0f} s", "reels over 90 s are shown less")
     if aus is not None:
@@ -127,6 +133,12 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
                  and t["duration"] < len(t["text"].split()) / WORDS_PER_S + 0.5]
         add("text_time", not short, [f"{t['kind']} {t['duration']:.1f}s: {t['text'][:30]}" for t in short][:6],
             f"{WORDS_PER_S:g} words a second + 0.5 s", "people need time to read a line before it goes")
+    if segs:
+        try:
+            for key, ok, value, want, why in picture_checks(video, plan):
+                add(key, ok, value, want, why)
+        except Exception as e:
+            log(f"qa: picture checks skipped ({e})")
     passed = sum(1 for r in res if r["ok"])
     rep = {"video": str(video), "duration": round(dur, 2), "passed": passed, "total": len(res), "checks": res}
     try:
@@ -137,6 +149,75 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
     log(f"qa: {passed}/{len(res)} checks passed" + "".join(
         f"\n  ✗ {r['check']}: {r['value']} (want {r['want']}): {r['why']}" for r in res if not r["ok"]))
     return rep
+
+
+FLASH = 0.3 * 255     # brighter than the second around it by this much: a flash
+CUT_JUMP = 0.36 * 255  # brightness change across a hard cut that jars
+INTENDED = ("flash", "leak", "glitch", "dip", "fade", "dissolve", "split", "vsplit", "iris", "slats", "stripes",
+            "diamond", "frame", "cells")  # (the paper shapes flash cream blocks on purpose)
+
+
+def picture_checks(video: Path, plan: dict) -> list[tuple]:
+    """One small decode of the reel: flashes, light jumps across hard cuts and stutter in moving shots."""
+    import numpy as np
+    from .clone import _luma_track
+    mean, diff = _luma_track(video, w=64)
+    n = len(mean)
+    if n < 10:
+        return []
+    segs = plan.get("segments") or []
+    fps = OUT_FPS
+    # wanted bright moments: flash/leak transitions, the freeze frame's flash, colour splits
+    ok_win = []
+    for s in segs:
+        end = float(s["out_start"]) + float(s["dur"])
+        if s.get("trans_out") in INTENDED:
+            ok_win.append((end - 0.4, end + 0.4))
+        if s.get("rgb") or s.get("shake"):
+            ok_win.append((float(s["out_start"]) - 0.1, float(s["out_start"]) + 0.3))
+    fz = plan.get("freeze") or {}
+    if fz.get("t") is not None:
+        ok_win.append((float(fz["t"]) - 0.2, float(fz["t"]) + 0.5))
+    k = int(fps)
+    pad = np.pad(mean, k, mode="edge")
+    med = np.array([np.median(pad[i:i + 2 * k + 1]) for i in range(n)])
+    pops = [i for i in range(1, n - 1) if mean[i] - med[i] > FLASH and mean[i] - min(mean[i - 1], mean[i + 1]) > FLASH / 2
+            and not any(a <= i / fps <= b for a, b in ok_win)]
+    out = [("flash", not pops, [round(i / fps, 2) for i in pops][:6], "none",
+            "a single bright frame between shots looks like a glitch")]
+    jumps = []
+    for i in range(1, len(segs)):
+        a = segs[i - 1]
+        if a.get("trans_out") or a.get("incam_out"):
+            continue
+        f = int(round(float(segs[i]["out_start"]) * fps))
+        if 3 <= f < n - 3:
+            d = float(np.mean(mean[f:f + 3]) - np.mean(mean[f - 3:f]))
+            if abs(d) > CUT_JUMP and not segs[i].get("drop"):
+                jumps.append(f"{i}-{i + 1} ({'brighter' if d > 0 else 'darker'} by {abs(d) / 2.55:.0f}%)")
+    out.append(("cut_light", not jumps, jumps[:6], f"under {CUT_JUMP / 2.55:.0f}% change at a hard cut",
+                "a sudden jump from bright to dark (or back) across a cut feels like a mistake"))
+    hitch = []
+    for i, s in enumerate(segs):
+        if s.get("kind") != "video" or s.get("panel"):
+            continue
+        # only the shot itself: the transitions at either end change the picture on their own
+        lead = float(segs[i - 1].get("trans_dur") or 0) / 2 if i and segs[i - 1].get("trans_out") else 0.0
+        tail = float(s.get("trans_dur") or 0) / 2 if s.get("trans_out") else 0.0
+        f0 = int(round((float(s["out_start"]) + lead) * fps)) + 2
+        f1 = int(round((float(s["out_start"]) + float(s["dur"]) - tail) * fps)) - 2
+        d = diff[max(1, f0):min(n, f1)]
+        if len(d) < 10:
+            continue
+        typ = float(np.median(d))
+        if typ < 1.2:  # hardly anything moves: a repeated frame can't be seen
+            continue
+        rep = int(np.sum(d < 0.12 * typ))
+        if rep >= 3 and rep / len(d) > 0.06:
+            hitch.append(f"shot {i + 1} ({rep} repeated frames)")
+    out.append(("stutter", not hitch, hitch[:6], "no repeated frames in a moving shot",
+                "a moving shot that hitches looks broken"))
+    return out
 
 
 def contact_sheet(video: Path, out: Path, dur: float, n: int = 12) -> Path:

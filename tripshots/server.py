@@ -109,6 +109,7 @@ def reel_detail(plan: Path) -> dict:
             "text_defaults": text_defaults(p), "history": history(plan),
             "caption": Path(cap).read_text() if cap else "", "social": read_json(Path(f"{_base(plan)}.social.json")),
             "qa_report": read_json(Path(f"{_base(plan)}.qa.json")),
+            "revised": read_json(Path(f"{_base(plan)}.revise.json")),  # what the last notes did (revise.py)
             "beats": [round(float(b), 3) for b in p.get("beats") or []],
             "music": {k: music.get(k) for k in ("start", "gain_db", "fade_out", "label")} if music.get("path") else None,
             "grading": {k: (p.get("grade") or {}).get(k) for k in ("look", "strength", "grain", "vignette", "why")},
@@ -379,6 +380,12 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
             (["--extra", s("extra")] if b.get("extra") else []), Path(s("plan")).name
     if kind == "qa":
         return ["qa", s("video")], Path(s("video")).name
+    if kind == "revise":  # notes pinned to moments of the finished reel -> edits, rendered again
+        notes = [{"t": round(float(n.get("t", 0)), 3), "text": str(n.get("text", ""))[:300]}
+                 for n in (b.get("notes") or [])[:30] if isinstance(n, dict) and str(n.get("text", "")).strip()]
+        if not notes:
+            raise ReelError("no notes")
+        return ["revise", str(_plan(s("plan"))), "--notes-json", json.dumps(notes)], Path(s("plan")).name
     if kind == "analyze":
         return ["analyze", "--", *items("sources")], "analyse footage"
     if kind == "discover":

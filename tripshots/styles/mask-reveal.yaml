@@ -1,0 +1,33 @@
+name: mask-reveal
+description: Every shot comes in through a shape on the beat. Line wipes that swing round a corner and V splits that open from the bottom edge, keyframed on each beat with a thin white edge; then circles that grow from the middle with a soft rim, a ripple and a glow. After the masking transitions CapCut tutorials teach.
+direction: "Each cut is a reveal: the next shot comes in through a line, a V or a circle that moves on the beat. Pick shots with one clear subject in the middle (flowers, trees, a peak, a person), bright and colourful, so the shapes read. Keep the order flowing from one colour to the next. No text over the reveals."
+duration: {target: 16, min: 10, max: 24}
+cuts:
+  beats_per_cut: {calm: 4, medium: 4, intense: 2}
+  hook_beats: 4
+  min_shot_sec: 1.2
+  max_shot_sec: 2.4
+shots: {min_score: 6, ordering: energy, max_per_source: 2, slowmo: true}
+layout: {landscape: auto, photo_motion: kenburns, photo_zoom: 1.12}
+story: {arc: "off"}
+transitions:
+  order: [split, vsplit, iris]
+  beats: 2
+  density: 1.0
+  at: all
+color: {saturation: 1.16, contrast: 1.06, brightness: 0.0, gamma: 1.0, warmth: 0.02, vignette: true, sharpen: 0.3}
+text:
+  preset: minimal
+  hook: {mode: "off"}
+  location: {mode: "off"}
+  cta: {mode: "off"}
+caption: {tone: 'dreamy, short, first person', hashtags: 8}
+motion:
+  beat_punch: 0.0
+  shake_on_drop: false
+  freeze: false
+  rgb_split: 0.0
+  video_push: 0.05
+panels: {use: 0.0}
+velocity: {use: 0.0}
+speed: {ramps: [], fast: 0.0, drop: "off", smooth: flow}

@@ -7,7 +7,9 @@
 
   let { onpick, oninsert } = $props();
   const transitions = [[null, "Hard cut"], ["whip", "Whip"], ["zoom_in", "Zoom in"], ["zoom_out", "Zoom out"], ["spin", "Spin"],
-                       ["flash", "Flash"], ["glitch", "Glitch"], ["blur", "Blur"], ["dissolve", "Dissolve"], ["dip", "Dip to black"], ["leak", "Light leak"]];
+                       ["flash", "Flash"], ["glitch", "Glitch"], ["blur", "Blur"], ["dissolve", "Dissolve"], ["dip", "Dip to black"], ["leak", "Light leak"],
+                       ["split", "Line reveal"], ["vsplit", "V reveal"], ["iris", "Circle reveal"],
+                       ["slats", "Paper slats"], ["stripes", "Paper stripes"], ["diamond", "Paper diamond"], ["frame", "Framed window"], ["cells", "Grid cells"]];
   const ramps = [[null, "None"], ["velocity", "Velocity"], ["slam", "Slam"], ["bullet", "Bullet"], ["rush", "Rush"], ["impact", "Impact"], ["surge", "Surge"]];
   const layouts = [["crop", "Crop to the subject"], ["pan", "Pan across"], ["blur_fill", "Whole frame, blurred behind"], ["fill", "Fill (already upright)"]];
   const roles = { hook: "Opening", setup: "Setup", build: "Build", peak: "Peak", release: "Release", ending: "Ending" };

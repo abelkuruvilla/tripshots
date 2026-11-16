@@ -160,7 +160,15 @@ def check_beats(video, plan: dict) -> dict:
         worst = max(worst, abs(off))
     res = {"hard_cuts": checked, "measured": found, "exact": exact, "within_1_frame": within1,
            "worst_frames": worst, "planned_on_beat": on_beat}
+    from .music import phase_stats
+    ph = phase_stats([s["out_start"] for s in segs[1:]], beats, OUT_FPS) if len(beats) > 8 else None
+    if ph:
+        res["phase"] = ph  # where the cuts sit in the beat (a learned habit may put them early or off the beat)
     if checked:
+        habit = ((plan.get("attention") or {}).get("cut_phase") or {})
         log(f"beat check: {within1}/{found} measurable cuts land within 1 frame of the plan "
-            f"(worst {worst} frame{'s' if worst != 1 else ''}); {on_beat}/{checked} cuts sit on a beat")
+            f"(worst {worst} frame{'s' if worst != 1 else ''}); {on_beat}/{checked} cuts sit on a beat"
+            + (f" (typical offset {ph['offset_f']:+d} frames, consistency {ph['R']:.2f}"
+               + (f"; the style's habit {habit.get('offset_f', 0):+d}, phase {habit.get('phase', 0):.2f}" if habit else "")
+               + ")" if ph else ""))
     return res

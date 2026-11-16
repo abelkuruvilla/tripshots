@@ -274,7 +274,7 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
                     drop_speed: str | None = None, format: str | None = None,
                     text_motion: str | None = None, no_location: bool = False,
                     captions: str | None = None, recipe: str | None = None,
-                    orientation: str | None = None, fresh: str | None = None) -> list:
+                    orientation: str | None = None, fresh: str | None = None, light: str | None = None) -> list:
     """Plan (dry_run=true, default) or plan+render a reel.
 
     sources: selection ids from find_footage ("sel:xxxx") and/or folders/files.
@@ -295,12 +295,13 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
     recipe: for a style learned from several reels, which reference's recipe (its cut, picture shape and text) to
       follow: auto (the reel whose sound is used, else the one that fits the song), a number (1 = the first
       reference), or off (the style's average).
-    orientation: auto | vertical | horizontal. auto (default) gives an upright 1080x1920 reel, or a horizontal
+    orientation: auto | vertical | horizontal | 4:3 | 4:5 | 1:1 | sideways (a widescreen edit on its side). auto (default) gives an upright 1080x1920 reel, or a horizontal
       1920x1080 one when the style/recipe is widescreen or the footage only works wide (never black bars);
       horizontal forces a 16:9 file, vertical an upright one (a wide picture then sits in a band).
     fresh: on | off. on (default): a series from the same footage doesn't repeat itself: shots that earlier rendered
       reels showed are marked down and their openings and endings aren't reused. off when the user wants the very
       best shots again (e.g. another version of the same reel under a new name).
+    light: golden | sunset | blue | day | night: only shots in that light (preferred, when too few are).
     upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
       same sound inside Instagram: do this when the music is a commercial song.
     Returns the plan path and the storyboard image to review (or a job id to poll)."""
@@ -309,7 +310,7 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
                      name=name, music=music, style=style, duration=duration, hook=hook, location=location, look=look,
                      text_preset=text_preset, route_map=route_map, speed_ramps=speed_ramps, speed_up=speed_up,
                      drop_speed=drop_speed, format=format, text_motion=text_motion, captions=captions,
-                     recipe=recipe, orientation=orientation, fresh=fresh)
+                     recipe=recipe, orientation=orientation, fresh=fresh, light=light)
     st = await _run_job(args, "make", name or " ".join(sources))
     return _finished(st)
 
@@ -440,6 +441,29 @@ async def write_caption(plan: str, tone: str | None = None, extra: str | None = 
     opening lines. Saves NAME.caption.txt (ready to paste) and NAME.social.json."""
     from .social import write
     return [_txt(await asyncio.to_thread(write, _plan(plan), tone, extra))]
+
+
+@mcp.tool()
+async def revise_reel(plan: str, notes: list[dict], render: bool = True) -> list:
+    """Notes on a finished reel, each pinned to a time: [{"t": 12.3, "text": "too dark here"}, ...]. The AI turns
+    them into safe plan edits (swap a shot, colour, text, framing, speed...) using a still of the reel at each
+    note, then the reel is rendered again. Returns a job id; poll job_status. Writes NAME.revise.json (what was
+    done for each note)."""
+    clean = [{"t": float(n["t"]), "text": str(n["text"])[:300]} for n in notes[:30] if str(n.get("text", "")).strip()]
+    args = ["revise", str(_plan(plan)), "--notes-json", json.dumps(clean)] + ([] if render else ["--no-render"])
+    st = await _run_job(args, "revise", Path(plan).name, wait=20)
+    return _finished(st)
+
+
+@mcp.tool()
+async def post_reel(video: str, platforms: list[str], at: str | None = None, tz: str | None = None,
+                    title: str | None = None, send: bool = False) -> list:
+    """Post a finished reel through Upload-Post (Instagram, TikTok, YouTube, ...), now or scheduled (`at` like
+    2026-12-01T18:00, `tz` like Europe/Madrid). A dry run unless send=true: always show the user the dry run and
+    get their go-ahead before sending. Only reels whose quality checks passed; never the same post twice."""
+    from .post import post
+    res = await asyncio.to_thread(post, Path(video), platforms, at, tz, title, send)
+    return [_txt({k: v for k, v in res.items() if k != "key"})]
 
 
 @mcp.tool()

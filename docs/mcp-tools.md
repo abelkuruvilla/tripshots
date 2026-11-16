@@ -165,12 +165,13 @@ format: auto | montage | pov | list (numbered places) | series ("Day N of") | re
 recipe: for a style learned from several reels, which reference's recipe (its cut, picture shape and text) to
   follow: auto (the reel whose sound is used, else the one that fits the song), a number (1 = the first
   reference), or off (the style's average).
-orientation: auto | vertical | horizontal. auto (default) gives an upright 1080x1920 reel, or a horizontal
+orientation: auto | vertical | horizontal | 4:3 | 4:5 | 1:1 | sideways (a widescreen edit on its side). auto (default) gives an upright 1080x1920 reel, or a horizontal
   1920x1080 one when the style/recipe is widescreen or the footage only works wide (never black bars);
   horizontal forces a 16:9 file, vertical an upright one (a wide picture then sits in a band).
 fresh: on | off. on (default): a series from the same footage doesn't repeat itself: shots that earlier rendered
   reels showed are marked down and their openings and endings aren't reused. off when the user wants the very
   best shots again (e.g. another version of the same reel under a new name).
+light: golden | sunset | blue | day | night: only shots in that light (preferred, when too few are).
 upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
   same sound inside Instagram: do this when the music is a commercial song.
 Returns the plan path and the storyboard image to review (or a job id to poll).
@@ -200,6 +201,7 @@ Returns the plan path and the storyboard image to review (or a job id to poll).
 | `recipe` | string/null | null |
 | `orientation` | string/null | null |
 | `fresh` | string/null | null |
+| `light` | string/null | null |
 
 ## reel_results
 
@@ -322,6 +324,34 @@ opening lines. Saves NAME.caption.txt (ready to paste) and NAME.social.json.
 | `plan` | string | **required** |
 | `tone` | string/null | null |
 | `extra` | string/null | null |
+
+## revise_reel
+
+Notes on a finished reel, each pinned to a time: [{"t": 12.3, "text": "too dark here"}, ...]. The AI turns
+them into safe plan edits (swap a shot, colour, text, framing, speed...) using a still of the reel at each
+note, then the reel is rendered again. Returns a job id; poll job_status. Writes NAME.revise.json (what was
+done for each note).
+
+| Parameter | Type | Default |
+|---|---|---|
+| `plan` | string | **required** |
+| `notes` | array of object | **required** |
+| `render` | boolean | true |
+
+## post_reel
+
+Post a finished reel through Upload-Post (Instagram, TikTok, YouTube, ...), now or scheduled (`at` like
+2026-12-01T18:00, `tz` like Europe/Madrid). A dry run unless send=true: always show the user the dry run and
+get their go-ahead before sending. Only reels whose quality checks passed; never the same post twice.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `video` | string | **required** |
+| `platforms` | array of string | **required** |
+| `at` | string/null | null |
+| `tz` | string/null | null |
+| `title` | string/null | null |
+| `send` | boolean | false |
 
 ## render_reel
 

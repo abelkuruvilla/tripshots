@@ -12,6 +12,8 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`render`](#render) | re-render an (edited) plan.json |
 | [`qa`](#qa) | check a rendered reel: format, length, loudness, black/frozen/silent stretches, text in the safe area, readable text (runs after every render) |
 | [`caption`](#caption) | write the post for a reel: a caption made for reach, 3-5 hashtags, search keywords, alt text (NAME.caption.txt + NAME.social.json) |
+| [`revise`](#revise) | notes on a finished reel, each pinned to a time ("12.3: too dark here"), turned into edits by the AI (plain rules without one), then rendered again |
+| [`post`](#post) | post a finished reel (now or at a set time) through Upload-Post; a dry run unless --send (needs UPLOAD_POST_KEY and UPLOAD_POST_USER) |
 | [`skills`](#skills) | agent skills that work next to TripShots (HyperFrames, Remotion, one-take, Lemo-Opuscar): what they add, whether installed, how to install |
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
@@ -53,7 +55,8 @@ usage: tripshots make [-h] [-m MUSIC]
                       [--format {auto,montage,pov,list,series,reveal}] [--arc {on,off}]
                       [--captions auto|off|original|LANGUAGE] [--critic {auto,rules,off}]
                       [--parallax {auto,on,off}] [--recipe auto|off|N]
-                      [--orientation {auto,vertical,horizontal}] [--fresh {on,off}]
+                      [--orientation {auto,vertical,horizontal,4:3,4:5,1:1,sideways}]
+                      [--light {golden,sunset,blue,day,night,any}] [--fresh {on,off}]
                       [--loop | --no-loop] [--min-score N] [--look LOOK] [--grade-strength 0-1]
                       [--variants N] [--route-map {intro,tracker,both,off}] [--allow-similar]
                       [--music-start SEC] [--upload-copy | --no-upload-copy]
@@ -112,11 +115,17 @@ options:
                         picture shape and text). auto (default): the recipe of the reel whose
                         sound you use, else the one that fits the song; N: the N-th reference's;
                         off: the style's average
-  --orientation {auto,vertical,horizontal}
+  --orientation {auto,vertical,horizontal,4:3,4:5,1:1,sideways}
                         shape of the file. auto (default): upright 1080x1920, or horizontal
                         1920x1080 when the style or recipe is widescreen or the footage only works
                         wide (no black bars); vertical: always upright (a wide picture sits in a
-                        band); horizontal: always 1920x1080
+                        band); horizontal: always 1920x1080; 4:3 (1440x1080), 4:5 (1080x1350), 1:1
+                        (1080x1080): the picture fills that shape; sideways: a widescreen edit
+                        turned on its side in an upright file ("turn your phone")
+  --light {golden,sunset,blue,day,night,any}
+                        only shots in this light (golden: golden hour, sunset and sunrise; blue:
+                        blue hour and night; day: morning to afternoon), the photo wall too; when
+                        too few are, they are preferred instead
   --fresh {on,off}      on (default): shots your earlier reels of this footage showed are marked
                         down, and this reel opens and ends on something else; off: the best shots,
                         whatever was posted before
@@ -311,6 +320,49 @@ options:
   -h, --help     show this help message and exit
   --tone TONE    the voice, e.g. 'funny, short'
   --extra EXTRA  anything the caption should mention or do
+```
+
+## revise
+
+```text
+usage: tripshots revise [-h] [--note NOTE] [--notes-json NOTES_JSON] [--no-render]
+                        [--backend BACKEND]
+                        plan
+
+positional arguments:
+  plan
+
+options:
+  -h, --help            show this help message and exit
+  --note NOTE           TIME: what to change, e.g. "12.3: swap this for the canyon" (repeat for
+                        more)
+  --notes-json NOTES_JSON
+                        notes as JSON [{"t": 12.3, "text": "..."}] (or a file holding it)
+  --no-render           edit the plan only
+  --backend BACKEND     AI backend: auto|claude-cli|api|minimax|none
+```
+
+## post
+
+```text
+usage: tripshots post [-h] [--platforms PLATFORMS] [--at AT] [--tz TZ] [--title TITLE] [--send]
+                      [--force] [--again]
+                      video
+
+positional arguments:
+  video                 NAME.mp4 (or its NAME.plan.json)
+
+options:
+  -h, --help            show this help message and exit
+  --platforms PLATFORMS
+                        comma-separated:
+                        instagram,tiktok,youtube,facebook,x,threads,linkedin,pinterest,bluesky
+  --at AT               schedule it: 2026-12-01T18:00
+  --tz TZ               the time zone of --at, e.g. Europe/Madrid
+  --title TITLE         the title (default: the reel's hook)
+  --send                really post it (without: show what would be posted)
+  --force               post even though its quality checks didn't all pass
+  --again               post it again, though it was posted already
 ```
 
 ## skills

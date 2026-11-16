@@ -252,5 +252,32 @@ def caption_overlays(w: dict | None, total: float, mode: str = "auto", backend=N
         a, b = max(0.0, ln["start"]), min(total - 0.05, ln["end"] + 0.25, max(float(ln["end"]), nxt - 0.03))
         if b - a < 0.4:
             continue
-        out.append({"type": "caption", "text": txt, "start": round(a, 3), "duration": round(b - a, 3)})
+        for t, c0, c1 in chunks(txt, a, b, float(ln["end"]) - float(ln["start"])):
+            out.append({"type": "caption", "text": t, "start": round(c0, 3), "duration": round(c1 - c0, 3)})
     return out
+
+
+READ_WPS = 3.5  # words a second people read (qa text_time), plus half a second for the eye to land
+
+
+def chunks(text: str, a: float, b: float, spoken: float) -> list[tuple[str, float, float]]:
+    """A long subtitle split into groups the eye takes in at once, sized by how fast it is said: 2-3 words when
+    fast and punchy (over 3.2 words a second), 3-5 for normal talk, up to 6 when slow. Each group gets its share
+    of the time by length, and is only split while every group still stays long enough to read."""
+    words = text.split()
+    if len(words) <= 3 or any(ord(ch) > 0x2E80 for ch in text):  # (scripts without spaces between words stay whole)
+        return [(text, a, b)]
+    rate = len(words) / max(0.3, spoken)
+    cap = 3 if rate > 3.2 else (5 if rate > 2.0 else 6)
+    for k in range(-(-len(words) // cap), 1, -1):
+        size = -(-len(words) // k)
+        groups = [words[i:i + size] for i in range(0, len(words), size)]
+        chars = [len(" ".join(g)) for g in groups]
+        out, t = [], a
+        for g, c in zip(groups, chars):
+            d = (b - a) * c / sum(chars)
+            out.append((" ".join(g), t, t + d))
+            t += d
+        if all(e - s >= len(g.split()) / READ_WPS + 0.5 for g, s, e in out):
+            return out
+    return [(text, a, b)]

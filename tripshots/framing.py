@@ -146,10 +146,27 @@ FRAME = {"ar": OUT_W / OUT_H}  # the picture's shape (width / height); a wide re
 HORIZONTAL = (OUT_H, OUT_W)  # a horizontal reel's frame: 16:9, the widest shape every Instagram surface shows whole
 
 
-def set_canvas(horizontal: bool = False) -> tuple[int, int]:
-    """Set the frame of the reel being made: upright 1080x1920, or horizontal 1920x1080."""
-    CANVAS.set(*(HORIZONTAL if horizontal else (OUT_W, OUT_H)))
+# other shapes a reel can be made in (frame.output / --orientation): the picture fills the file
+SHAPES = {"4:3": (1440, 1080), "4:5": (1080, 1350), "1:1": (1080, 1080)}
+
+
+def set_canvas(horizontal: bool | tuple = False) -> tuple[int, int]:
+    """Set the frame of the reel being made: upright 1080x1920, horizontal 1920x1080, or an exact (w, h)."""
+    if isinstance(horizontal, (tuple, list)):
+        CANVAS.set(int(horizontal[0]), int(horizontal[1]))
+    else:
+        CANVAS.set(*(HORIZONTAL if horizontal else (OUT_W, OUT_H)))
     return CANVAS.size
+
+
+def canvas_for(frame_cfg: dict | None) -> tuple[int, int]:
+    """The file size a style's frame asks for: one of SHAPES, horizontal 16:9, or the upright reel."""
+    out = str((frame_cfg or {}).get("output") or "auto").lower()
+    if out in SHAPES:
+        return SHAPES[out]
+    if out == "sideways":  # made widescreen, written turned on its side (render: frame `rotate`)
+        return HORIZONTAL
+    return HORIZONTAL if output_for(frame_cfg) else (OUT_W, OUT_H)
 
 
 def set_frame(aspect: str | float | None) -> float:
@@ -185,10 +202,12 @@ def output_for(frame_cfg: dict | None) -> bool:
     """Does a style's frame ask for a horizontal file? output horizontal, or auto with a wide picture."""
     cfg = frame_cfg or {}
     out = str(cfg.get("output") or "auto").lower()
-    if out in ("horizontal", "landscape", "wide"):
+    if out in ("horizontal", "landscape", "wide", "sideways"):
         return True
     if out in ("vertical", "portrait", "upright"):
         return False
+    if out in SHAPES:
+        return SHAPES[out][0] > SHAPES[out][1]
     return wide(cfg.get("aspect"))
 
 
@@ -196,6 +215,9 @@ def picture_aspect(frame_cfg: dict | None) -> str | float | None:
     """The picture shape a style's frame gives. The picture fills the file (horizontal for a wide one, upright
     otherwise); only `output: vertical` keeps the style's own shape as a band between bars."""
     cfg = frame_cfg or {}
+    out = str(cfg.get("output") or "auto").lower()
+    if out in SHAPES:
+        return out
     if output_for(cfg):
         return "16:9"
     if str(cfg.get("output") or "auto").lower() in ("vertical", "portrait", "upright"):
@@ -207,7 +229,7 @@ def use_plan(plan: dict) -> None:
     """Set the frame and the picture shape a plan was made for (before rendering, checking or editing it)."""
     fr = plan.get("frame") or {}
     c = fr.get("canvas") or ()
-    set_canvas(len(c) == 2 and int(c[0]) > int(c[1]))
+    set_canvas(tuple(c) if len(c) == 2 else False)
     set_frame(fr.get("aspect"))
 
 

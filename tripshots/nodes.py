@@ -88,6 +88,44 @@ _det = None
 _cut = None
 
 
+def cutout(small_rgb: np.ndarray) -> np.ndarray | None:
+    """The main subject's soft mask (0..1) from a quick cut-out (rembg's small u2netp model), or None."""
+    global _cut
+    try:
+        from .popout import have_cutout
+        if not have_cutout():
+            return None
+        from PIL import Image
+        from rembg import new_session, remove
+        if _cut is None:
+            _cut = new_session("u2netp")
+        return np.asarray(remove(Image.fromarray(small_rgb), session=_cut, only_mask=True)).astype(np.float32) / 255
+    except Exception:
+        _cut = _cut or False
+        return None
+
+
+def people_mask(frame_rgb: np.ndarray, width: int = 360) -> np.ndarray | None:
+    """The people in a frame as a soft mask at the frame's size (for a silhouette flash), or None when the cut-out
+    finds no clear figure (nothing, or most of the frame)."""
+    import cv2
+    h, w = frame_rgb.shape[:2]
+    small = cv2.resize(frame_rgb, (width, max(2, int(round(width * h / w)))), interpolation=cv2.INTER_AREA)
+    m = cutout(small)
+    if m is None or not 0.01 < float((m > 0.5).mean()) < 0.4:
+        return None
+    # keep the upright, figure-shaped parts only (a person standing or sitting up): the cut-out finds whatever
+    # stands out, and a truck or a log flashing white isn't the effect
+    n, lab, st, _ = cv2.connectedComponentsWithStats((m > 0.5).astype(np.uint8))
+    keep = [k for k in range(1, n) if st[k, cv2.CC_STAT_AREA] > 0.002 * m.size
+            and st[k, cv2.CC_STAT_HEIGHT] >= 1.15 * st[k, cv2.CC_STAT_WIDTH]]
+    if not keep:
+        return None
+    m = m * np.isin(lab, keep).astype(np.float32)
+    m = cv2.GaussianBlur(cv2.resize(m, (w, h), interpolation=cv2.INTER_LINEAR), (0, 0), max(1.0, w / 900))
+    return np.clip((m - 0.35) / 0.3, 0, 1).astype(np.float32)
+
+
 def _subject_box(small_rgb: np.ndarray) -> tuple[float, float, float, float] | None:
     """The main subject's ellipse (cx, cy, rx, ry) 0..1 from a quick cut-out (rembg's small u2netp model, a few MB,
     fetched once), or None when there's no clear subject or no rembg."""

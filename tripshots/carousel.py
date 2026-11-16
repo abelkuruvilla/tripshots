@@ -53,8 +53,8 @@ def pick(plan: dict, n: int) -> list[dict]:
 
     def score(s):   # the shot's score, plus whether its subject survives the 4:5 crop and it has no words on it
         sh = by_id.get(s["shot_id"]) or {}
-        from .insight import burned_in
-        fit = ((sh.get("insight") or {}).get("fit") or {}).get("4:5")
+        from .insight import burned_in, fit as crop_fit
+        fit = crop_fit(sh).get("4:5") if sh else None   # from the AI's subject boxes, worked out when needed
         return float((sh.get("ai") or {}).get("score") or 5) + (0.6 if fit else -0.6 if fit is False else 0) \
             - 3 * burned_in(sh)
     rest = sorted(segs[1:], key=lambda s: -score(s))[:max(0, n - 1)]

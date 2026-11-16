@@ -485,6 +485,13 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
                 and str(st.get("match_cuts", True)).lower() not in ("false", "off", "0"):
             from . import matchcut
             matchcut.carry(plan, by_id)  # the critic's swaps: the movement across their cuts is looked at again
+    if ex.get("effects"):
+        style["effects"] = {**(style.get("effects") or {}), "use": str(ex["effects"])}
+    try:   # the effects director: transitions, text motion and looks, a shot effect, from the library (fxlib.py)
+        from . import fxlib
+        fxlib.direct(plan, by_id, style, backend)
+    except Exception as e:  # never costs the user the reel
+        log(f"effects director skipped ({str(e)[:120]})")
     from . import grade as grade_mod
     grade_img = None
     try:

@@ -10,6 +10,10 @@
   const anims = [["pop", "Pop"], ["slide", "Slide up"], ["fade", "Fade"], ["scale", "Grow"], ["typewriter", "Typewriter"],
                  ["tracking", "Spread"], ["rise", "Rise"], ["cut", "Cut"]];
   const positions = [["auto", "Auto"], ["upper", "Top"], ["center", "Middle"], ["lower", "Bottom"]];
+  // animated motions (rendered as motion pages) and how the letters are drawn: the effects library (fxlib.py)
+  const motions = [["", "Automatic"], ["rise", "Rise"], ["focus", "Pull focus"], ["cinema", "Film title"], ["tracking", "Spread"],
+                   ["typewriter", "Typewriter"], ["write", "Handwritten"], ["decode", "Decode"], ["stamp", "Stamp"], ["slam", "Slam"]];
+  const looks = [["", "Plain"], ["neon", "Neon"], ["glow", "Glow"], ["outline", "Outline"], ["offset", "Offset"]];
 
   let reel = $derived(ed.reel);
   let t = $derived(ed.sel?.kind === "text" ? reel?.texts.find((x) => x.index === ed.sel.index) : null);
@@ -154,6 +158,21 @@
             <label class="check"><input type="checkbox" checked={!!look.uppercase} onchange={(e) => style({ uppercase: e.currentTarget.checked })} /> Capitals</label>
             <label class="check" title="The picture shows through the letters"><input type="checkbox" checked={look.fill === "picture"} onchange={(e) => style({ fill: e.currentTarget.checked ? "picture" : null })} /> See-through</label>
           </div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="field">
+          <label for="tm">Motion <span class="hint">· animated</span></label>
+          <select id="tm" value={t.motion || ""} onchange={(e) => edit({ op: "edit_text", index: t.index, motion: e.currentTarget.value || null }, true)}>
+            {#each motions as [id, name]}<option value={id}>{name}</option>{/each}
+          </select>
+        </div>
+        <div class="field">
+          <label for="tlk">Look</label>
+          <select id="tlk" value={look.look || ""} onchange={(e) => style({ look: e.currentTarget.value || null })}>
+            {#each looks as [id, name]}<option value={id}>{name}</option>{/each}
+          </select>
         </div>
       </div>
 

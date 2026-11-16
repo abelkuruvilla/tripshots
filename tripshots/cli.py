@@ -43,7 +43,7 @@ def cmd_make(a):
                extras={"split": a.split_screens, "ramps": a.speed_ramps, "labels": a.labels, "loop": a.loop,
                        "speed_up": a.speed_up, "drop_speed": a.drop_speed, "smooth": a.slowmo_smooth,
                        "format": a.format, "arc": a.arc, "captions": a.captions, "critic": a.critic,
-                       "parallax": a.parallax, "recipe": a.recipe, "orientation": a.orientation, "fresh": a.fresh,
+                       "parallax": a.parallax, "recipe": a.recipe, "orientation": a.orientation, "fresh": a.fresh, "effects": a.effects,
                        "light": a.light, "stabilize": a.stabilize, "text_motion": a.text_motion, "name": a._label},
                look=a.look, grade_strength=a.grade_strength, route_map=a.route_map, sound=sound_args(a))
     print(json.dumps(res, indent=2))
@@ -290,6 +290,19 @@ def cmd_post(a):
     from .post import post
     res = post(Path(a.video), a.platforms.split(","), a.at, a.tz, a.title, send=a.send, force=a.force, again=a.again)
     print(json.dumps({k: v for k, v in res.items() if k != "key"}, indent=2, ensure_ascii=False))
+
+
+def cmd_effects(a):
+    from . import fxlib
+    lib = fxlib.catalog()
+    if a.kind:
+        lib = {k: v for k, v in lib.items() if k.startswith(a.kind)}
+    if a.json:
+        return print(json.dumps(lib, indent=2))
+    for kind, rows in lib.items():
+        print(f"\n{kind.replace('_', ' ').upper()} ({len(rows)})")
+        for r in rows:
+            print(f"  {r['id']:<11} {r['energy']:<8} {r['mood']:<30} {r['suits']}")
 
 
 def cmd_skills(a):
@@ -623,6 +636,10 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--light", choices=["golden", "sunset", "blue", "day", "night", "any"],
                    help="only shots in this light (golden: golden hour, sunset and sunrise; blue: blue hour and night; "
                         "day: morning to afternoon), the photo wall too; when too few are, they are preferred instead")
+    m.add_argument("--effects", choices=["auto", "ai", "rules", "off"],
+                   help="the effects director (fxlib.py): auto (default) lets the AI pick transitions, text motion and "
+                        "looks and a shot effect or two from the effects library; rules picks by the music's energy "
+                        "without an AI; off keeps the style's own choices")
     m.add_argument("--fresh", choices=["on", "off"],
                    help="on (default): shots your earlier reels of this footage showed are marked down, and this "
                         "reel opens and ends on something else; off: the best shots, whatever was posted before")
@@ -742,6 +759,13 @@ def build_parser() -> argparse.ArgumentParser:
     po.add_argument("--force", action="store_true", help="post even though its quality checks didn't all pass")
     po.add_argument("--again", action="store_true", help="post it again, though it was posted already")
     po.set_defaults(fn=cmd_post)
+
+    fx = sub.add_parser("effects", help="the effects library: transitions, text motions and looks, shot effects, "
+                                        "each with its energy, mood and what it suits (make --effects lets the AI "
+                                        "pick from it)")
+    fx.add_argument("kind", nargs="?", choices=["transitions", "text", "shot"], help="only one part of it")
+    fx.add_argument("--json", action="store_true")
+    fx.set_defaults(fn=cmd_effects)
 
     sk = sub.add_parser("skills", help="agent skills that work next to TripShots (HyperFrames, Remotion, "
                                        "one-take, Lemo-Opuscar, Instagram agent): what they add, whether installed, "

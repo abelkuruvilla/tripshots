@@ -819,6 +819,10 @@ def still(plan: dict, t: float, out: Path, raw: bool = False, mask: str | None =
     if seg.get("layers") and not raw and not seg.get("panel"):   # the shot's colour layers, as the render has them
         from . import nodes
         frame = nodes.apply(np.ascontiguousarray(frame), seg["layers"], nodes.Masks(seg, CANVAS.size), still=True)
+    if seg.get("effect") and not raw and not seg.get("panel"):   # the shot's video effect, as the render has it
+        from . import vfx
+        frame = vfx.apply(np.ascontiguousarray(frame), seg["effect"], t - seg["out_start"],
+                          [float(b) - seg["out_start"] for b in plan.get("beats") or []])
     if mask:   # the editor's mask view: one region lit, the rest dimmed, no words
         from . import nodes
         Image.fromarray(nodes.mask_view(np.ascontiguousarray(frame), mask, seg)).save(out, quality=88)
@@ -946,6 +950,10 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
             if ci > 0:  # arrives in black and white (through the transition too), then its colour blooms
                 from .motion import colour_in, ease_in_out
                 fr = colour_in(fr, ease_in_out(max(0.0, min(1.0, (n / fps - segs[i]["out_start"] - 0.15) / ci))))
+            if segs[i].get("effect"):  # the shot's video effect (vfx.py, chosen by the effects director)
+                from . import vfx
+                t_in = n / fps - segs[i]["out_start"]
+                fr = vfx.apply(fr, segs[i]["effect"], t_in, [b - segs[i]["out_start"] for b in beats])
             sc, ang, tx, ty = shot_motion(n / fps, segs[i], beats, mcfg)
             fr = affine(fr, sc, ang, tx, ty)
             k = pulse_amount(n / fps, segs[i], beats, mcfg)

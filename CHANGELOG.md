@@ -6,6 +6,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **The effects library, chosen by AI.** 33 transitions (13 new: push, wipe, clock, pixels, film burn, zoom blur, shake, card flip, blinds, RGB split, ripple, stretch, light-led dissolve), 12 shot effects (glow, dream, light leak, old film, VHS, black and white, duotone, chromatic edges, beat flicker, mirror, handheld drift, tilt-shift), text looks (neon, glow, outline, offset) and the animated text motions, each described by its energy, mood and what it suits (`tripshots effects`, MCP `list_effects`). At the end of `make`, the AI picks a transition for each cut, a motion and look for each line of text, and an effect for a shot or two. The style's number of transitions is kept, with at most three kinds per reel, and a reason is recorded for each choice (`make --effects auto|ai|rules|off`; docs/effects.md).
+- **Effect pickers in the editor.** The Shot tab shows every transition and effect drawn on your own shots, filtered by energy, with an amount slider and **Choose effects with AI**. The Text tab gains **Motion** and **Look**. Plan edits: `effect`, `auto_effects`.
 - **Preview your edits in motion.** The editor's new **Preview** plays the edited reel before the full render (`tripshots render --draft` writes `NAME.draft.mp4`: no sound effects, text without its animation). Its clips are cached for the real render, so that render is quicker afterwards.
 - **Freeze frame, reverse and trim from the start.** In the editor (Expert), **F** holds the frame at the playhead for a second, **R** plays a clip backwards, and dragging a shot's left edge trims its start while the end of the clip stays put. Plan edits `freeze`, `reverse` and `trim` do the same for agents (MCP `edit_plan`).
 - **Carousel posts from a reel.** `tripshots carousel NAME.plan.json` turns the reel's best shots into 1080x1350 slides coloured like the reel. The cover carries the hook and where it was taken, slides are numbered, `--handle` adds your handle, and the last slide lists the route.
@@ -151,6 +153,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **Loudness:** a peaky song that the limiter held down is lifted into its remaining headroom, so the master lands at -14 LUFS instead of around -16.
 
 ### Fixed
+- The light-leak transition was drawn in blue instead of amber (its colours were in the wrong channel order).
 - **Malayalam and other complex scripts in the app's engine.** The packaged engine couldn't find its own text-shaping library, so vowel signs came apart from their letters ("ഓരോ" drawn as "ഓരേ ാ"). It now finds it at start-up (only that library, and never passed on to ffmpeg); `tripshots doctor` reports `shaping`, and a release can't be packaged without it.
 - **Words that disappeared on bright pictures.** Light lettering is now shaded on every frame where what is behind it is bright (pale sky, sunlit aspens, white rock), including a line held across several shots, not just on its first frame.
 - **Words across a face.** A line, even one placed at the reference's own height, now moves off a face in the shot.

@@ -68,7 +68,8 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
     was). **Shot**: move it earlier or later, split at the playhead (S), hold the frame at the playhead for a
     second (F, a freeze frame), play the clip backwards (R), repeat,
     replace, add a shot after it, remove it, its length, which part of the clip plays, speed and speed ramps, the
-    transition into the next shot, framing (crop, pan, whole frame). **Sound**: where the song starts, the music
+    transition into the next shot and an effect on the shot (pickers that draw each one on your own shots, filtered
+    by energy; with no shot selected, **Choose effects with AI**: see [the effects library](effects.md)), framing (crop, pan, whole frame). **Sound**: where the song starts, the music
     level, its fade out and the beat punch. Space plays, ← → step a frame (⇧ a second). Later text moves with the
     cuts; subtitles and lyrics stay with the song.
 - **Styles** (⌘3): yours, then the built-in ones, each with **Make a reel**. **Learn a style** takes reel links

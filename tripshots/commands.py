@@ -10,7 +10,7 @@ MAKE_FLAGS = (("music", "-m"), ("style", "-s"), ("duration", "-d"), ("hook", "--
               ("look", "--look"), ("text_preset", "--text-preset"), ("route_map", "--route-map"),
               ("speed_ramps", "--speed-ramps"), ("speed_up", "--speed-up"), ("drop_speed", "--drop-speed"),
               ("format", "--format"), ("text_motion", "--text-motion"), ("captions", "--captions"),
-              ("recipe", "--recipe"), ("orientation", "--orientation"), ("fresh", "--fresh"),
+              ("recipe", "--recipe"), ("orientation", "--orientation"), ("fresh", "--fresh"), ("effects", "--effects"),
               ("light", "--light"), ("stabilize", "--stabilize"))
 
 

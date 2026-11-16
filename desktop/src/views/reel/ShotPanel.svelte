@@ -4,12 +4,9 @@
   import Icon from "../../lib/Icon.svelte";
   import { tc } from "../../lib/store.svelte.js";
   import { ed, edit, frames, select } from "./editor.svelte.js";
+  import FxPicker from "./FxPicker.svelte";
 
   let { onpick, oninsert } = $props();
-  const transitions = [[null, "Hard cut"], ["whip", "Whip"], ["zoom_in", "Zoom in"], ["zoom_out", "Zoom out"], ["spin", "Spin"],
-                       ["flash", "Flash"], ["glitch", "Glitch"], ["blur", "Blur"], ["dissolve", "Dissolve"], ["dip", "Dip to black"], ["leak", "Light leak"],
-                       ["split", "Line reveal"], ["vsplit", "V reveal"], ["iris", "Circle reveal"],
-                       ["slats", "Paper slats"], ["stripes", "Paper stripes"], ["diamond", "Paper diamond"], ["frame", "Framed window"], ["cells", "Grid cells"], ["polaroid", "Polaroid print"], ["mirror", "Reflection"]];
   const ramps = [[null, "None"], ["velocity", "Velocity"], ["slam", "Slam"], ["bullet", "Bullet"], ["rush", "Rush"], ["impact", "Impact"], ["surge", "Surge"]];
   const layouts = [["crop", "Crop to the subject"], ["pan", "Pan across"], ["blur_fill", "Whole frame, blurred behind"], ["fill", "Fill (already upright)"]];
   const roles = { hook: "Opening", setup: "Setup", build: "Build", peak: "Peak", release: "Release", ending: "Ending" };
@@ -21,6 +18,7 @@
   let canSplit = $derived(s && inside >= 0.07 && inside <= s.dur - 0.07 && !s.panel && !s.ramp);
   let plain = $derived(video && !s.ramp && !s.freeze); // a moving clip without a ramp: it can be held or turned round
 
+  let amount = $state(0.6);
   let dur = $state(1);
   let speed = $state(1);
   let from = $state(0);
@@ -28,7 +26,7 @@
   let snap = $state(true);
   let key = "";
   $effect(() => {
-    const k = s ? `${s.slot}|${s.dur}|${s.speed}|${s.in}|${s.subject_x}` : "-";
+    const k = s ? `${s.slot}|${s.dur}|${s.speed}|${s.in}|${s.subject_x}|${s.effect?.amount}` : "-";
     if (k !== key) {
       key = k;
       if (s) {
@@ -36,6 +34,7 @@
         speed = s.speed || 1;
         from = s.in || 0;
         sx = s.subject_x ?? 0.5;
+        amount = s.effect?.amount ?? 0.6;
       }
     }
   });
@@ -52,9 +51,19 @@
 {#if !s}
   <div class="none">
     <Icon name="film" size={18} />
-    <p>Select a shot on the timeline to change its length, speed, framing or transition</p>
-    <p class="quiet small">Drag a shot to move it, drag its right edge to change its length</p>
+    <p>Select a shot on the timeline to change its length, speed, framing, transition or effect</p>
+    <p class="quiet small">Drag a shot to move it, drag its edges to trim it</p>
   </div>
+  <section class="panel">
+    <h3>Effects</h3>
+    {#if reel?.effects?.summary}<p class="quiet small">{reel.effects.summary} <span class="meta">({reel.effects.by === "ai" ? "AI" : "rules"})</span></p>{/if}
+    <button class="btn sm" onclick={() => edit({ op: "auto_effects" })} disabled={ed.busy}
+            title="The AI picks transitions, text motion and looks, and a shot effect or two, for this reel's shots and music">
+      <Icon name="sparkle" size={14} /> Choose effects with AI</button>
+    {#if reel?.effects?.why?.length}
+      <ul class="why quiet small">{#each reel.effects.why.slice(0, 6) as w}<li>{w}</li>{/each}</ul>
+    {/if}
+  </section>
 {:else}
   <section class="panel">
     <div class="row">
@@ -115,13 +124,27 @@
   <section class="panel">
     <h3>Into the next shot</h3>
     <div class="field">
-      <label for="itr" class="sr-only">Transition</label>
-      <select id="itr" value={s.transition ?? ""} onchange={(e) => op({ op: "transition", to: e.currentTarget.value || null })}>
-        {#each transitions as [id, name]}<option value={id ?? ""}>{name}</option>{/each}
-      </select>
-      <p class="quiet small help">Hard cuts land on the beat; save transitions for a change of place or mood</p>
+      {#if s.slot < reel.segments.length}
+        <FxPicker kind="transition" slot={s.slot} value={s.transition} none="Hard cut" onpick={(id) => op({ op: "transition", to: id })} />
+        <p class="quiet small help">Hard cuts land on the beat; save transitions for a change of place or mood</p>
+      {:else}
+        <p class="quiet small">The last shot: the reel ends here</p>
+      {/if}
     </div>
   </section>
+
+  {#if !s.panel}
+    <section class="panel">
+      <h3>Effect</h3>
+      <FxPicker kind="effect" slot={s.slot} value={s.effect?.id} onpick={(id) => op({ op: "effect", id, amount: +amount })} />
+      {#if s.effect}
+        <div class="field">
+          <label for="iam">Amount <span class="hint">· {Math.round(amount * 100)}%</span></label>
+          <input id="iam" type="range" min="0.1" max="1" step="0.05" bind:value={amount} onchange={() => op({ op: "effect", id: s.effect.id, amount: +amount })} />
+        </div>
+      {/if}
+    </section>
+  {/if}
 
   {#if !s.panel && s.kind === "video"}
     <section class="panel">
@@ -169,6 +192,7 @@
   .marks { display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px; }
   .sub { margin-top: 8px; font-size: 12px; color: var(--text-2); }
   .help { margin-top: 8px; }
+  .why { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
   input[type="range"] { margin-top: 8px; }
   kbd { height: 16px; min-width: 16px; font-size: 10px; }
 </style>

@@ -33,6 +33,8 @@ The timeline (expert mode; times snap to whole frames, later text moves with the
   {"op": "freeze", "segment": 3, "at": 0.8, "dur": 1.0}      hold the frame at 0.8 s into slot 3 for a second (cut in there)
   {"op": "reverse", "segment": 3, "on": true}               the clip plays backwards
   {"op": "duplicate", "segment": 3}
+  {"op": "effect", "segment": 3, "id": "glow", "amount": 0.5}   a video effect on a shot (vfx.py; id null removes)
+  {"op": "auto_effects"}                                     let the effects director choose again (fxlib.py)
   {"op": "insert", "after": 2, "shot_id": "S040", "dur": 1.2}    a new slot (after 0 = at the start)
   {"op": "music", "start": 12.0, "gain_db": -3, "fade_out": 1.2}  where the song starts, its level
 
@@ -62,8 +64,8 @@ from .util import ReelError, read_json, write_json
 
 SLOT_KEYS = {"dur", "out_start", "idx", "level", "drop", "trans_out", "trans_dur", "trans_params", "incam_out",
              "incam_in", "hero", "role", "hold"}   # a slot's place in the story stays when its shot changes
-TRANSITIONS = {None, "whip", "zoom_in", "zoom_out", "spin", "flash", "glitch", "blur", "dissolve", "dip", "leak",
-               "split", "vsplit", "iris", "slats", "stripes", "diamond", "frame", "cells", "mirror", "polaroid"}
+from .motion import TRANSITIONS as _MOTION_TRANSITIONS
+TRANSITIONS = {None} | (set(_MOTION_TRANSITIONS) - {"cut", "fade"})   # every one in motion.py (fxlib describes them)
 
 
 def _content(seg: dict) -> dict:
@@ -196,6 +198,11 @@ def _text_style(cur: dict, new: dict) -> dict:
         elif k == "anim":
             if v not in ANIMS:
                 raise ReelError(f"animation is one of {', '.join(ANIMS)}")
+            out[k] = v
+        elif k == "look":
+            from .typo import LOOKS
+            if v not in LOOKS:
+                raise ReelError(f"text look is one of {', '.join(LOOKS)} (or null)")
             out[k] = v
         elif k in ("uppercase", "fixed"):
             out[k] = bool(v)
@@ -667,6 +674,36 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
                 s.pop("reverse", None)
             s["track"] = False
             done.append(f"slot {i + 1} " + ("plays backwards" if s.get("reverse") else "plays forwards"))
+        elif op == "effect":   # a video effect on one shot (vfx.py; "id": null removes it)
+            from .vfx import EFFECTS
+            targets = range(len(segs)) if ed.get("segment") == "all" else [_slot(plan, ed["segment"])]
+            fid = ed.get("id")
+            if fid and fid not in EFFECTS:
+                raise ReelError(f"unknown effect {fid} ({', '.join(EFFECTS)}, or null)")
+            for i in targets:
+                if segs[i].get("panel"):
+                    continue
+                if fid:
+                    amt = float(ed.get("amount", (segs[i].get("effect") or {}).get("amount", 0.6)))
+                    segs[i]["effect"] = {"id": fid, "amount": round(max(0.0, min(1.0, amt)), 2)}
+                else:
+                    segs[i].pop("effect", None)
+            done.append((f"{fid} on " if fid else "no effect on ") +
+                        ("every shot" if ed.get("segment") == "all" else f"slot {targets[0] + 1}"))
+        elif op == "auto_effects":   # the effects director again (fxlib.direct): AI if there is one, else rules
+            from . import fxlib
+            from .ai import get_backend
+            try:
+                backend = get_backend(ed.get("backend"))
+            except Exception:
+                backend = None
+            for sg in segs:   # what it chose before goes; what you set by hand stays
+                if (sg.get("effect") or {}).get("auto"):
+                    sg.pop("effect", None)
+            st = {**style, "effects": {**(style.get("effects") or {}), "use": "auto" if backend else "rules",
+                                       **{k: ed[k] for k in ("transitions", "text", "shots") if k in ed}}}
+            rec = fxlib.direct(plan, shots, st, backend)
+            done.append(f"effects chosen by {rec.get('by', 'rules')}: " + (", ".join(rec.get("changes") or []) or "no change"))
         elif op == "delete":
             i = _slot(plan, ed["segment"])
             if len(segs) == 1:

@@ -15,6 +15,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`carousel`](#carousel) | a carousel post from a reel: its best shots as numbered 1080x1350 slides coloured like the reel, a cover with the hook, and the route as the last slide (NAME.carousel/) |
 | [`revise`](#revise) | notes on a finished reel, each pinned to a time ("12.3: too dark here"), turned into edits by the AI (plain rules without one), then rendered again |
 | [`post`](#post) | post a finished reel (now or at a set time) through Upload-Post; a dry run unless --send (needs UPLOAD_POST_KEY and UPLOAD_POST_USER) |
+| [`effects`](#effects) | the effects library: transitions, text motions and looks, shot effects, each with its energy, mood and what it suits (make --effects lets the AI pick from it) |
 | [`skills`](#skills) | agent skills that work next to TripShots (HyperFrames, Remotion, one-take, Lemo-Opuscar, Instagram agent): what they add, whether installed, how to install |
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
@@ -58,13 +59,14 @@ usage: tripshots make [-h] [-m MUSIC]
                       [--parallax {auto,on,off}] [--recipe auto|off|N]
                       [--orientation {auto,vertical,horizontal,4:3,4:5,1:1,sideways}]
                       [--stabilize {auto,on,off}] [--light {golden,sunset,blue,day,night,any}]
-                      [--fresh {on,off}] [--loop | --no-loop] [--min-score N] [--look LOOK]
-                      [--grade-strength 0-1] [--variants N] [--route-map {intro,tracker,both,off}]
-                      [--allow-similar] [--music-start SEC] [--upload-copy | --no-upload-copy]
-                      [--cookies-from-browser BROWSER] [--cookies FILE] [--sfx {on,off}]
-                      [--ambience {on,off}] [--clip-sound {auto,on,off}] [--sfx-level DB]
-                      [--sfx-licenses LIST] [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND]
-                      [--hook HOOK] [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
+                      [--effects {auto,ai,rules,off}] [--fresh {on,off}] [--loop | --no-loop]
+                      [--min-score N] [--look LOOK] [--grade-strength 0-1] [--variants N]
+                      [--route-map {intro,tracker,both,off}] [--allow-similar] [--music-start SEC]
+                      [--upload-copy | --no-upload-copy] [--cookies-from-browser BROWSER]
+                      [--cookies FILE] [--sfx {on,off}] [--ambience {on,off}]
+                      [--clip-sound {auto,on,off}] [--sfx-level DB] [--sfx-licenses LIST]
+                      [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND] [--hook HOOK]
+                      [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
                       [--exclude GLOB] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--no-recursive]
                       [--include-live-photos] [--watch {auto,gemini,off}] [--rescore]
                       [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
@@ -131,6 +133,11 @@ options:
                         only shots in this light (golden: golden hour, sunset and sunrise; blue:
                         blue hour and night; day: morning to afternoon), the photo wall too; when
                         too few are, they are preferred instead
+  --effects {auto,ai,rules,off}
+                        the effects director (fxlib.py): auto (default) lets the AI pick
+                        transitions, text motion and looks and a shot effect or two from the
+                        effects library; rules picks by the music's energy without an AI; off
+                        keeps the style's own choices
   --fresh {on,off}      on (default): shots your earlier reels of this footage showed are marked
                         down, and this reel opens and ends on something else; off: the best shots,
                         whatever was posted before
@@ -388,6 +395,20 @@ options:
   --send                really post it (without: show what would be posted)
   --force               post even though its quality checks didn't all pass
   --again               post it again, though it was posted already
+```
+
+## effects
+
+```text
+usage: tripshots effects [-h] [--json] [{transitions,text,shot}]
+
+positional arguments:
+  {transitions,text,shot}
+                        only one part of it
+
+options:
+  -h, --help            show this help message and exit
+  --json
 ```
 
 ## skills

@@ -51,6 +51,12 @@ Where finished reels are written, and where the user keeps music for reels.
 | `reels_folder` | string/null | null |
 | `music_folders` | array/null | null |
 
+## list_effects
+
+The effects library: transitions (for edit_plan transition), text motions (edit_text motion) and text looks
+(edit_text style look), and shot effects (edit_plan effect), each with its energy, mood and what it suits.
+edit_plan {"op":"auto_effects"} lets the effects director choose for the whole reel.
+
 ## list_trips
 
 The user's footage grouped into trips: dates, number of days, places (from GPS), photo/video counts and
@@ -281,6 +287,8 @@ Timeline (times snap to frames; later text moves with the cut):
   {"op":"split","segment":3,"at":0.8}  {"op":"delete","segment":3}  {"op":"duplicate","segment":3}
   {"op":"trim","segment":3,"side":"left"|"right","by":0.4}  (from the start the clip's end stays put)
   {"op":"freeze","segment":3,"at":0.8,"dur":1.0}  (hold that frame, cut in there)  {"op":"reverse","segment":3,"on":true}
+Effects (list_effects): {"op":"effect","segment":3,"id":"glow","amount":0.5} (id null removes)
+  {"op":"auto_effects"}  the effects director picks transitions, text motion/looks and shot effects again
   {"op":"insert","after":2,"shot_id":"S040","dur":1.2}  {"op":"music","start":12.0,"gain_db":-3,"fade_out":1.2}
 Colour: {"op":"grade","look":"teal-orange"|"none"|<list_looks name>,"strength":0.8,"grain":4,"vignette":true}
   {"op":"adjust","segment":3|"all","exposure":0.3,"contrast":1.1,"saturation":1.2,"warmth":0.2,"tint":0,

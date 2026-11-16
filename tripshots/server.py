@@ -104,7 +104,7 @@ def reel_detail(plan: Path) -> dict:
                      "light": s.get("grade_note"), "layers": s.get("layers") or [],
                      "backdrop": (s.get("backdrop") or {}).get("mode"), "people": bool(s.get("people")),
                      "stabilize": bool(s.get("stabilize")), "freeze": bool(s.get("freeze")),
-                     "reverse": bool(s.get("reverse"))})
+                     "reverse": bool(s.get("reverse")), "effect": s.get("effect")})
     from .planedit import history, texts as plan_texts
     cap = _side(plan, ".caption.txt")
     music = p.get("music") or {}
@@ -118,7 +118,7 @@ def reel_detail(plan: Path) -> dict:
             "grading": {k: (p.get("grade") or {}).get(k) for k in ("look", "strength", "grain", "vignette", "why")},
             "beat_punch": (p.get("motion") or {}).get("beat_punch"),
             "sound_sheet": _side(plan, ".sound.jpg"), "grade": _side(plan, ".grade.jpg"),
-            "draft": _draft(plan)}
+            "draft": _draft(plan), "effects": p.get("effects")}
 
 
 def _draft(plan: Path) -> str | None:
@@ -154,6 +154,54 @@ def still(plan: Path, t: float, raw: bool = False, mask: str | None = None) -> P
             old.unlink(missing_ok=True)   # a few hundred recent frames is plenty
         from .nodes import REGIONS
         render_still(read_json(plan), t, out, raw=raw, mask=mask if mask in REGIONS else None)
+    return out
+
+
+def fx_thumb(plan: Path, slot: int, kind: str, fid: str) -> Path | None:
+    """A small picture of a library item on the reel's own shots (the editor's pickers): a transition as three
+    moments from this shot into the next, a shot effect on this shot's thumbnail."""
+    from .planedit import _shots
+    from .util import short_hash
+    p = read_json(plan)
+    segs = p.get("segments") or []
+    if not segs:
+        return None
+    i = max(0, min(len(segs) - 1, int(slot) - 1))
+    by_id = _shots(p)
+    def thumb(k):
+        sh = by_id.get(segs[k].get("shot_id")) or {}
+        t = sh.get("thumb") or segs[k].get("thumb")
+        return t if t and Path(t).exists() else None
+    a, b = thumb(i), thumb(min(i + 1, len(segs) - 1))
+    if not a or not b:
+        return None
+    d = HOME / "cache" / "fx"
+    out = d / f"{short_hash(f'{a}|{b}|{kind}|{fid}|v1', 16)}.jpg"
+    if out.exists():
+        return out
+    import cv2
+    import numpy as np
+    def load(f):
+        im = cv2.cvtColor(cv2.imread(str(f)), cv2.COLOR_BGR2RGB)
+        h, w = im.shape[:2]
+        tw, th = 144, 256   # an upright window from the middle
+        k = max(tw / w, th / h)
+        im = cv2.resize(im, (int(w * k) + 1, int(h * k) + 1), interpolation=cv2.INTER_AREA)
+        y, x = (im.shape[0] - th) // 2, (im.shape[1] - tw) // 2
+        return np.ascontiguousarray(im[y:y + th, x:x + tw])
+    A, B = load(a), load(b)
+    if kind == "effect":
+        from .vfx import EFFECTS, apply
+        if fid not in EFFECTS:
+            return None
+        img = np.concatenate([A, apply(A, {"id": fid, "amount": 0.8}, 0.4, [0.4])], axis=1)
+    else:
+        from .motion import TRANSITIONS, apply_transition
+        if fid not in TRANSITIONS:
+            return None
+        img = np.concatenate([apply_transition(fid, A, B, q) for q in (0.3, 0.5, 0.7)], axis=1)
+    d.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out), cv2.cvtColor(img, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
     return out
 
 
@@ -507,6 +555,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._file(f, trusted=True) if f else self._json({"error": "no picture"}, 404)
                 if path == "/api/fonts":
                     return self._json(fonts())
+                if path == "/api/effects":   # the effects library (fxlib.py; no numpy needed)
+                    from .fxlib import catalog
+                    return self._json(catalog())
+                if path == "/api/fxthumb":   # one transition or shot effect, drawn on this reel's own shots
+                    f = fx_thumb(_plan(arg("plan")), int(arg("slot", "1")), arg("kind", "transition"), arg("id", ""))
+                    return self._file(f, trusted=True) if f else self._json({"error": "no picture"}, 404)
                 if path == "/api/styles":
                     return self._json(styles())
                 if path == "/api/ai":

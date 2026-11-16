@@ -225,8 +225,8 @@ def t_leak(a, b, p, warmth: float = 1.0, **_):
     band = np.exp(-(d1 / 0.2) ** 2) + 0.6 * np.exp(-(d2 / 0.12) ** 2)
     glow = np.exp(-((xx - c) ** 2 + (yy - 0.25) ** 2) / 0.18) * 0.7
     inten = np.clip((band + glow) * (0.2 + 0.75 * k), 0, 1.0)
-    col = np.stack([0.20 + 0.15 * (1 - yy), 0.55 + 0.15 * yy, np.full_like(yy, 1.0)], -1)  # BGR: amber -> rose
-    col[..., 0] *= 1.0 / max(0.5, warmth)
+    col = np.stack([np.full_like(yy, 1.0), 0.55 + 0.15 * yy, 0.20 + 0.15 * (1 - yy)], -1)  # RGB: amber -> rose
+    col[..., 2] *= 1.0 / max(0.5, warmth)
     light = cv2.resize((inten[..., None] * col).astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
     base = blend(a, b, ease_in_out(p)).astype(np.float32) / 255.0
     out = 1 - (1 - base) * (1 - np.clip(light, 0, 1))  # screen
@@ -614,7 +614,178 @@ def t_polaroid(a, b, p, tilt: float = -4.0, **_):
     return out
 
 
+# ------------------------------------------------- the effects library's transitions (fxlib.py describes them)
+def t_push(a, b, p, direction: str = "left", **_):
+    """The new shot pushes the old one off the screen, without the whip's blur: a clean, graphic slide."""
+    h, w = a.shape[:2]
+    q = ease_in_out(p)
+    if direction in ("left", "right"):
+        off = int(round(q * w))
+        strip = np.concatenate([a, b], axis=1) if direction == "left" else np.concatenate([b, a], axis=1)
+        x = off if direction == "left" else w - off
+        return np.ascontiguousarray(strip[:, x:x + w])
+    off = int(round(q * h))
+    strip = np.concatenate([a, b], axis=0) if direction == "up" else np.concatenate([b, a], axis=0)
+    y = off if direction == "up" else h - off
+    return np.ascontiguousarray(strip[y:y + h, :])
+
+
+def t_wipe(a, b, p, direction: str = "left", soft: float = 0.05, **_):
+    """A straight soft edge sweeps across: the new shot behind it."""
+    h, w = a.shape[:2]
+    def make():
+        x, y = _xy(h, w)
+        x, y = x / w, y / h
+        return {"left": 1 - x, "right": x, "up": 1 - y, "down": y}.get(direction, 1 - x)
+    d = _geo(("wipe", h, w, direction), make)
+    q = ease_in_out(p) * (1 + 2 * soft) - soft
+    m = np.clip((q - d) / soft + 0.5, 0, 1)[..., None]
+    return (a * (1 - m) + b * m).astype(np.uint8)
+
+
+def t_clock(a, b, p, **_):
+    """A clock hand sweeps round the centre."""
+    h, w = a.shape[:2]
+    def make():
+        x, y = _xy(h, w)
+        x, y = x / w, y / h
+        return (np.arctan2(x - 0.5, -(y - 0.5) * h / w) / (2 * np.pi)) % 1.0
+    d = _geo(("clock", h, w), make)
+    m = np.clip((ease_in_out(p) - d) / 0.01, 0, 1)[..., None]
+    return (a * (1 - m) + b * m).astype(np.uint8)
+
+
+def t_pixel(a, b, p, **_):
+    """The picture breaks into big pixels and resolves into the next shot."""
+    h, w = a.shape[:2]
+    k = 1 - abs(2 * p - 1)
+    src = a if p < 0.5 else b
+    cell = int(1 + 60 * ease_in(k))
+    if cell < 2:
+        return src
+    small = cv2.resize(src, (max(1, w // cell), max(1, h // cell)), interpolation=cv2.INTER_AREA)
+    return cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+
+
+def t_burn(a, b, p, seed: int = 0, **_):
+    """Film burn: a warm, blown-out flare eats the frame from one side and leaves the next shot."""
+    h, w = a.shape[:2]
+    def make():
+        rng = np.random.default_rng(seed)
+        n = cv2.resize(rng.random((12, 7)).astype(np.float32), (w, h), interpolation=cv2.INTER_CUBIC)
+        x, y = _xy(h, w)
+        x, y = x / w, y / h
+        return np.clip(0.55 * n + 0.45 * (1 - x), 0, 1)
+    d = _geo(("burn", h, w, seed), make)
+    k = 1 - abs(2 * p - 1)
+    heat = np.clip((k * 1.25 - d) * 2.2, 0, 1)[..., None]
+    base = blend(a, b, ease_in_out(p)).astype(np.float32) / 255.0
+    warm = np.array([1.0, 0.55, 0.18], np.float32) * heat * (0.55 + 0.45 * heat)   # RGB: amber, hot in the core
+    out = 1 - (1 - base) * (1 - warm)   # screen: the light adds to the picture, it doesn't paint over it
+    return (np.clip(out, 0, 1) * 255 + 0.5).astype(np.uint8)
+
+
+def t_zoomblur(a, b, p, **_):
+    """A radial blur rushes into the cut and out of the next shot (an energetic punch-in)."""
+    k = 1 - abs(2 * p - 1)
+    if p < 0.5:
+        return zoom_blur(a, 1 + 0.25 * ease_in(k), 0.35 * k)
+    return zoom_blur(b, 1 + 0.25 * ease_in(k), 0.35 * k)
+
+
+def t_shake(a, b, p, seed: int = 0, **_):
+    """A hard camera jolt on the cut, settling within the window."""
+    h, w = a.shape[:2]
+    k = 1 - abs(2 * p - 1)
+    rng = np.random.default_rng(seed + int(p * 30))
+    amp = 0.035 * w * k
+    src = a if p < 0.5 else b
+    out = affine(src, 1.04 + 0.05 * k, float(rng.uniform(-2, 2) * k), float(rng.uniform(-amp, amp)),
+                 float(rng.uniform(-amp, amp)))
+    return motion_blur(out, int(30 * k), True)
+
+
+def t_flip(a, b, p, axis: str = "h", **_):
+    """A card flip: the shot turns edge-on and its back is the next shot."""
+    h, w = a.shape[:2]
+    q = ease_in_out(p)
+    src = a if q < 0.5 else b
+    s = abs(np.cos(np.pi * q))
+    out = np.zeros_like(a)
+    if s < 0.02:
+        return out
+    if axis == "h":
+        nw = max(2, int(w * s))
+        img = cv2.resize(src, (nw, h), interpolation=cv2.INTER_AREA)
+        x = (w - nw) // 2
+        out[:, x:x + nw] = img
+    else:
+        nh = max(2, int(h * s))
+        img = cv2.resize(src, (w, nh), interpolation=cv2.INTER_AREA)
+        y = (h - nh) // 2
+        out[y:y + nh] = img
+    return cv2.convertScaleAbs(out, alpha=0.65 + 0.35 * s)
+
+
+def t_blinds(a, b, p, n: int = 9, horizontal: bool = True, **_):
+    """Venetian blinds turn and open on the next shot."""
+    h, w = a.shape[:2]
+    def make():
+        x, y = _xy(h, w)
+        x, y = x / w, y / h
+        return ((y if horizontal else x) * n) % 1.0
+    d = _geo(("blinds", h, w, n, horizontal), make)
+    m = np.clip((ease_in_out(p) - d) / 0.04, 0, 1)[..., None]
+    return (a * (1 - m) + b * m).astype(np.uint8)
+
+
+def t_rgb(a, b, p, **_):
+    """The colour channels split apart on the cut and snap back together."""
+    k = 1 - abs(2 * p - 1)
+    src = (a if p < 0.5 else b)
+    sh = int(round(0.04 * src.shape[1] * ease_in(k)))
+    if sh < 1:
+        return src
+    out = src.copy()
+    out[..., 0] = np.roll(src[..., 0], sh, axis=1)
+    out[..., 2] = np.roll(src[..., 2], -sh, axis=1)
+    return brighten(out, 0.15 * k)
+
+
+def t_ripple(a, b, p, **_):
+    """The picture ripples like water from the centre as one shot melts into the other."""
+    h, w = a.shape[:2]
+    k = 1 - abs(2 * p - 1)
+    mix = blend(a, b, ease_in_out(p))
+    if k < 0.02:
+        return mix
+    y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+    r = np.hypot(x - w / 2, y - h / 2)
+    d = np.sin(r / 28.0 - p * 20) * 18 * k
+    return cv2.remap(mix, x + d, y + d, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+
+def t_stretch(a, b, p, **_):
+    """The shot stretches and streaks upwards, the next one drops into place."""
+    k = 1 - abs(2 * p - 1)
+    src = a if p < 0.5 else b
+    out = affine(src, 1.0, 0.0, 0.0, (-1 if p < 0.5 else 1) * 0.08 * src.shape[0] * ease_in(k))
+    return motion_blur(out, int(80 * k), False)
+
+
+def t_luma(a, b, p, **_):
+    """The next shot appears through its brightest parts first (a light-led dissolve)."""
+    lum = cv2.cvtColor(b, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
+    lum = cv2.GaussianBlur(cv2.resize(lum, (b.shape[1] // 8, b.shape[0] // 8)), (0, 0), 3)
+    lum = cv2.resize(lum, (b.shape[1], b.shape[0]))
+    m = np.clip((ease_in_out(p) * 1.4 - (1 - lum)) / 0.4, 0, 1)[..., None]
+    return (a * (1 - m) + b * m).astype(np.uint8)
+
+
 TRANSITIONS = {
+    "push": t_push, "wipe": t_wipe, "clock": t_clock, "pixel": t_pixel, "burn": t_burn, "zoomblur": t_zoomblur,
+    "shake": t_shake, "flip": t_flip, "blinds": t_blinds, "rgb": t_rgb, "ripple": t_ripple, "stretch": t_stretch,
+    "luma": t_luma,
     "mirror": t_mirror, "polaroid": t_polaroid,
     "slats": t_slats, "stripes": t_stripes, "diamond": t_diamond, "frame": t_frame, "cells": t_cells,
     "split": t_split, "vsplit": t_vsplit, "iris": t_iris,
@@ -634,7 +805,9 @@ LEGACY = {"fadeblack": "dip", "fadewhite": "flash", "slideleft": "whip", "slider
 NATURAL = {"cut": 0.0, "dissolve": 0.5, "fade": 0.5, "dip": 0.5, "blur": 0.45, "whip": 0.3,
            "zoom_in": 0.36, "zoom_out": 0.4, "spin": 0.42, "flash": 0.24, "glitch": 0.2, "leak": 0.7,
            "split": 0.9, "vsplit": 0.9, "iris": 0.8, "slats": 0.8, "stripes": 0.8, "diamond": 0.8, "frame": 1.0, "cells": 1.0,
-           "mirror": 0.9, "polaroid": 1.1}
+           "mirror": 0.9, "polaroid": 1.1,
+           "push": 0.4, "wipe": 0.5, "clock": 0.6, "pixel": 0.4, "burn": 0.6, "zoomblur": 0.34, "shake": 0.26,
+           "flip": 0.5, "blinds": 0.6, "rgb": 0.22, "ripple": 0.7, "stretch": 0.3, "luma": 0.7}
 
 
 def normalize(name: str | None) -> str | None:

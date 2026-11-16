@@ -26,7 +26,8 @@ from pathlib import Path
 
 
 def smoke(exe: Path, version: str) -> None:
-    out = subprocess.run([str(exe), "--help"], capture_output=True, text=True, timeout=180)
+    exe = exe.resolve()   # `doctor` runs from the home folder, where a relative dist/ path doesn't exist
+    out =subprocess.run([str(exe), "--help"], capture_output=True, text=True, timeout=180)
     if out.returncode != 0 or "serve" not in out.stdout:
         sys.exit(f"engine --help failed:\n{out.stdout}\n{out.stderr}")
     # complex scripts (Malayalam) must shape: the frozen engine has to find its own fribidi (entry._text_shaping)

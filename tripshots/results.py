@@ -8,7 +8,9 @@ you appear early) from its plan, and `preferences()` turns them into a lean: whi
 held viewers and been sent the most. `make --format auto` and `--variants` use it once there is enough data.
 
 The score per reel: 60 % how much of it people watched (average watch time / length, capped at 1) and 40 %
-sends per view (scaled so 2 % is a full mark): the two things Instagram's own guidance points at.
+sends per view (scaled so 2 % is a full mark): the two things Instagram's own guidance points at. `multiples()`
+adds how far each reel beat the account's usual (views over the median of the others), so a reel that did well
+because the account had grown isn't mistaken for one that found something.
 Stored in ~/.tripshots/results.json.
 """
 from __future__ import annotations
@@ -69,6 +71,26 @@ def reel_score(m: dict, duration: float | None) -> float | None:
     return round(0.6 * w + 0.4 * min(1.0, sends / 0.02), 3)
 
 
+def _views(m: dict) -> float:
+    return float(m.get("views") or m.get("plays") or m.get("reach") or 0)
+
+
+def multiples(rows: list[dict] | None = None, min_n: int = 3) -> dict:
+    """How far each reel beat the account's usual: its views over the median views of the other recorded reels
+    (reel path -> multiple, e.g. 4.2 = four times a normal day). Raw views mostly say how many people follow you;
+    this says which reels found something. Needs min_n other reels with views."""
+    import statistics
+    rows = load() if rows is None else rows
+    seen = [(r["reel"], _views(r.get("metrics") or {})) for r in rows]
+    seen = [(k, v) for k, v in seen if v]
+    out = {}
+    for k, v in seen:
+        others = [x for kk, x in seen if kk != k]
+        if len(others) >= min_n:
+            out[k] = round(v / statistics.median(others), 2)
+    return out
+
+
 def add(reel: str | Path, metrics: dict, posted: str | None = None, media_id: str | None = None) -> dict:
     rows = load()
     plan_p, plan = _plan_for(Path(reel))
@@ -91,9 +113,12 @@ def add(reel: str | Path, metrics: dict, posted: str | None = None, media_id: st
 def preferences(min_n: int = 2) -> dict:
     """The format and hook type with the best average score (with a pull towards the overall mean, so one lucky
     reel doesn't decide). confident = at least min_n reels for the winner and 5 scored overall."""
+    mult = multiples()
+    hits = {"outliers": [Path(k).stem for k, v in sorted(mult.items(), key=lambda kv: -kv[1]) if v >= 3][:5]}
+    hits = hits if hits["outliers"] else {}  # the reels that clearly beat a normal day: the ones to make more of
     rows = [r for r in load() if r.get("score") is not None]
     if not rows:
-        return {}
+        return hits
     mean = sum(r["score"] for r in rows) / len(rows)
     out: dict = {"n": len(rows), "mean": round(mean, 3)}
     for feat in ("format", "hook_type"):
@@ -110,7 +135,7 @@ def preferences(min_n: int = 2) -> dict:
         out[f"{feat}_scores"] = {v: round(x, 3) for v, x in sorted(shrunk.items(), key=lambda kv: -kv[1])}
         out[f"{feat}_n"] = {v: len(xs) for v, xs in groups.items()}
     out["confident"] = len(rows) >= 5 and (out.get("format_n") or {}).get(out.get("format"), 0) >= min_n
-    return out
+    return {**out, **hits}
 
 
 # ---------------------------------------------------------------- Instagram Graph API

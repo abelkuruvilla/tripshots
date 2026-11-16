@@ -27,6 +27,13 @@ COMPANIONS = [
     {"name": "lemo-opuscar", "source": "lemomo-ai/lemo-opuscar", "license": "MIT", "marker": ["lemo-opuscar"],
      "what": "Short films drawn in code in 43 styles, with a director's guide and self-checks. TripShots' "
              "DIRECTOR.md follows its pattern; the skill can make an illustrated intro or map-style opener."},
+    {"name": "instagram-agent", "source": "Jakeschincariol/instagram-agent-skill", "license": "MIT",
+     "marker": ["ig-reel", "ig-caption", "ig-profile"],
+     "what": "Thirteen Instagram skills (/ig-profile, /ig-audit, /ig-caption, /ig-carousel, /ig-plan...): a profile "
+             "score, post-mortems, caption and hook checks; they write, you post. TripShots' caption checks, hook "
+             "rules, `results` \"vs usual\" and `carousel` follow it, and `caption` reads the same voice file "
+             "(~/.claude/instagram/voice.md). Its /ig-human cleaner deletes the joiners Malayalam and Hindi need: "
+             "use it on English text only."},
 ]
 DIRS = [Path.home() / ".claude" / "skills", Path.cwd() / ".claude" / "skills", Path.home() / ".agents" / "skills",
         Path.cwd() / ".agents" / "skills", Path.home() / ".codex" / "skills"]

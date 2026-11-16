@@ -20,6 +20,19 @@ from .util import ReelError, log, read_json, write_json
 
 MAX_TAGS = 5
 FIRST_LINE = 125
+FILLER_TAGS = {"viral", "fyp", "foryou", "foryoupage", "explore", "explorepage", "trending", "instagood", "love",
+               "follow", "like4like", "reels", "reelsinstagram", "viralreels", "instadaily", "travelgram"}
+# one kind of ask each: a caption with two of them asks for nothing
+ASKS = [("send", r"\b(?:send|share) (?:this|it)\b|\bsend (?:to|it to)\b"), ("save", r"\bsave (?:this|it|for)\b"),
+        ("follow", r"\bfollow (?:me|for|along)\b"), ("comment", r"\bcomment\b|\bdrop (?:a|your)\b"),
+        ("tag", r"\btag (?:someone|a|your)\b"), ("link", r"\blink in (?:my )?bio\b"), ("dm", r"\b(?:dm|message) me\b")]
+URL_RE = re.compile(r"https?://\S+|\bwww\.\S+", re.I)
+EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF☀-➿]")
+# invisible characters a keyboard doesn't type. ZWJ and ZWNJ (U+200D, U+200C) are not here: Malayalam, Hindi and
+# emoji sequences need them
+INVISIBLE = dict.fromkeys(map(ord, "​⁠﻿­᠎"))
+HARD_SPACES = dict.fromkeys(map(ord, "    "), " ")
+VOICE = Path.home() / ".claude" / "instagram" / "voice.md"
 
 
 def _facts(plan: dict) -> dict:
@@ -89,6 +102,42 @@ def _clean_tag(t: str) -> str:
     return re.sub(r"[^\w]", "", str(t).lstrip("#"), flags=re.UNICODE)
 
 
+def clean_text(t: str) -> str:
+    """AI text as a person types it: no invisible characters or hard spaces, no em dashes (the most common tell
+    of a written-by-AI caption), "..." for the ellipsis character. Joiners that scripts need are kept."""
+    t = str(t).translate(INVISIBLE).translate(HARD_SPACES).replace("…", "...")
+    t = re.sub(r"(?<=\d)\s*[–—]\s*(?=\d)", "-", t)          # 5–10 km
+    t = re.sub(r"\s*—\s*", ", ", t)
+    t = re.sub(r"\s+–\s+", ", ", t)
+    t = re.sub(r",\s*([,.;:!?])", r"\1", t)
+    return re.sub(r",\s*$", "", t, flags=re.M)
+
+
+def voice_notes(path: Path | None = None) -> str:
+    """The filled-in lines of the creator's voice file (~/.claude/instagram/voice.md, shared with the Instagram
+    agent skills; TRIPSHOTS_VOICE points elsewhere): who they are, how they sound, what's off limits. Template
+    lines nobody answered are left out; "" when there is none."""
+    import os
+    p = Path(path or os.environ.get("TRIPSHOTS_VOICE") or VOICE).expanduser()
+    try:
+        text = p.read_text(errors="ignore")
+    except OSError:
+        return ""
+    keep, section = [], ""
+    for ln in text.splitlines():
+        s = ln.strip()
+        if s.startswith("## "):
+            section = s[3:].strip()
+            continue
+        m = re.match(r"^(?:-|\d+\.)\s*(?:\*\*(.+?):?\*\*:?)?\s*(.*)$", s)
+        if not m or not section:
+            continue
+        label, val = (m.group(1) or "").strip(), re.sub(r"\(.*?\)\s*$", "", m.group(2)).strip()
+        if val:
+            keep.append(f"{section}: {label + ': ' if label else ''}{val}")
+    return "\n".join(keep)[:1500]
+
+
 def _local(f: dict) -> dict:
     """Without an AI: an honest caption built from the places and subjects."""
     place = f["places"][0].split(",")[0] if f["places"] else ""
@@ -117,10 +166,15 @@ def generate(plan: dict, tone: str | None = None, extra: str | None = None, back
     if backend is None:
         return _local(f)
     style = load_style(plan.get("style")) if plan.get("style") else {}
+    voice = voice_notes()
+    if voice:  # the creator's own voice file: how they sound and what they never say
+        extra = ((extra + "\n") if extra else "") + ("The creator's voice notes (follow them; never use a fact from "
+                                                     "them unless this reel shows it):\n" + voice)
     prompt = PROMPT.format(seconds=f["seconds"], fmt=f["format"] or "montage", places=", ".join(f["places"]) or "unknown",
                            subjects=", ".join(f["subjects"]) or "landscapes", notes="; ".join(f["notes"]) or "-",
                            on_screen=" / ".join(f["on_screen"]) or "-", sound=f["sound"] or "-",
-                           tone=tone or (style.get("caption") or {}).get("tone") or "warm, concise, first-person",
+                           tone=tone or (style.get("caption") or {}).get("tone") or ("as in the voice notes" if voice
+                                                                                     else "warm, concise, first-person"),
                            extra=f"\nAlso: {extra}" if extra else "", first=FIRST_LINE)
     try:
         data = extract_json(backend.ask(prompt, None, max_tokens=1200)) or {}
@@ -128,17 +182,17 @@ def generate(plan: dict, tone: str | None = None, extra: str | None = None, back
         log(f"caption: the AI didn't answer ({str(e)[:80]}); writing one from the places and subjects")
         return _local(f)
     tags = [t for t in dict.fromkeys(_clean_tag(h) for h in data.get("hashtags") or []) if t][:MAX_TAGS]
-    cap = str(data.get("caption") or "").strip()
+    cap = clean_text(str(data.get("caption") or "").strip())
     cap = "\n".join(re.sub(r"(?<!\w)#\w+", "", ln).rstrip() for ln in cap.splitlines()).strip()  # tags go below
     if not cap:
         return _local(f)
     return {"caption": cap, "hashtags": tags,
             "keywords": [str(k).strip() for k in data.get("keywords") or [] if str(k).strip()][:8],
-            "alt_text": str(data.get("alt_text") or "").strip()[:240],
-            "first_comment": str(data.get("first_comment") or "").strip(),
+            "alt_text": clean_text(str(data.get("alt_text") or "").strip())[:240],
+            "first_comment": clean_text(str(data.get("first_comment") or "").strip()),
             "on_screen_keywords": str(data.get("on_screen_keywords") or "").strip(),
-            "alternatives": [str(a).strip() for a in data.get("alternatives") or [] if str(a).strip()][:3],
-            "why": str(data.get("why") or "").strip(), "source": getattr(backend, "name", "ai")}
+            "alternatives": [clean_text(str(a).strip()) for a in data.get("alternatives") or [] if str(a).strip()][:3],
+            "why": str(data.get("why") or "").strip(), "source": getattr(backend, "name", "ai"), "voice": bool(voice)}
 
 
 def post_text(s: dict) -> str:
@@ -146,16 +200,62 @@ def post_text(s: dict) -> str:
     return (s.get("caption", "") + "\n\n" + " ".join("#" + h for h in s.get("hashtags") or [])).strip() + "\n"
 
 
+def _has_phrase(text: str, phrase: str) -> bool:
+    """Every word of a search phrase is in the text ("big sur drive" is in "the drive down Big Sur")."""
+    words = set(re.findall(r"\w+", text.lower()))
+    return all(w in words or w.rstrip("s") in words for w in re.findall(r"\w+", phrase.lower()))
+
+
+def asks(caption: str) -> list[str]:
+    """The kinds of thing the caption asks people to do (a question on the last line counts as one)."""
+    low = caption.lower()
+    got = [name for name, pat in ASKS if re.search(pat, low)]
+    lines = [ln for ln in caption.strip().splitlines() if ln.strip()]
+    if lines and lines[-1].rstrip().endswith("?") and "comment" not in got:
+        got.append("question")
+    return got
+
+
 def checks(s: dict) -> list[str]:
     """What could hold the post back, in plain words."""
+    from .ai import _CLICHES
     out = []
-    first = (s.get("caption") or "").splitlines()[0] if s.get("caption") else ""
+    cap = s.get("caption") or ""
+    first = cap.splitlines()[0] if cap else ""
+    tags = [str(t).lstrip("#").lower() for t in s.get("hashtags") or []]
     if len(first) > FIRST_LINE:
         out.append(f"the first line is {len(first)} characters: only about {FIRST_LINE} show before \"more\"")
-    if len(s.get("hashtags") or []) > MAX_TAGS:
+    if len(tags) > MAX_TAGS:
         out.append(f"Instagram allows {MAX_TAGS} hashtags")
     if not s.get("keywords"):
         out.append("no search keywords")
+    elif cap:
+        used = [k for k in s["keywords"] if _has_phrase(cap, k)]
+        if len(used) < min(2, len(s["keywords"])):
+            out.append(f"{len(used)} of the search keywords are in the caption: Instagram search reads the caption, "
+                       f"so work in {', '.join(repr(k) for k in s['keywords'][:2] if k not in used)}")
+    if first.lstrip()[:1] in ("#", "@") or (first and EMOJI_RE.match(first.lstrip())):
+        out.append("the caption opens on a hashtag, a mention or an emoji: the first words are the hook")
+    if re.search(r"(?<!\w)#\w", cap[:FIRST_LINE]):
+        out.append(f"a hashtag sits in the first {FIRST_LINE} characters, the only part people see")
+    a = asks(cap) if cap else []
+    if cap and not a:
+        out.append("no ask: end with one thing to do (send it, save it, or a question)")
+    elif len(a) > 1:
+        out.append(f"{len(a)} asks ({', '.join(a)}): one is stronger than two")
+    if URL_RE.search(cap):
+        out.append("a link in the caption isn't clickable: put it in the bio or the first comment")
+    filler = [t for t in tags if t in FILLER_TAGS]
+    if filler:
+        out.append(f"generic hashtags ({', '.join('#' + t for t in filler)}) describe nothing: use the place or niche")
+    emoji = len(EMOJI_RE.findall(cap))
+    if cap and emoji * 100 / len(cap) > 4:
+        out.append(f"{emoji} emoji in {len(cap)} characters reads as decoration")
+    cl = [c for c in _CLICHES if c in cap.lower()]
+    if cl:
+        out.append(f"cliché{'s' if len(cl) > 1 else ''}: {', '.join(cl)}")
+    if "—" in cap or cap.translate(INVISIBLE) != cap:
+        out.append("em dashes or invisible characters: run it through clean_text (they read as written by AI)")
     return out
 
 

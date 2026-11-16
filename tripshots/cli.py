@@ -268,6 +268,12 @@ def cmd_caption(a):
     print(json.dumps(write(Path(a.plan), a.tone, a.extra), indent=2, ensure_ascii=False))
 
 
+def cmd_carousel(a):
+    from .carousel import make
+    print(json.dumps(make(Path(a.plan), a.slides, a.title, a.handle, route=not a.no_route,
+                          out_dir=Path(a.out) if a.out else None), indent=2, ensure_ascii=False))
+
+
 def cmd_revise(a):
     from .revise import parse_note, revise
     notes = [parse_note(n) for n in a.note or []]
@@ -430,16 +436,22 @@ def cmd_results(a):
         print("no results yet: `tripshots results add NAME.mp4 --views ... --avg-watch ... --sends ...` "
               "or `tripshots results sync`")
         return
-    print(f"{'reel':<48} {'format':<9} {'hook':<10} {'views':>7} {'watch':>6} {'sends':>6} {'score':>6}")
+    mult = R.multiples(rows)
+    print(f"{'reel':<44} {'format':<9} {'hook':<10} {'views':>7} {'vs usual':>8} {'watch':>6} {'sends':>6} {'score':>6}")
     for r in sorted(rows, key=lambda r: -(r.get("score") or 0)):
         f, m = r.get("features") or {}, r.get("metrics") or {}
-        print(f"{Path(r['reel']).stem[:48]:<48} {str(f.get('format') or '-'):<9} {str(f.get('hook_type') or '-'):<10} "
-              f"{m.get('views') or m.get('reach') or '-':>7} {m.get('avg_watch') or '-':>6} {m.get('sends') or '-':>6} "
-              f"{r.get('score') if r.get('score') is not None else '-':>6}")
+        x = f"{mult[r['reel']]:.1f}x" if r["reel"] in mult else "-"
+        print(f"{Path(r['reel']).stem[:44]:<44} {str(f.get('format') or '-'):<9} {str(f.get('hook_type') or '-'):<10} "
+              f"{m.get('views') or m.get('reach') or '-':>7} {x:>8} {m.get('avg_watch') or '-':>6} "
+              f"{m.get('sends') or '-':>6} {r.get('score') if r.get('score') is not None else '-':>6}")
     pr = R.preferences()
     if pr.get("format"):
         print(f"\nso far: {pr['format']} reels with {pr.get('hook_type') or 'any'} hooks do best "
               f"({pr['n']} scored){'' if pr.get('confident') else ' (not enough data yet to change defaults)'}")
+    if pr.get("outliers"):
+        print(f"beat your usual by 3x or more: {', '.join(pr['outliers'])}")
+    elif not mult:
+        print("\"vs usual\" (views over your median reel) shows once 4 reels have views")
 
 
 def cmd_doctor(a):
@@ -692,6 +704,17 @@ def build_parser() -> argparse.ArgumentParser:
     cp.add_argument("--extra", help="anything the caption should mention or do")
     cp.set_defaults(fn=cmd_caption)
 
+    ca = sub.add_parser("carousel", help="a carousel post from a reel: its best shots as numbered 1080x1350 slides "
+                                         "coloured like the reel, a cover with the hook, and the route as the last "
+                                         "slide (NAME.carousel/)")
+    ca.add_argument("plan")
+    ca.add_argument("-n", "--slides", type=int, default=8, help="how many slides, 3-10 (default 8)")
+    ca.add_argument("--title", help="the cover's words, six or fewer (default: the reel's hook)")
+    ca.add_argument("--handle", help="your handle, small on every slide")
+    ca.add_argument("--no-route", action="store_true", help="no last slide listing the places")
+    ca.add_argument("-o", "--out", help="output folder (default: NAME.carousel next to the plan)")
+    ca.set_defaults(fn=cmd_carousel)
+
     rv = sub.add_parser("revise", help="notes on a finished reel, each pinned to a time (\"12.3: too dark here\"), "
                                        "turned into edits by the AI (plain rules without one), then rendered again")
     rv.add_argument("plan")
@@ -716,7 +739,8 @@ def build_parser() -> argparse.ArgumentParser:
     po.set_defaults(fn=cmd_post)
 
     sk = sub.add_parser("skills", help="agent skills that work next to TripShots (HyperFrames, Remotion, "
-                                       "one-take, Lemo-Opuscar): what they add, whether installed, how to install")
+                                       "one-take, Lemo-Opuscar, Instagram agent): what they add, whether installed, "
+                                       "how to install")
     sk.add_argument("--install", metavar="NAME", help="run the skills installer for one of them")
     sk.set_defaults(fn=cmd_skills)
 

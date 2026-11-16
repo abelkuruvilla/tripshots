@@ -283,6 +283,30 @@ Scores are grouped by format and hook type, pulled towards your average so one l
 there are at least 5 scored reels and 2 for the leading format, `--format auto` leans towards it. Stored in
 `~/.tripshots/results.json`. Agents: the `reel_results` MCP tool.
 
+**vs usual** is a reel's views divided by the median views of your other recorded reels (shown once 4 reels have
+views). Raw views mostly say how many people follow you. 3x or more means the reel found something, and `results`
+lists those reels: make more like them.
+
+## Posting: caption and carousel
+
+`tripshots caption PLAN` writes the post (NAME.caption.txt, NAME.social.json). Its `checks` list what could hold
+it back: a first line longer than the ~125 characters shown before "more", search keywords that never appear in
+the caption (Instagram search reads the caption), more than one ask or none, a link (captions aren't clickable),
+generic hashtags such as `#fyp`, a hashtag or emoji in the first words, clichés, and em dashes or invisible
+characters. Em dashes and invisible characters are taken out of the AI's text automatically; the joiners Malayalam,
+Hindi and emoji need are kept.
+
+**Your voice:** if `~/.claude/instagram/voice.md` exists (the voice file the
+[Instagram agent skills](https://github.com/Jakeschincariol/instagram-agent-skill) use; `TRIPSHOTS_VOICE` points
+elsewhere), its filled-in lines are given to the AI: who you are, how you sound, what's off limits. Facts in it
+are used only when the reel shows them.
+
+`tripshots carousel PLAN [-n 8] [--title TEXT] [--handle NAME] [--no-route]` makes a carousel post from the same
+reel in NAME.carousel/: the reel's best shots as 1080x1350 slides coloured like the reel, the opening shot as the
+cover with the hook (six words or fewer) and where it was taken, numbered slides, your handle small on each, and a
+last slide listing the route, the slide people save. Upload them in order; the caption's first line carries the
+hook.
+
 **From Instagram directly** (a professional account): create a Graph API access token with
 `instagram_basic` and `instagram_manage_insights`, then set `INSTAGRAM_ACCESS_TOKEN` and `INSTAGRAM_USER_ID`.
 `results sync` reads your recent reels' insights (views, reach, shares, saves, likes, comments, average watch time)

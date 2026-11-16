@@ -12,9 +12,10 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`render`](#render) | re-render an (edited) plan.json |
 | [`qa`](#qa) | check a rendered reel: format, length, loudness, black/frozen/silent stretches, text in the safe area, readable text (runs after every render) |
 | [`caption`](#caption) | write the post for a reel: a caption made for reach, 3-5 hashtags, search keywords, alt text (NAME.caption.txt + NAME.social.json) |
+| [`carousel`](#carousel) | a carousel post from a reel: its best shots as numbered 1080x1350 slides coloured like the reel, a cover with the hook, and the route as the last slide (NAME.carousel/) |
 | [`revise`](#revise) | notes on a finished reel, each pinned to a time ("12.3: too dark here"), turned into edits by the AI (plain rules without one), then rendered again |
 | [`post`](#post) | post a finished reel (now or at a set time) through Upload-Post; a dry run unless --send (needs UPLOAD_POST_KEY and UPLOAD_POST_USER) |
-| [`skills`](#skills) | agent skills that work next to TripShots (HyperFrames, Remotion, one-take, Lemo-Opuscar): what they add, whether installed, how to install |
+| [`skills`](#skills) | agent skills that work next to TripShots (HyperFrames, Remotion, one-take, Lemo-Opuscar, Instagram agent): what they add, whether installed, how to install |
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
 | [`music`](#music) | download the sound of an Instagram reel (or any yt-dlp link) |
@@ -324,6 +325,24 @@ options:
   -h, --help     show this help message and exit
   --tone TONE    the voice, e.g. 'funny, short'
   --extra EXTRA  anything the caption should mention or do
+```
+
+## carousel
+
+```text
+usage: tripshots carousel [-h] [-n SLIDES] [--title TITLE] [--handle HANDLE] [--no-route] [-o OUT]
+                          plan
+
+positional arguments:
+  plan
+
+options:
+  -h, --help           show this help message and exit
+  -n, --slides SLIDES  how many slides, 3-10 (default 8)
+  --title TITLE        the cover's words, six or fewer (default: the reel's hook)
+  --handle HANDLE      your handle, small on every slide
+  --no-route           no last slide listing the places
+  -o, --out OUT        output folder (default: NAME.carousel next to the plan)
 ```
 
 ## revise

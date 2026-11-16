@@ -40,7 +40,9 @@ def frame_at(src: str, t: float, width: int = 320, hdr: dict | None = None) -> n
     from .fx import hdr_chain
     from .util import short_hash
     STRIPS.mkdir(parents=True, exist_ok=True)
-    f = STRIPS / f"{short_hash(f'{src}|{t:.2f}|{width}|{bool((hdr or {}).get('hdr'))}', 16)}.jpg"
+    # Same-quote nesting inside an f-string is a 3.12+ syntax; CI still runs 3.11.
+    hdr_on = bool((hdr or {}).get("hdr"))
+    f = STRIPS / f"{short_hash(f'{src}|{t:.2f}|{width}|{hdr_on}', 16)}.jpg"
     if not f.exists():
         vf = ",".join(hdr_chain(hdr or {}) + [f"scale={width}:-2", "format=yuvj420p"])
         try:

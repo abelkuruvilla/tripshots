@@ -19,6 +19,7 @@
   let video = $derived(s?.kind === "video" && !s.panel);
   let inside = $derived(s ? ed.now - s.start : 0);
   let canSplit = $derived(s && inside >= 0.07 && inside <= s.dur - 0.07 && !s.panel && !s.ramp);
+  let plain = $derived(video && !s.ramp && !s.freeze); // a moving clip without a ramp: it can be held or turned round
 
   let dur = $state(1);
   let speed = $state(1);
@@ -68,6 +69,10 @@
     <div class="actions">
       <button class="btn sm" onclick={() => op({ op: "split", at: frames(inside) })} disabled={!canSplit}
               title="Cut this shot in two at the playhead"><Icon name="scissors" size={14} /> Split <kbd>S</kbd></button>
+      <button class="btn sm" onclick={() => op({ op: "freeze", at: frames(Math.max(0, Math.min(s.dur, inside))), dur: 1 })}
+              disabled={!plain} title="Hold the frame at the playhead for a second"><Icon name="pause" size={14} /> Freeze <kbd>F</kbd></button>
+      <button class="btn sm" class:on={s.reverse} onclick={() => op({ op: "reverse", on: !s.reverse })} disabled={!plain && !s.reverse}
+              aria-pressed={!!s.reverse} title="Play this clip backwards"><Icon name="undo" size={14} /> Reverse <kbd>R</kbd></button>
       <button class="btn sm" onclick={() => op({ op: "duplicate" })}><Icon name="copy" size={14} /> Repeat</button>
       <button class="btn sm" onclick={() => onpick(s)}><Icon name="swap" size={14} /> Replace</button>
       <button class="btn sm" onclick={() => oninsert(s.slot)}><Icon name="plus" size={14} /> Add after</button>
@@ -158,6 +163,7 @@
   .panel { padding: 20px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--line); }
   .panel:last-child { border-bottom: 0; }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .btn.on { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .field { margin: 0; min-width: 0; }
   .marks { display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px; }

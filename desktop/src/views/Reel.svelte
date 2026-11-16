@@ -19,6 +19,7 @@
   let picking = $state(null); // { mode: "swap", seg } | { mode: "insert", after }
   let cands = $state([]);
   let still = $state(""); // the edited frame's address
+  let showDraft = $state(false); // the viewer plays the quick preview of the edits (render --draft)
   let stillBusy = $state(false);
   let tabsEl = $state(null);
 
@@ -40,10 +41,36 @@
   $effect(() => {
     const done = app.jobs.find((j) => j.kind === "render" && j.state === "done" && reel && j.label === reel.name + ".plan.json");
     if (done && done.id !== lastRender) {
-      if (lastRender !== null) load().then(() => ((bust = Date.now()), (ed.preview = false)));
+      if (lastRender !== null) load().then(() => ((bust = Date.now()), (ed.preview = false), (showDraft = false)));
       lastRender = done.id;
     }
   });
+  // a quick preview of the edits finished: play it
+  let lastPreview = null;
+  $effect(() => {
+    const done = app.jobs.find((j) => j.kind === "preview" && j.state === "done" && reel && j.label === reel.name + ".plan.json");
+    if (done && done.id !== lastPreview) {
+      if (lastPreview !== null) load().then(() => ((bust = Date.now()), (showDraft = !!ed.reel?.draft), (ed.preview = !ed.reel?.draft),
+                                                    showDraft && setTimeout(() => video?.play(), 0)));
+      lastPreview = done.id;
+    }
+  });
+  // an edit makes the preview out of date: back to the still of the edit
+  $effect(() => {
+    if (showDraft && reel && !reel.draft) ((showDraft = false), (ed.preview = true));
+  });
+  let previewJob = $derived(app.jobs.find((j) => j.kind === "preview" && j.state === "running" && reel && j.label === reel.name + ".plan.json"));
+  async function playEdit() {
+    if (reel.draft) {
+      showDraft = true;
+      ed.preview = false;
+      setTimeout(() => video?.play(), 0);
+      return;
+    }
+    video?.pause();
+    await startJob("preview", { plan: reel.plan }, `Preview of ${reel.name}`);
+  }
+
   // notes were turned into edits (and rendered): show the result
   let lastRevise = null;
   $effect(() => {
@@ -197,6 +224,11 @@
       const s = reel.segments[ed.sel.slot - 1];
       const at = ed.now - s.start;
       if (at > 0.07 && at < s.dur - 0.07) edit({ op: "split", segment: s.slot, at: frames(at) });
+    } else if (ed.expert && !mod && ed.sel?.kind === "clip" && "fr".includes(e.key.toLowerCase())) {
+      const s = reel.segments[ed.sel.slot - 1];
+      if (s.kind !== "video" || s.panel || s.ramp || (s.freeze && e.key.toLowerCase() === "f")) return;
+      if (e.key.toLowerCase() === "r") edit({ op: "reverse", segment: s.slot, on: !s.reverse });
+      else edit({ op: "freeze", segment: s.slot, at: frames(Math.max(0, Math.min(s.dur, ed.now - s.start))), dur: 1 });
     } else if ((e.key === "Backspace" || e.key === "Delete") && ed.sel && !mod) {
       e.preventDefault();
       const sel = ed.sel;
@@ -249,9 +281,10 @@
       <div class="stage">
         <div class="screen">
           <div class="player" style="--ar: {reel.width / reel.height}">
-            {#if reel.video}
+            {#if reel.video || (showDraft && reel.draft)}
               <!-- svelte-ignore a11y_media_has_caption -->
-              <video bind:this={video} class:hidden={ed.preview} src={media(reel.video, bust)} controls playsinline poster={media(reel.cover, bust)}></video>
+              <video bind:this={video} class:hidden={ed.preview} src={media(showDraft && reel.draft ? reel.draft : reel.video, bust)} controls playsinline
+                     poster={showDraft ? undefined : media(reel.cover, bust)}></video>
             {/if}
             {#if (ed.preview || !reel.video) && still}
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions (text is also placed with the Place buttons) -->
@@ -274,12 +307,15 @@
         </div>
         <div class="under">
           <div class="seg" role="radiogroup" aria-label="The viewer shows">
-            <button role="radio" aria-checked={ed.preview} onclick={() => (video?.pause(), (ed.preview = true))}><Icon name="eye" size={14} /> Your edit</button>
-            <button role="radio" aria-checked={!ed.preview} disabled={!reel.video} onclick={() => (ed.preview = false)}><Icon name="play" size={14} /> Last render</button>
+            <button role="radio" aria-checked={ed.preview} onclick={() => (video?.pause(), (ed.preview = true), (showDraft = false))}><Icon name="eye" size={14} /> Your edit</button>
+            <button role="radio" aria-checked={!ed.preview && showDraft} onclick={playEdit} disabled={!!previewJob}
+                    title="Play your edits in motion: a quick render without sound effects or animated text">
+              {#if previewJob}<span class="spin"></span> Preparing{:else}<Icon name="film" size={14} /> Preview{/if}</button>
+            <button role="radio" aria-checked={!ed.preview && !showDraft} disabled={!reel.video} onclick={() => ((ed.preview = false), (showDraft = false))}><Icon name="play" size={14} /> Last render</button>
           </div>
           <span class="meta now">{tc(ed.now)} / {tc(reel.duration)}</span>
           <button class="btn sm ghost" onclick={noteHere} title="Pause and note what should change here (N)"><Icon name="message" size={14} /> Note</button>
-          <span class="quiet small hint-line">{ed.preview ? (ed.split ? "Drag the divider to compare" : selText ? "Click the picture to place the text" : "A still of your edit, without motion") : reel.stale ? "Older than your edits" : ""}</span>
+          <span class="quiet small hint-line">{showDraft && !ed.preview ? "Preview: no sound effects, text without motion" : ed.preview ? (ed.split ? "Drag the divider to compare" : selText ? "Click the picture to place the text" : "A still of your edit, without motion") : reel.stale ? "Older than your edits" : ""}</span>
         </div>
       </div>
 
@@ -305,7 +341,7 @@
     <section class="tl" aria-label="Timeline">
       <Timeline onseek={seek} onpick={pick} />
       <p class="quiet keys">
-        <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>⌘Z</kbd> undo · <kbd>⌫</kbd> remove · <kbd>←</kbd><kbd>→</kbd> a frame{#if ed.expert} · <kbd>S</kbd> split · drag a shot to move it, its edge to change its length{/if}
+        <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>⌘Z</kbd> undo · <kbd>⌫</kbd> remove · <kbd>←</kbd><kbd>→</kbd> a frame{#if ed.expert} · <kbd>S</kbd> split · <kbd>F</kbd> freeze · <kbd>R</kbd> reverse · drag a shot to move it, its edges to trim it{/if}
       </p>
     </section>
   {:else if !ed.error}

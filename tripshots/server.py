@@ -103,7 +103,8 @@ def reel_detail(plan: Path) -> dict:
                      "graded": bool(s.get("lut")) and not s.get("no_grade"), "no_grade": bool(s.get("no_grade")),
                      "light": s.get("grade_note"), "layers": s.get("layers") or [],
                      "backdrop": (s.get("backdrop") or {}).get("mode"), "people": bool(s.get("people")),
-                     "stabilize": bool(s.get("stabilize"))})
+                     "stabilize": bool(s.get("stabilize")), "freeze": bool(s.get("freeze")),
+                     "reverse": bool(s.get("reverse"))})
     from .planedit import history, texts as plan_texts
     cap = _side(plan, ".caption.txt")
     music = p.get("music") or {}
@@ -116,7 +117,14 @@ def reel_detail(plan: Path) -> dict:
             "music": {k: music.get(k) for k in ("start", "gain_db", "fade_out", "label")} if music.get("path") else None,
             "grading": {k: (p.get("grade") or {}).get(k) for k in ("look", "strength", "grain", "vignette", "why")},
             "beat_punch": (p.get("motion") or {}).get("beat_punch"),
-            "sound_sheet": _side(plan, ".sound.jpg"), "grade": _side(plan, ".grade.jpg")}
+            "sound_sheet": _side(plan, ".sound.jpg"), "grade": _side(plan, ".grade.jpg"),
+            "draft": _draft(plan)}
+
+
+def _draft(plan: Path) -> str | None:
+    """The quick preview of the plan as it stands (render --draft), if one was made since the last edit."""
+    f = Path(f"{_base(plan)}.draft.mp4")
+    return str(f) if f.exists() and f.stat().st_mtime >= plan.stat().st_mtime else None
 
 
 def text_defaults(p: dict) -> dict:
@@ -349,6 +357,8 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
                          name=b.get("name") or None, **opts), b.get("name") or "new reel"
     if kind == "render":
         return ["render", str(_plan(s("plan")))], Path(s("plan")).name
+    if kind == "preview":   # the editor's motion preview of unrendered edits (render --draft)
+        return ["render", str(_plan(s("plan"))), "--draft"], Path(s("plan")).name
     if kind == "learn":
         name = re.sub(r"[^A-Za-z0-9_-]+", "-", s("name")).strip("-") or "mystyle"
         return ["learn", *items("refs"), "-n", name] + (["--add"] if b.get("add") else []), name

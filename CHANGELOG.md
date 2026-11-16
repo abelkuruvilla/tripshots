@@ -6,6 +6,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Preview your edits in motion.** The editor's new **Preview** plays the edited reel before the full render (`tripshots render --draft` writes `NAME.draft.mp4`: no sound effects, text without its animation). Its clips are cached for the real render, so that render is quicker afterwards.
+- **Freeze frame, reverse and trim from the start.** In the editor (Expert), **F** holds the frame at the playhead for a second, **R** plays a clip backwards, and dragging a shot's left edge trims its start while the end of the clip stays put. Plan edits `freeze`, `reverse` and `trim` do the same for agents (MCP `edit_plan`).
 - **Carousel posts from a reel.** `tripshots carousel NAME.plan.json` turns the reel's best shots into 1080x1350 slides coloured like the reel. The cover carries the hook and where it was taken, slides are numbered, `--handle` adds your handle, and the last slide lists the route.
 - **Better caption checks.** `tripshots caption` now also flags search keywords missing from the caption, more than one ask (or none), links, generic hashtags, a hashtag or emoji in the first words, and clichés. Em dashes and invisible characters are removed from the AI's caption; the joiners Malayalam and Hindi need are kept.
 - **Your voice file.** `tripshots caption` follows `~/.claude/instagram/voice.md` (shared with the Instagram agent skills) when it exists.

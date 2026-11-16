@@ -61,8 +61,11 @@ def cmd_clone(a):
 
 def cmd_render(a):
     from .pipeline import render_plan
-    out = render_plan(Path(a.plan), Path(a.out) if a.out else None, workers=a.workers, text_motion=a.text_motion)
+    out = render_plan(Path(a.plan), Path(a.out) if a.out else None, workers=a.workers, text_motion=a.text_motion,
+                      draft=getattr(a, "draft", False))
     res = {"video": str(out), "plan": str(Path(a.plan).resolve())}
+    if getattr(a, "draft", False):
+        return print(json.dumps({**res, "draft": True}, indent=2))
     for key, ext in (("cover", ".cover.jpg"), ("storyboard", ".storyboard.jpg"), ("caption", ".caption.txt"),
                      ("grade", ".grade.jpg"), ("upload_video", ".noaudio.mp4"), ("upload_video", ".nomusic.mp4"),
                      ("qa", ".qa.json"), ("qa_sheet", ".qa.jpg")):
@@ -689,6 +692,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("-o", "--out")
     r.add_argument("-j", "--workers", type=int, default=2)
     r.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema", "decode", "stamp"], help="override how the words animate")
+    r.add_argument("--draft", action="store_true",
+                   help="a quick preview of the edits: still text, no sound effects or checks -> NAME.draft.mp4")
     add_encoder_arg(r)
     r.set_defaults(fn=cmd_render)
 

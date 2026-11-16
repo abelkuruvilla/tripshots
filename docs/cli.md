@@ -283,7 +283,7 @@ sources (folders are searched recursively, any number of them):
 ```text
 usage: tripshots render [-h] [-o OUT] [-j WORKERS]
                         [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}]
-                        [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
+                        [--draft] [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
                         plan
 
 positional arguments:
@@ -295,6 +295,8 @@ options:
   -j, --workers WORKERS
   --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}
                         override how the words animate
+  --draft               a quick preview of the edits: still text, no sound effects or checks ->
+                        NAME.draft.mp4
   --encoder {auto,hardware,software,videotoolbox,nvenc,qsv}
                         video encoder: auto (default: the Mac's / GPU's hardware encoder when it
                         works, else libx264), hardware, software (libx264, slowest, smallest

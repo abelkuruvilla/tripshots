@@ -562,8 +562,23 @@ def posting_note(plan: dict) -> str:
     return note
 
 
-def render_plan(plan_path: Path, out: Path | None, workers: int = 2, text_motion: str | None = None) -> Path:
+def draft_plan(plan: dict) -> dict:
+    """The plan as a quick preview: still text, no sound effects, no checks. The shots' clips are the ones the
+    full render uses (cached by content), so the real render after a preview only adds what the preview left out."""
+    plan.setdefault("text", {})["motion"] = "off"
+    plan["sound"] = {**(plan.get("sound") or {}), "sfx": "off", "ambience": "off"}
+    plan["qa"] = "off"
+    return plan
+
+
+def render_plan(plan_path: Path, out: Path | None, workers: int = 2, text_motion: str | None = None,
+                draft: bool = False) -> Path:
     plan, work = load_plan(plan_path)
+    if draft:   # the editor's motion preview: NAME.draft.mp4, nothing else is written or remembered
+        out = (out or plan_path.with_name(plan_path.name.replace(".plan.json", ".draft.mp4"))).resolve()
+        render(draft_plan(plan), out, work, workers=workers)
+        log(f"done: {out}")
+        return out
     if text_motion:
         plan.setdefault("text", {})["motion"] = text_motion
     out = (out or plan_path.with_name(plan_path.name.replace(".plan.json", ".mp4"))).resolve()

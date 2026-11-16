@@ -29,6 +29,9 @@ The timeline (expert mode; times snap to whole frames, later text moves with the
   {"op": "slip", "segment": 3, "in": 12.4}                       which part of the clip plays (video)
   {"op": "split", "segment": 3, "at": 0.8}                       two slots, at seconds into the slot
   {"op": "delete", "segment": 3}
+  {"op": "trim", "segment": 3, "side": "left", "by": 0.4}     shorten from the start (negative lengthens); "right" = the end
+  {"op": "freeze", "segment": 3, "at": 0.8, "dur": 1.0}      hold the frame at 0.8 s into slot 3 for a second (cut in there)
+  {"op": "reverse", "segment": 3, "on": true}               the clip plays backwards
   {"op": "duplicate", "segment": 3}
   {"op": "insert", "after": 2, "shot_id": "S040", "dur": 1.2}    a new slot (after 0 = at the start)
   {"op": "music", "start": 12.0, "gain_db": -3, "fade_out": 1.2}  where the song starts, its level
@@ -96,7 +99,7 @@ def _refit(seg: dict, plan: dict, style: dict) -> None:
     """After a shot lands in a slot of another length: pick its best window for this slot's duration."""
     from .planner import _best_window
     sh = _shots(plan).get(seg.get("shot_id"))
-    if sh and seg.get("kind") == "video" and not seg.get("panel"):
+    if sh and seg.get("kind") == "video" and not seg.get("panel") and not seg.get("freeze"):
         if seg.get("ramp"):
             from .planner import _set_ramp
             if _set_ramp(seg, sh, seg["ramp"], seg.get("ramp_hit")):
@@ -121,8 +124,8 @@ def _refit_keep_in(seg: dict, plan: dict, style: dict) -> None:
     """A slot changed length: keep where its clip starts while the clip has enough footage, else slide back,
     else slow it down a little."""
     sh = _shots(plan).get(seg.get("shot_id"))
-    if not sh or seg.get("kind") != "video" or "in" not in seg:
-        return
+    if not sh or seg.get("kind") != "video" or "in" not in seg or seg.get("freeze"):
+        return   # a held frame keeps its frame
     t0, t1 = float(sh["t0"]), float(sh["t1"])
     speed = float(seg.get("speed", 1.0))
     use = float(seg["dur"]) * speed
@@ -576,8 +579,11 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
                 raise ReelError(f"cut slot {i + 1} somewhere between 0.07 and {float(s['dur']) - 0.07:.2f}s")
             b = json_copy(s)
             s["dur"], b["dur"] = at, _frames(float(s["dur"]) - at, 2)
-            if s.get("kind") == "video" and "in" in s:
-                b["in"] = round(float(s["in"]) + at * float(s.get("speed", 1.0)), 3)
+            if s.get("kind") == "video" and "in" in s and not s.get("freeze"):
+                if s.get("reverse"):   # backwards: the first piece shows the later part of the window
+                    s["in"] = round(float(s["in"]) + float(b["dur"]) * float(s.get("speed", 1.0)), 3)
+                else:
+                    b["in"] = round(float(s["in"]) + at * float(s.get("speed", 1.0)), 3)
             s.update({"trans_out": None, "trans_dur": 0.0, "trans_params": {}})
             s.pop("incam_out", None)
             b.pop("incam_in", None)
@@ -585,6 +591,82 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             segs.insert(i + 1, b)
             retime(plan)
             done.append(f"slot {i + 1} cut in two at {at:.2f}s")
+        elif op == "trim":   # take time off (or add it back to) one end of a slot; the clip's other end stays put
+            i = _slot(plan, ed["segment"])
+            s = segs[i]
+            if s.get("panel") or s.get("ramp"):
+                raise ReelError(f"slot {i + 1} has a split screen or a speed ramp: change its length instead")
+            side, by = ed.get("side", "right"), float(ed.get("by", 0))
+            if side not in ("left", "right"):
+                raise ReelError("trim side is left or right")
+            old = float(s["dur"])
+            dur = _frames(old - by, 4)
+            by = old - dur
+            speed = 1.0 if s.get("freeze") else float(s.get("speed", 1.0))
+            moves_in = (side == "left") != bool(s.get("reverse"))   # backwards, the clip's start is the slot's end
+            if moves_in and s.get("kind") == "video" and "in" in s and not s.get("freeze"):
+                sh = shots.get(s.get("shot_id"))
+                lo = float(sh["t0"]) if sh else 0.0
+                new_in = float(s["in"]) + by * speed
+                if new_in < lo - 1e-3:   # no footage before the clip's start: lengthen only as far as there is
+                    dur = _frames(old + (float(s["in"]) - lo) / speed, 4)
+                    by, new_in = old - dur, lo
+                s["in"] = round(new_in, 3)
+                s["track"] = False
+            s["dur"] = dur
+            if not moves_in:
+                _refit_keep_in(s, plan, style)
+            _shift_text(plan, float(s.get("out_start", 0)) + old, -by)
+            retime(plan)
+            done.append(f"slot {i + 1} trimmed at the {'start' if side == 'left' else 'end'}: {dur:.2f}s (was {old:.2f}s)")
+        elif op == "freeze":   # hold one frame: the slot's frame at `at` seconds, for `dur` seconds, cut in there
+            i = _slot(plan, ed["segment"])
+            s = segs[i]
+            if s.get("kind") != "video" or s.get("panel") or s.get("ramp"):
+                raise ReelError(f"slot {i + 1} isn't a plain video clip: only a clip's frame can be held")
+            at = _frames(ed.get("at", 0.0), 0) if float(ed.get("at", 0.0)) > 0 else 0.0
+            hold = _frames(ed.get("dur", 1.0), 4)
+            if not 0 <= at <= float(s["dur"]):
+                raise ReelError(f"freeze somewhere between 0 and {float(s['dur']):.2f}s into slot {i + 1}")
+            speed = float(s.get("speed", 1.0))
+            src_t = float(s.get("in", 0.0)) + (float(s["dur"]) - at if s.get("reverse") else at) * speed
+            fz = {k: v for k, v in json_copy(s).items() if k not in ("incam_in", "incam_out", "hold", "reverse")}
+            fz.update({"dur": hold, "in": round(src_t, 3), "freeze": True, "speed": 1.0, "track": False,
+                       "trans_out": None, "trans_dur": 0.0, "trans_params": {}, "role": None})
+            fz.pop("stabilize", None)
+            if 2 / FPS <= at <= float(s["dur"]) - 2 / FPS:   # in the middle: cut the clip there, the hold between
+                b = json_copy(s)
+                s["dur"], b["dur"] = at, _frames(float(s["dur"]) - at, 2)
+                if "in" in s and not s.get("reverse"):
+                    b["in"] = round(float(s["in"]) + at * speed, 3)
+                elif s.get("reverse"):
+                    s["in"] = round(float(s["in"]) + float(b["dur"]) * speed, 3)
+                s.update({"trans_out": None, "trans_dur": 0.0, "trans_params": {}})
+                s.pop("incam_out", None)
+                b.pop("incam_in", None)
+                b.pop("hold", None)
+                segs[i + 1:i + 1] = [fz, b]
+                start = float(s.get("out_start", 0)) + at
+            elif at < 2 / FPS:   # at its start: the hold comes first
+                segs.insert(i, fz)
+                start = float(s.get("out_start", 0))
+            else:                # at its end
+                segs.insert(i + 1, fz)
+                start = float(s.get("out_start", 0)) + float(s["dur"])
+            _shift_text(plan, start, hold)
+            retime(plan)
+            done.append(f"frame held for {hold:.2f}s in slot {i + 1}")
+        elif op == "reverse":   # the slot's window of the clip plays backwards
+            i = _slot(plan, ed["segment"])
+            s = segs[i]
+            if s.get("kind") != "video" or s.get("panel") or s.get("ramp") or s.get("freeze"):
+                raise ReelError(f"slot {i + 1} isn't a plain video clip: only a moving clip can play backwards")
+            if ed.get("on", not s.get("reverse")):
+                s["reverse"] = True
+            else:
+                s.pop("reverse", None)
+            s["track"] = False
+            done.append(f"slot {i + 1} " + ("plays backwards" if s.get("reverse") else "plays forwards"))
         elif op == "delete":
             i = _slot(plan, ed["segment"])
             if len(segs) == 1:

@@ -279,6 +279,8 @@ On-screen text by number (plan_texts lists them):
 Timeline (times snap to frames; later text moves with the cut):
   {"op":"duration","segment":3,"dur":1.6,"snap":"beat"}  {"op":"slip","segment":3,"in":12.4}
   {"op":"split","segment":3,"at":0.8}  {"op":"delete","segment":3}  {"op":"duplicate","segment":3}
+  {"op":"trim","segment":3,"side":"left"|"right","by":0.4}  (from the start the clip's end stays put)
+  {"op":"freeze","segment":3,"at":0.8,"dur":1.0}  (hold that frame, cut in there)  {"op":"reverse","segment":3,"on":true}
   {"op":"insert","after":2,"shot_id":"S040","dur":1.2}  {"op":"music","start":12.0,"gain_db":-3,"fade_out":1.2}
 Colour: {"op":"grade","look":"teal-orange"|"none"|<list_looks name>,"strength":0.8,"grain":4,"vignette":true}
   {"op":"adjust","segment":3|"all","exposure":0.3,"contrast":1.1,"saturation":1.2,"warmth":0.2,"tint":0,

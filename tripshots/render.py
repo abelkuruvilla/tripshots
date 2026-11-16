@@ -93,6 +93,12 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
             pass
     pre = []
     pre += hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")})
+    if e.get("freeze"):  # one frame held for the whole slot
+        speed, src_need = 1.0, 0.5
+        pre += ["trim=end_frame=1", f"tpad=stop_mode=clone:stop_duration={length + 1:.3f}"]
+    elif e.get("reverse"):  # exactly the window, played backwards (ffmpeg buffers it: slots are short)
+        src_need = length * speed + 1.0 / rate
+        pre.append("reverse")
     if abs(speed - 1.0) > 1e-3:
         pre.append(f"setpts=PTS/{speed:.4f}")
     blur = int(round(float(e.get("fps") or 30) * speed / rate * 0.7)) if speed >= 1.3 else 0
@@ -729,6 +735,10 @@ def _source_frame(e: dict, local: float, color: dict, size: tuple[int, int]):
         return None
     vf = []
     if e.get("kind") == "video" and e.get("src_w") and e.get("src"):
+        if e.get("freeze"):
+            local = 0.0
+        elif e.get("reverse"):
+            local = max(0.0, float(e.get("dur", local)) - local)
         at = float(e.get("in", 0.0)) + local * float(e.get("speed", 1.0))
         vf = hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")}) + _video_layout(e, 1.0, size)
         inp = ["-ss", f"{max(0.0, at):.3f}", "-i", str(e["src"])]

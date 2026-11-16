@@ -49,6 +49,9 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
     **Use on every shot**. The look strip filters built-in looks, yours and each LUT pack; **More looks** adds your
     own LUT files (`.cube`, HaldCLUT images, zips) or fetches a free pack. **Hold to compare** (or hold Space on it) shows the shot as filmed; **Before and after**
     splits the viewer between the shot as filmed and your edit, with a divider to drag (or move with ← →).
+  - Under the viewer, **Your edit** shows a still of the edit at the playhead, **Preview** plays the edits in
+    motion (a quick render, `tripshots render --draft`: no sound effects, text without its animation; its clips
+    are the ones the real render reuses), and **Last render** plays the finished reel.
   - **Notes**: watch the reel, and where something is off press **N** (or **Note** under the viewer): it pauses
     and you say what you see ("too dark", "swap this for the canyon", "the words cover her face"). Each note is
     pinned to that moment (a dot on the timeline, a still in the list) and kept until you **Send** them all at
@@ -61,7 +64,9 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
     comment to pin and two other opening lines to pick from. **Voice** sets the tone ("funny and short").
   - **Expert** (the switch in the header) adds the **Shot** and **Sound** tabs and timeline editing: zoom, the
     beats on the ruler, drag a shot to another place, drag its right edge to change its length (it snaps to the
-    beat; hold Alt for single frames). **Shot**: move it earlier or later, split at the playhead (S), repeat,
+    beat; hold Alt for single frames) or its left edge to trim its start (the end of the clip stays where it
+    was). **Shot**: move it earlier or later, split at the playhead (S), hold the frame at the playhead for a
+    second (F, a freeze frame), play the clip backwards (R), repeat,
     replace, add a shot after it, remove it, its length, which part of the clip plays, speed and speed ramps, the
     transition into the next shot, framing (crop, pan, whole frame). **Sound**: where the song starts, the music
     level, its fade out and the beat punch. Space plays, ← → step a frame (⇧ a second). Later text moves with the

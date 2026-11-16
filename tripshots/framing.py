@@ -164,6 +164,8 @@ def canvas_for(frame_cfg: dict | None) -> tuple[int, int]:
     out = str((frame_cfg or {}).get("output") or "auto").lower()
     if out in SHAPES:
         return SHAPES[out]
+    if out == "sideways":  # made widescreen, written turned on its side (render: frame `rotate`)
+        return HORIZONTAL
     return HORIZONTAL if output_for(frame_cfg) else (OUT_W, OUT_H)
 
 
@@ -200,7 +202,7 @@ def output_for(frame_cfg: dict | None) -> bool:
     """Does a style's frame ask for a horizontal file? output horizontal, or auto with a wide picture."""
     cfg = frame_cfg or {}
     out = str(cfg.get("output") or "auto").lower()
-    if out in ("horizontal", "landscape", "wide"):
+    if out in ("horizontal", "landscape", "wide", "sideways"):
         return True
     if out in ("vertical", "portrait", "upright"):
         return False

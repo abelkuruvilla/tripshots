@@ -165,7 +165,7 @@ format: auto | montage | pov | list (numbered places) | series ("Day N of") | re
 recipe: for a style learned from several reels, which reference's recipe (its cut, picture shape and text) to
   follow: auto (the reel whose sound is used, else the one that fits the song), a number (1 = the first
   reference), or off (the style's average).
-orientation: auto | vertical | horizontal | 4:3 | 4:5 | 1:1. auto (default) gives an upright 1080x1920 reel, or a horizontal
+orientation: auto | vertical | horizontal | 4:3 | 4:5 | 1:1 | sideways (a widescreen edit on its side). auto (default) gives an upright 1080x1920 reel, or a horizontal
   1920x1080 one when the style/recipe is widescreen or the footage only works wide (never black bars);
   horizontal forces a 16:9 file, vertical an upright one (a wide picture then sits in a band).
 fresh: on | off. on (default): a series from the same footage doesn't repeat itself: shots that earlier rendered

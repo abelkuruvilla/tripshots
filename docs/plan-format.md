@@ -18,6 +18,7 @@ Only segments whose content changed are re-rendered.
 | `color`, `text`, `photo_zoom`, `transition_duration` | Copied from the style at plan time |
 | `freeze` | `{t, dur}`: hero freeze-frame on a drop. Delete to turn off |
 | `loop` | `true`: the end dissolves into the first frame |
+| `frame.rotate` | `90`: a sideways reel, written turned on its side in an upright file |
 | `frame.canvas` | The file's size: `[1080, 1920]` (upright, the default), `[1920, 1080]`, `[1440, 1080]` (4:3), `[1080, 1350]` (4:5), `[1080, 1080]` (1:1) |
 | `grid` | `{"cols": 6, "alpha": 0.4}`: a fine grid of light lines over the whole reel (style `motion.grid`) |
 | `continuity` | How the camera's movement carries across the cuts (written when the plan is made): `cuts`, `carried`, `fixed` and `left` (cuts that still jar, e.g. "cut 4-5: moves left, then moves right"), `notes` |
@@ -58,6 +59,7 @@ changing lengths.
 | `level` | Song energy here: `calm`, `medium`, `intense` |
 | `beatless` | `true`: the song has no beat to cut on here (an intro, a bridge): held longer, soft dissolves, no beat punches ([storytelling](storytelling.md#listening-to-the-song-first)) |
 | `breath` | Seconds the song goes quiet before the payoff: this shot (the one before the peak) holds still and cuts cleanly on the hit |
+| `backdrop` | The person stays, the background changes each beat: `{"mode": "places"\|"colour", "items": [picture paths or [r, g, b]], "every": seconds}` (style `motion.backdrop`) |
 | `mosaic` | The photo wall on this shot: `{"cells": {cell index: picture}, "cols", "seed"}` (style `motion.mosaic`) |
 | `silhouette` | `true`: the people in this shot flash paper-white for two frames as it lands (style `motion.silhouette`) |
 | `colour_in` | Seconds over which the shot's colour blooms in after it arrives in black and white (style `motion.colour_in`) |

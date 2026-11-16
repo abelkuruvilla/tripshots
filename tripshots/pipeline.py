@@ -204,8 +204,8 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         stc["captions"] = caption_mode(stc["captions"])  # a bad language fails here, not after the analysis
     if ex.get("orientation"):
         o = str(ex["orientation"]).lower()
-        if o not in ("auto", "vertical", "horizontal", "4:3", "4:5", "1:1"):
-            raise ReelError(f"--orientation {o}: use auto, vertical, horizontal, 4:3, 4:5 or 1:1")
+        if o not in ("auto", "vertical", "horizontal", "4:3", "4:5", "1:1", "sideways"):
+            raise ReelError(f"--orientation {o}: use auto, vertical, horizontal, 4:3, 4:5, 1:1 or sideways")
         style["frame"] = {**(style.get("frame") or {}), "output": o}
     if ex.get("light") and str(ex["light"]).lower() != "any":
         from .shots import LIGHTS

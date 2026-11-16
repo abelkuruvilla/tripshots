@@ -69,10 +69,12 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
     aus = next((s for s in info.get("streams", []) if s.get("codec_type") == "audio"), None)
     fps = parse_rate(vs.get("avg_frame_rate") or vs.get("r_frame_rate"))
     dur = float(info.get("format", {}).get("duration") or 0)
-    fmt_ok = vs.get("width") == CANVAS.w and vs.get("height") == CANVAS.h and abs(fps - OUT_FPS) < 0.6 \
+    turned = int((plan.get("frame") or {}).get("rotate") or 0) % 180 == 90  # a sideways reel is written turned
+    want_w, want_h = (CANVAS.h, CANVAS.w) if turned else (CANVAS.w, CANVAS.h)
+    fmt_ok = vs.get("width") == want_w and vs.get("height") == want_h and abs(fps - OUT_FPS) < 0.6 \
         and vs.get("codec_name") == "h264" and (aus is None or aus.get("codec_name") == "aac")
     add("format", fmt_ok, f"{vs.get('width')}x{vs.get('height')} {fps:.2f} fps {vs.get('codec_name')}"
-        f"{'/' + aus.get('codec_name') if aus else ' (no sound)'}", f"{CANVAS.w}x{CANVAS.h} {OUT_FPS} fps h264/aac",
+        f"{'/' + aus.get('codec_name') if aus else ' (no sound)'}", f"{want_w}x{want_h} {OUT_FPS} fps h264/aac",
         "the size and codecs Instagram expects")
     add("length", 3.0 <= dur <= MAX_LEN, round(dur, 2), f"3-{MAX_LEN:.0f} s", "reels over 90 s are shown less")
     if aus is not None:

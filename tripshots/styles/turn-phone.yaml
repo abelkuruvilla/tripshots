@@ -1,0 +1,38 @@
+name: turn-phone
+description: Turn your phone. A widescreen edit written on its side in an upright reel, so it plays full-screen when the phone is turned. Strip collages of the trip, you cut out against flat colours from the scene, white silhouette flashes, paper slats and stripes, a light-leak flash at the turn.
+direction: "A playful widescreen edit seen sideways. People in profile or from behind against big skies; cut them out onto flat colour on the beat, flash them white, build strips of the trip's places. Bright, saturated daylight."
+duration: {target: 14, min: 9, max: 20}
+frame: {aspect: "16:9", output: sideways}
+cuts:
+  beats_per_cut: {calm: 4, medium: 4, intense: 2}
+  hook_beats: 4
+  min_shot_sec: 0.9
+  max_shot_sec: 2.6
+shots: {min_score: 6, ordering: energy, max_per_source: 2, slowmo: false}
+layout: {landscape: auto, photo_motion: kenburns, photo_zoom: 1.08}
+story: {arc: "off"}
+taste: {people: back_to_camera, weight: 0.6}
+transitions:
+  order: [slats, leak, stripes, slats, stripes]
+  beats: 2
+  density: 1.0
+  at: all
+grade: {look: tropical, strength: 0.7, ai: true}
+color: {saturation: 1.12, contrast: 1.05, brightness: 0.02, gamma: 1.0, warmth: 0.02, vignette: false, sharpen: 0.3}
+text:
+  preset: minimal
+  hook: {mode: "off"}
+  location: {mode: "off"}
+  cta: {mode: "off"}
+caption: {tone: 'playful, short, first person', hashtags: 8}
+motion:
+  beat_punch: 0.0
+  shake_on_drop: false
+  freeze: false
+  rgb_split: 0.0
+  video_push: 0.04
+  backdrop: colour
+  silhouette: true
+panels: {use: 0.9, kinds: [cols5, rows3], mode: reveal, max: 2}
+velocity: {use: 0.0}
+speed: {ramps: [], fast: 0.0, drop: "off", smooth: flow}

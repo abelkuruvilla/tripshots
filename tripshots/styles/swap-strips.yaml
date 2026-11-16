@@ -1,0 +1,36 @@
+name: swap-strips
+description: Widescreen and quick. Opens on you holding still while the world behind you swaps to a new place on every beat, then strip collages (rows of clips stacked, columns of clips side by side, thin black seams) that fill in on the beat and collapse into one shot. Cool, clean colour.
+direction: "Open on a person facing or framing the camera, held still, while the places of the trip swap behind them on the beat. Then build strip collages of the trip's places and land on one wide view held to the end. Keep every strip readable: one clear subject each."
+duration: {target: 14, min: 9, max: 18}
+frame: {aspect: "16:9", output: horizontal}
+cuts:
+  beats_per_cut: {calm: 4, medium: 4, intense: 2}
+  hook_beats: 8
+  min_shot_sec: 0.9
+  max_shot_sec: 3.4
+shots: {min_score: 6, ordering: energy, max_per_source: 2, slowmo: false}
+layout: {landscape: auto, photo_motion: kenburns, photo_zoom: 1.08}
+story: {arc: "off"}
+taste: {people: facing_camera, weight: 0.6}
+transitions:
+  palette: {calm: [whip, slats], medium: [whip, slats], intense: [whip, flash]}
+  density: 0.4
+  at: sections
+grade: {look: coastal, strength: 0.75, ai: true}
+color: {saturation: 1.05, contrast: 1.06, brightness: 0.0, gamma: 1.0, warmth: -0.02, vignette: false, sharpen: 0.3}
+text:
+  preset: minimal
+  hook: {mode: "off"}
+  location: {mode: "off"}
+  cta: {mode: "off"}
+caption: {tone: 'light, quick, first person', hashtags: 8}
+motion:
+  beat_punch: 0.0
+  shake_on_drop: false
+  freeze: false
+  rgb_split: 0.0
+  video_push: 0.04
+  backdrop: places
+panels: {use: 0.9, kinds: [rows3, cols7], mode: reveal, max: 2}
+velocity: {use: 0.0}
+speed: {ramps: [], fast: 0.0, drop: "off", smooth: flow}

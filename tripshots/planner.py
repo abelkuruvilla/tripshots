@@ -389,7 +389,12 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
     ar = set_frame(picture_aspect(fcfg))
     letterbox = ar > 1.0
     if letterbox:  # a wide picture: upright full-screen layouts (split screens, pop-out frames) don't fit it
-        style.setdefault("panels", {})["use"] = 0.0
+        from .panels import _strips
+        kinds = (style.get("panels") or {}).get("kinds") or []
+        if band_height(ar) < canvas[1] or not any(_strips(k) for k in kinds):
+            style.setdefault("panels", {})["use"] = 0.0  # (strip collages fill a wide file as well as an upright one)
+        else:
+            style["panels"]["kinds"] = [k for k in kinds if _strips(k)]
         style.setdefault("popout", {})["use"] = 0.0
     grid = cut_grid(music, style, target)
     segs = grid["segments"]
@@ -527,6 +532,8 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
     choose_transitions(out, style)
     if (style.get("motion") or {}).get("mosaic"):
         plan_mosaic(out, shots, style)
+    if (style.get("motion") or {}).get("backdrop"):
+        plan_backdrops(out, shots, style, grid["beat_len"])
     if arc and not (style.get("transitions") or {}).get("order"):  # (a style with a transition on every cut keeps them)
         from . import story
         story.restrain_transitions(out)
@@ -547,7 +554,8 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
            if isinstance(g := (style.get("motion") or {}).get("grid"), dict) else {}),
         **({"frame": {"aspect": picture_aspect(fcfg), "ar": round(ar, 4),
                       "canvas": list(canvas),
-                      **({"band": band_height(ar)} if band_height(ar) < canvas[1] else {})}}
+                      **({"band": band_height(ar)} if band_height(ar) < canvas[1] else {}),
+                      **({"rotate": 90} if str(fcfg.get("output") or "").lower() == "sideways" else {})}}
            if letterbox or tuple(canvas) != (OUT_W, OUT_H) else {}),
     }
 
@@ -807,8 +815,8 @@ def plan_panels(segs: list[dict], grid: dict, style: dict, avail: int) -> tuple[
     beat_len = grid["beat_len"]
     if use <= 0 or len(segs) < 5:
         return segs, beat_len
-    kinds = [k for k in (pc.get("kinds") or ["split2", "grid4", "split3", "columns3"])
-             if k in ("split2", "split3", "grid4", "columns3")] or ["split2"]
+    from .panels import KINDS
+    kinds = [k for k in (pc.get("kinds") or ["split2", "grid4", "split3", "columns3"]) if k in KINDS] or ["split2"]
     mode = pc.get("mode", "mixed")
     max_n = int(pc.get("max", 2))
     step_beats = 1 if beat_len >= 0.38 else 2
@@ -861,6 +869,62 @@ def _stable_rand(*parts) -> float:
     import hashlib
     h = hashlib.sha1("|".join(str(p) for p in parts).encode()).hexdigest()
     return int(h[:8], 16) / 0xFFFFFFFF
+
+
+def _flat_colours(thumb: str | None, n: int = 3) -> list[list[int]]:
+    """A few flat colours from a picture's own palette (its most colourful clusters, softened): the plain grounds
+    a person is set against."""
+    import cv2
+    im = cv2.imread(str(thumb)) if thumb else None
+    if im is None:
+        return [[214, 132, 84], [128, 196, 140], [150, 150, 152]][:n]
+    px = cv2.cvtColor(cv2.resize(im, (48, 48)), cv2.COLOR_BGR2RGB).reshape(-1, 3).astype(np.float32)
+    _, lab, cen = cv2.kmeans(px, 6, None, (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0), 3,
+                             cv2.KMEANS_PP_CENTERS)
+    sat = cen.max(1) - cen.min(1)
+    cols = [cen[k] for k in np.argsort(-sat)[:n]]
+    return [[int(v) for v in np.clip(0.75 * c + 0.25 * c.mean() + 18, 0, 255)] for c in cols]
+
+
+def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: float) -> list[int]:
+    """The person stays, the world behind them changes (motion.backdrop: places, colour or both): a held shot of a
+    person gets, on each beat, a picture of another place of the trip (or a flat colour from its own palette) behind
+    them; its last beat is its real background again. The opening person shot gets the places, a later one colour."""
+    want = (style.get("motion") or {}).get("backdrop")
+    modes = ["places", "colour"] if want in (True, "both") else [str(want)]
+    every = beat_len if beat_len >= 0.38 else 2 * beat_len
+    def size(s):  # how much of the frame the subject (the person) fills
+        b = s.get("subject") or {}
+        return (float(b.get("x1", 0)) - float(b.get("x0", 0))) * (float(b.get("y1", 0)) - float(b.get("y0", 0)))
+    cand = [i for i, s in enumerate(segs) if s.get("people") and s.get("kind") == "video" and not s.get("panel")
+            and float(s["dur"]) >= 3 * every and not s.get("mosaic") and size(s) >= 0.03]
+    cand = sorted(cand, key=lambda i: -size(segs[i]))[:2]   # the person big in frame: the swap reads
+    cand.sort()
+    by_id = {s["id"]: s for s in shots}
+    used = {s.get("shot_id") for s in segs}
+    from .story import has_people
+    places = [s for s in sorted(shots, key=lambda s: -_quality(s)) if s.get("thumb") and s["id"] not in used
+              and not has_people(s) and (s.get("ai") or {}).get("usable", True)]
+    done = []
+    for mode, i in zip(modes, cand[:1] + cand[-1:] if len(cand) > 1 else cand):
+        beats = max(1, int(float(segs[i]["dur"]) / every) - 1)
+        if mode == "places":
+            from .story import landmark
+            seen, items = set(), []
+            for s in places:
+                m = landmark(s) or s["id"]
+                if m not in seen:
+                    seen.add(m)
+                    items.append(s["thumb"])
+                if len(items) >= beats:
+                    break
+        else:
+            cols = _flat_colours((by_id.get(segs[i].get("shot_id")) or {}).get("thumb"))
+            items = [cols[k % len(cols)] for k in range(beats)]
+        if items:
+            segs[i]["backdrop"] = {"mode": mode, "items": items, "every": round(every, 4)}
+            done.append(i)
+    return done
 
 
 def plan_mosaic(segs: list[dict], shots: list[dict], style: dict) -> int | None:

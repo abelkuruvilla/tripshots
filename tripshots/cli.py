@@ -591,11 +591,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="a style learned from several reels keeps each one's recipe (its cut, picture shape and text). "
                         "auto (default): the recipe of the reel whose sound you use, else the one that fits the song; "
                         "N: the N-th reference's; off: the style's average")
-    m.add_argument("--orientation", choices=["auto", "vertical", "horizontal", "4:3", "4:5", "1:1"],
+    m.add_argument("--orientation", choices=["auto", "vertical", "horizontal", "4:3", "4:5", "1:1", "sideways"],
                    help="shape of the file. auto (default): upright 1080x1920, or horizontal 1920x1080 when the "
                         "style or recipe is widescreen or the footage only works wide (no black bars); "
                         "vertical: always upright (a wide picture sits in a band); horizontal: always 1920x1080; "
-                        "4:3 (1440x1080), 4:5 (1080x1350), 1:1 (1080x1080): the picture fills that shape")
+                        "4:3 (1440x1080), 4:5 (1080x1350), 1:1 (1080x1080): the picture fills that shape; "
+                        "sideways: a widescreen edit turned on its side in an upright file (\"turn your phone\")")
     m.add_argument("--light", choices=["golden", "sunset", "blue", "day", "night", "any"],
                    help="only shots in this light (golden: golden hour, sunset and sunrise; blue: blue hour and night; "
                         "day: morning to afternoon), the photo wall too; when too few are, they are preferred instead")

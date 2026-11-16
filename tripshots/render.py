@@ -606,6 +606,60 @@ def render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_text
     return out
 
 
+class Backdrops:
+    """Backdrop swaps (segment `backdrop` {items, every}): on each beat the person is set in front of another place
+    (a picture) or a flat colour, and the last beat shows their real background again. The person is cut out of
+    every other frame (rembg u2netp) and the mask is smoothed over time, so the edge doesn't boil."""
+
+    def __init__(self):
+        self.masks: dict = {}
+        self.bgs: dict = {}
+
+    def _bg(self, item, w: int, h: int) -> np.ndarray:
+        key = (str(item), w, h)
+        if key not in self.bgs:
+            if isinstance(item, (list, tuple)):
+                self.bgs[key] = np.full((h, w, 3), [int(v) for v in item[:3]], np.uint8)
+            else:
+                im = cv2.imread(str(item))
+                if im is None:
+                    self.bgs[key] = None
+                else:
+                    im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+                    s = max(w / im.shape[1], h / im.shape[0])
+                    im = cv2.resize(im, (int(im.shape[1] * s + 1), int(im.shape[0] * s + 1)), interpolation=cv2.INTER_AREA)
+                    y, x = (im.shape[0] - h) // 2, (im.shape[1] - w) // 2
+                    self.bgs[key] = np.ascontiguousarray(im[y:y + h, x:x + w])
+        return self.bgs[key]
+
+    def frame(self, i: int, seg: dict, fr: np.ndarray, t: float) -> np.ndarray:
+        bd = seg["backdrop"]
+        items = bd.get("items") or []
+        k = int((t - float(seg["out_start"])) / max(0.1, float(bd.get("every") or 0.5)))
+        if t < float(seg["out_start"]) or k >= len(items):
+            return fr  # (on the way in, and the last beat: the real place)
+        h, w = fr.shape[:2]
+        bg = self._bg(items[k], w, h)
+        if bg is None:
+            return fr
+        n = int(round(t * OUT_FPS))
+        last = self.masks.get(i)
+        if last is not None and last[1] is None:
+            return fr  # no person to keep in front: the shot plays as it is
+        if last is None or n - last[0] >= 2:
+            from . import nodes
+            m = nodes.people_mask(fr, width=320)  # the person only (upright figures), never a truck or a road
+            if m is None:
+                if last is None:
+                    self.masks[i] = (n, None)
+                    return fr
+                m = last[1]
+            elif last is not None:
+                m = 0.55 * m + 0.45 * last[1]
+            self.masks[i] = last = (n, m)
+        return cv2.blendLinear(fr, bg, last[1], 1.0 - last[1])
+
+
 def _wall_tiles(mo: dict, w: int, h: int, shot: np.ndarray | None = None) -> dict:
     """The photo wall's pictures, each cut to its cell's shape: {cell index: RGB array}. With the shot's own frame,
     the cells its subject stands in are left clear (found with the cut-out; the plan only guessed)."""
@@ -821,7 +875,10 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
 
     # ---- final encode: frames from the compositor + text overlays + music
     total = total_f / fps
-    inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{CANVAS.w}x{CANVAS.h}", "-r", str(fps), "-i", "-"]
+    # a sideways reel (frame `rotate`: "turn your phone"): made widescreen, written on its side in an upright file
+    turn = int((plan.get("frame") or {}).get("rotate") or 0) % 360
+    fw, fh = (CANVAS.h, CANVAS.w) if turn in (90, 270) else (CANVAS.w, CANVAS.h)
+    inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{fw}x{fh}", "-r", str(fps), "-i", "-"]
     vfade = min(float(plan.get("fade_out_video") or 0), total_f / fps * 0.5)
     fc, n_in = [f"[0:v]{f'fade=t=out:st={total_f / fps - vfade:.3f}:d={vfade:.3f},' if vfade > 0.05 else ''}"
                 "format=yuv420p[vout]"], 1
@@ -870,6 +927,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                         graded.clear()
                     graded[key] = nodes.apply(fr, segs[i]["layers"], masks[i])
                 fr = graded[key]
+            if segs[i].get("backdrop"):  # the person stays, the world behind them changes on the beat
+                fr = backdrop.frame(i, segs[i], fr, n / fps)
             ci = float(segs[i].get("colour_in") or 0)
             if ci > 0:  # arrives in black and white (through the transition too), then its colour blooms
                 from .motion import colour_in, ease_in_out
@@ -885,6 +944,7 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         fzn = int(round(float(fz.get("dur", 0)) * fps)) if fz else 0
         frozen = None
         sil: dict = {}  # each shot's people mask for its silhouette flash, found once
+        backdrop = Backdrops()
         walls: dict = {}  # each photo wall's little pictures, loaded once
         grid = plan.get("grid")
         try:
@@ -945,6 +1005,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                 if maps is not None:
                     frame = maps.draw(frame, n / fps)
                 frame = texts.draw(frame, n / fps, segs[i])
+                if turn:
+                    frame = np.rot90(frame, {90: -1, 180: 2, 270: 1}[turn])  # (90 = the top of the picture to the right)
                 enc.stdin.write(np.ascontiguousarray(frame).tobytes())
                 for r_i in range(0, max(0, i - 1)):  # free decoders we're done with
                     readers[r_i].close()

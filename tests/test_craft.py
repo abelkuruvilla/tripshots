@@ -378,3 +378,25 @@ def test_4_3_4_5_and_square_reels_and_holding_a_reel_to_one_light():
     style = {}
     assert shots_mod.in_light(shots[:30], "golden", style) == shots[:30]       # too few: preferred, not required
     assert "golden_hour" in style["taste"]["light"] and style["taste"]["weight"] >= 0.8
+
+
+def test_strip_collages_backdrop_swaps_and_sideways_reels(monkeypatch):
+    from tripshots import framing, nodes, panels, render
+    framing.set_canvas(True)
+    rows, cols = panels.layout_rects("rows3"), panels.layout_rects("cols7")
+    assert len(rows) == 3 and len(cols) == 7 and cols[-1][0] + cols[-1][2] == 1920 and rows[1][1] > rows[0][3]
+    assert panels.intros("cols7")[:2] == ["wipe_down", "wipe_up"] and "rows4" in panels.KINDS
+    # the person stays, the place behind them changes each beat; the last beat is the real place again
+    fr = np.full((108, 192, 3), 50, np.uint8)
+    m = np.zeros((108, 192), np.float32)
+    m[30:100, 80:110] = 1.0
+    monkeypatch.setattr(nodes, "people_mask", lambda f, width=320: m)
+    seg = {"out_start": 0.0, "dur": 1.5, "backdrop": {"items": [[200, 30, 30], [30, 200, 30]], "every": 0.5}}
+    b = render.Backdrops()
+    first, second, last = (b.frame(0, seg, fr, t) for t in (0.1, 0.6, 1.2))
+    assert tuple(first[5, 5]) == (200, 30, 30) and tuple(first[60, 95]) == (50, 50, 50)
+    assert tuple(second[5, 5]) == (30, 200, 30) and np.array_equal(last, fr)
+    monkeypatch.setattr(nodes, "people_mask", lambda f, width=320: None)
+    assert np.array_equal(render.Backdrops().frame(1, seg, fr, 0.1), fr)    # no person found: the shot as it is
+    framing.set_canvas(False)
+    assert framing.canvas_for({"output": "sideways"}) == (1920, 1080) and framing.output_for({"output": "sideways"})

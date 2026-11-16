@@ -66,6 +66,8 @@ Instead of folders you can pass a search result: `tripshots find --place Lisbon`
 | `slow-scenic` | Calm and chronological, one cut per bar, gentle pans, natural colour |
 | `split-beat` | Split screens, speed ramps, bass-hit pulses and shot labels on a fast grid |
 | `mask-reveal` | Every shot comes in through a shape on the beat: line and V reveals with a white edge, then growing circles with a glow (no text) |
+| `swap-strips` | Widescreen: you hold still while the places of the trip swap behind you on the beat, then strip collages of clips |
+| `turn-phone` | A widescreen edit turned on its side ("turn your phone"): strip collages, you against flat colours, white silhouette flashes, paper slats and stripes |
 | `grid-mosaic` | 4:3. A fine grid over the reel, shots filling in cell by cell, and a photo wall of the trip round you mid-reel |
 | `shape-cut` | Widescreen and editorial: each shot built from cream paper pieces (slats, a diamond, stripes), arriving in black and white before its colour blooms in |
 

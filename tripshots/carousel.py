@@ -50,7 +50,13 @@ def pick(plan: dict, n: int) -> list[dict]:
     if not segs:
         return []
     by_id = _shots(plan)
-    score = lambda s: float(((by_id.get(s["shot_id"]) or {}).get("ai") or {}).get("score") or 5)
+
+    def score(s):   # the shot's score, plus whether its subject survives the 4:5 crop and it has no words on it
+        sh = by_id.get(s["shot_id"]) or {}
+        from .insight import burned_in
+        fit = ((sh.get("insight") or {}).get("fit") or {}).get("4:5")
+        return float((sh.get("ai") or {}).get("score") or 5) + (0.6 if fit else -0.6 if fit is False else 0) \
+            - 3 * burned_in(sh)
     rest = sorted(segs[1:], key=lambda s: -score(s))[:max(0, n - 1)]
     return [segs[0]] + [s for s in segs[1:] if s in rest]
 

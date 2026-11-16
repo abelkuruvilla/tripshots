@@ -160,6 +160,23 @@ def put_scores(scores: dict[str, dict], backend: str) -> None:
            [(k, backend, json.dumps(v, default=str), now) for k, v in scores.items()])
 
 
+def ai_words() -> dict[str, str]:
+    """What the AI said about each file, as one lowercase text per file signature (captions, descriptions, tags,
+    landmark, people's activity, vibes, shot size, angle): what finding footage by words searches."""
+    out: dict[str, list[str]] = {}
+    for k, d in _q("SELECT shot_key, data FROM scores"):
+        try:
+            v = json.loads(d)
+        except ValueError:
+            continue
+        bits = [v.get("caption"), v.get("description"), " ".join(v.get("tags") or []), v.get("landmark"),
+                (v.get("people") or {}).get("activity") if isinstance(v.get("people"), dict) else None,
+                " ".join(v.get("vibes") or {}), v.get("shot_size"), v.get("angle"), v.get("scene"),
+                v.get("time_of_day"), v.get("weather"), v.get("note")]
+        out.setdefault(k.split("@")[0], []).append(" ".join(str(b) for b in bits if b))
+    return {sig: " ".join(v).lower() for sig, v in out.items()}
+
+
 def forget_scores(keys: list[str] | None = None) -> int:
     if keys is None:
         n = _q("SELECT COUNT(*) FROM scores")[0][0]

@@ -787,6 +787,11 @@ def native_beds(plan: dict, mode: str = "auto") -> list[dict]:
         if mode == "auto" and label in ("speech", "music", "noisy"):
             beds.append({"seg": k, "ok": False, "why": f"Gemini heard {label}"})
             continue
+        heard = (sh.get("insight") or {}).get("audio") or {}
+        if mode == "auto" and max(heard.get("speech", 0), heard.get("music", 0)) >= 0.5:
+            beds.append({"seg": k, "ok": False, "why": "sounds like " + ("speech" if heard.get("speech", 0) >=
+                                                                        heard.get("music", 0) else "music")})
+            continue
         x = clip_audio(e["src"], float(e.get("in", 0)), float(e["dur"]) + 0.08)
         if x is None:
             continue

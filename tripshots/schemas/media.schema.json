@@ -753,6 +753,115 @@
               }
             }
           }
+        },
+        "details": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Extra details from the AI (asked once, after the description)",
+          "properties": {
+            "vibes": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "shot_size": {
+              "enum": [
+                "wide",
+                "medium",
+                "close",
+                "detail"
+              ]
+            },
+            "angle": {
+              "enum": [
+                "aerial",
+                "high",
+                "eye",
+                "low"
+              ]
+            },
+            "face": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "looking": {
+                  "type": "boolean"
+                },
+                "eyes_open": {
+                  "type": "boolean"
+                },
+                "smiling": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "action_peak": {
+              "enum": [
+                "start",
+                "middle",
+                "end",
+                "none"
+              ]
+            },
+            "first_frame": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 10
+            }
+          }
+        },
+        "insight": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Measured on this computer (insight.py): text_room, ocr (burned_in), fit, faces, flat, camera, and for videos open_motion, loop, audio",
+          "properties": {
+            "text_room": {
+              "type": "object"
+            },
+            "ocr": {
+              "type": "object"
+            },
+            "fit": {
+              "type": "object"
+            },
+            "faces": {
+              "type": "object"
+            },
+            "flat": {
+              "type": "boolean"
+            },
+            "camera": {
+              "type": "object"
+            },
+            "open_motion": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "loop": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "audio": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "error": {
+              "type": "string"
+            }
+          }
         }
       }
     }

@@ -275,9 +275,14 @@ def find(folders=None, place: str | None = None, near: list[float] | None = None
         hints = ai_camera_hints()
         picked = [r for r in picked if camera_kind(r, hints.get(r.get("sig"))) == camera]
         notes.append(f"camera: {camera} ({len(picked)} of {len(recs)} files)")
-    if text:
-        words = _words(text)
-        picked = [r for r in picked if all(w in (r["path"] + " " + (r.get("place") or "")).lower() for w in words)]
+    if text:   # the file's name and place, and what the AI saw in it (captions, tags, vibes, shot size...)
+        words = [w[:-1] if len(w) > 4 and w.endswith("s") else w for w in _words(text)]
+        from . import library as lib
+        seen = lib.ai_words()
+        picked = [r for r in picked
+                  if all(w in (r["path"] + " " + (r.get("place") or "") + " " + seen.get(r.get("sig") or "", "")).lower()
+                         for w in words)]
+        notes.append(f"words: {' '.join(words)} (file names, places and what the AI saw)")
     if place or near:
         if place:
             match, desc, centre = place_matcher(place)

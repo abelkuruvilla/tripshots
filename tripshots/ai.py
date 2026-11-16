@@ -441,6 +441,121 @@ def score_shots(shots: list[dict], backend: Backend, work: Path, rescore: bool =
     return results
 
 
+# --------------------------------------------------------------- more about each shot (asked once, separately)
+# Fields added after a library was described: asked on their own, for shots that already have a verdict, so a new
+# field never means describing every shot again. A video tile is a strip of its start, middle and end.
+ENRICH_VERSION = 1
+VIBES = ["serene", "epic", "playful", "nostalgic", "romantic", "energetic", "moody", "adventurous", "cosy",
+         "mysterious"]
+SIZES = ["wide", "medium", "close", "detail"]
+ANGLES = ["aerial", "high", "eye", "low"]
+ENRICH_PROMPT = """These are travel photos and video clips already catalogued; I need a few more details about each.
+Each tile is labelled with its ID. A VIDEO tile shows three moments of the clip: its start, middle and end (left to
+right, or top to bottom). The tiles:
+{table}
+
+For EVERY ID give:
+- vibes: the feelings it gives, up to 3, each with how strongly (0.1-1.0), from: {vibes}
+- shot_size: how big the main subject is: "wide" (a whole place), "medium" (a person head to toe, a building),
+  "close" (a face, an object filling the frame) or "detail" (a texture, a hand, a flower)
+- angle: "aerial" (drone or plane), "high" (looking down), "eye" (eye level) or "low" (looking up)
+- face: when a person's face can be seen: {{"looking": does the main person look at the camera, "eyes_open": true or
+  false, "smiling": true or false}}; null when no face is visible
+- videos only: action_peak: where the most happens or the best moment is: "start", "middle", "end" or "none" (nothing
+  changes); first_frame: 1-10 how strong the START alone is as the opening frame of a reel (sharp, striking, already
+  moving or full of promise); photos: null for both
+
+Reply with ONLY a JSON array, one object per ID:
+[{{"id":"S001","vibes":{{"serene":0.9,"romantic":0.4}},"shot_size":"wide","angle":"eye","face":null,
+"action_peak":"middle","first_frame":7}}]"""
+
+
+def _norm_enrich(d: dict, video: bool) -> dict:
+    vib = d.get("vibes") if isinstance(d.get("vibes"), dict) else {}
+    vibes = {k: round(_num(v, 0, 1, 0), 2) for k, v in vib.items() if k in VIBES}
+    vibes = dict(sorted(vibes.items(), key=lambda kv: -kv[1])[:3])
+    face = d.get("face") if isinstance(d.get("face"), dict) else None
+    out = {"x": ENRICH_VERSION, "vibes": vibes, "shot_size": _one(d.get("shot_size"), SIZES, None),
+           "angle": _one(d.get("angle"), ANGLES, None),
+           "face": {k: bool(face.get(k)) for k in ("looking", "eyes_open", "smiling")} if face else None}
+    if video:
+        out["action_peak"] = _one(d.get("action_peak"), ("start", "middle", "end", "none"), None)
+        out["first_frame"] = _num(d.get("first_frame"), 1, 10, None) if d.get("first_frame") is not None else None
+    return out
+
+
+DETAIL_KEYS = ("x", "vibes", "shot_size", "angle", "face", "action_peak", "first_frame")
+
+
+def apply_enriched(shots: list[dict]) -> dict:
+    """Put the stored extra details (ENRICH_PROMPT) on the shots that have them; returns the stored verdicts."""
+    from . import library as lib
+    keys = {s["id"]: lib.shot_key(s) for s in shots}
+    stored = lib.get_scores(list(keys.values()))
+    for s in shots:
+        v = stored.get(keys[s["id"]])
+        if v and int(v.get("x") or 0) >= ENRICH_VERSION and isinstance(s.get("ai"), dict):
+            s["ai"].update({k: v[k] for k in DETAIL_KEYS if k in v})
+    return stored
+
+
+def enrich_shots(shots: list[dict], backend: Backend, work: Path, limit: int | None = None,
+                 workers: int = 3) -> int:
+    """Ask for ENRICH_PROMPT's fields about shots that have a stored verdict without them; merged into the stored
+    verdict (library) and into s["ai"]. `limit`: at most this many, the best first. Returns how many were done."""
+    from . import library as lib
+    from .insight import strip
+    from .text import contact_sheets
+    keys = {s["id"]: lib.shot_key(s) for s in shots}
+    stored = apply_enriched(shots)
+    todo = [s for s in shots if keys[s["id"]] in stored and int(stored[keys[s["id"]]].get("x") or 0) < ENRICH_VERSION]
+    if not todo:
+        return 0
+    todo.sort(key=lambda s: -float((s.get("ai") or {}).get("score") or 0))
+    if limit is not None:
+        todo = todo[:limit]
+    log(f"AI: a few more details about {len(todo)} shot(s) (vibe, shot size, angle, faces, best moment)")
+    tiles = []
+    for s in todo:
+        st = strip(s) if s.get("kind") == "video" else None
+        tiles.append({**s, "thumb": str(st or s.get("thumb"))})
+    sheets = contact_sheets(tiles, work / "sheets_more", per_sheet=8, cols=4, tile=(440, 440))
+    by_id = {s["id"]: s for s in todo}
+
+    def job(item):
+        sheet, ids = item
+        for attempt in range(2):
+            try:
+                table = "\n".join(f"{i}: " + ("video, three moments" if by_id[i].get("kind") == "video" else "photo")
+                                  for i in ids)
+                data = extract_json(backend.ask(ENRICH_PROMPT.format(vibes=", ".join(VIBES), table=table), [sheet],
+                                                max_tokens=4000))
+                if isinstance(data, dict):
+                    data = data.get("shots") or list(data.values())
+                got = {str(d.get("id")).upper(): d for d in data if isinstance(d, dict) and d.get("id")}
+                return {i: _norm_enrich(got[i], by_id[i].get("kind") == "video") for i in ids if i in got}
+            except AIAuthError:
+                raise
+            except Exception as e:
+                log(f"  details for {sheet.name} failed (attempt {attempt + 1}): {e}")
+        return {}
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for n, got in enumerate(ex.map(job, sheets), 1):
+            if got:
+                merged = {}
+                for i, v in got.items():
+                    old = {k: x for k, x in stored[keys[i]].items() if k != "source"}
+                    merged[keys[i]] = {**old, **v}
+                    if isinstance(by_id[i].get("ai"), dict):
+                        by_id[i]["ai"].update(v)
+                lib.put_scores(merged, backend.name)
+                done += len(got)
+            if n % 10 == 0 or n == len(sheets):
+                log(f"  details {n}/{len(sheets)} sheets")
+    return done
+
+
 # --------------------------------------------------------------- captions/hook
 def write_hook_and_caption(backend: Backend, plan: dict, shots_by_id: dict, style: dict,
                            want_hook: bool, want_cta: bool = False) -> dict:

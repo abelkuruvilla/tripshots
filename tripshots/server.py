@@ -105,6 +105,8 @@ def reel_detail(plan: Path) -> dict:
                      "backdrop": (s.get("backdrop") or {}).get("mode"), "people": bool(s.get("people")),
                      "stabilize": bool(s.get("stabilize")), "freeze": bool(s.get("freeze")),
                      "reverse": bool(s.get("reverse")), "effect": s.get("effect"), "log": s.get("log"),
+                     "vibes": list(((sh.get("ai") or {}).get("vibes") or {}))[:3],
+                     "size": (sh.get("ai") or {}).get("shot_size"), "angle": (sh.get("ai") or {}).get("angle"),
                      "keys": s.get("keys") or []})
     from .planedit import history, texts as plan_texts
     cap = _side(plan, ".caption.txt")
@@ -469,7 +471,8 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
             raise ReelError("no notes")
         return ["revise", str(_plan(s("plan"))), "--notes-json", json.dumps(notes)], Path(s("plan")).name
     if kind == "analyze":   # the catalogue: new files only, unless asked to look at every shot again
-        flags = (["--rescore"] if b.get("rescore") else []) + (["--no-ai"] if b.get("no_ai") else [])
+        flags = (["--rescore"] if b.get("rescore") else []) + (["--no-ai"] if b.get("no_ai") else []) + \
+            (["--no-details"] if b.get("no_details") else [])
         return ["analyze", *flags, "--", *items("sources")], "analyse footage"
     if kind == "discover":
         return ["people", "discover", "--", *items("folders")], "people"

@@ -1006,6 +1006,7 @@ def candidates(plan_path: Path, top: int = 30) -> list[dict]:
     plan = read_json(plan_path)
     used = {s.get("shot_id") for s in plan["segments"]} | {c.get("shot_id") for s in plan["segments"]
                                                           for c in s.get("clips") or []}
+    from .insight import burned_in
     from .planner import _quality
     out = []
     for s in sorted(_shots(plan).values(), key=lambda s: -_quality(s)):
@@ -1013,7 +1014,9 @@ def candidates(plan_path: Path, top: int = 30) -> list[dict]:
         out.append({"id": s["id"], "used": s["id"] in used, "kind": s["kind"], "score": round(_quality(s), 1),
                     "len_s": round(s["t1"] - s["t0"], 1) if s["kind"] == "video" else None,
                     "file": Path(s["src"]).name, "when": (s.get("created") or "")[:16], "note": a.get("note", ""),
-                    "tags": a.get("tags", [])[:5], "thumb": s.get("thumb")})
+                    "tags": a.get("tags", [])[:5], "thumb": s.get("thumb"), "caption": a.get("caption", ""),
+                    "vibes": list((a.get("vibes") or {}))[:2], "size": a.get("shot_size"), "angle": a.get("angle"),
+                    "words": burned_in(s) >= 0.5})
     return out[:top]
 
 

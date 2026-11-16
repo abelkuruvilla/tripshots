@@ -109,7 +109,10 @@ def _context(plan: dict, by_id: dict) -> tuple[list[dict], list[dict], list[dict
                       "music": s.get("level", "medium"), "drop": bool(s.get("drop")), "kind": s.get("kind"),
                       "shows": (a.get("note") or "")[:90], "tags": (a.get("tags") or [])[:5],
                       "light": a.get("time_of_day"), "people": bool(s.get("people") or a.get("people")),
-                      "place": s.get("place") or a.get("place")})
+                      "place": s.get("place") or a.get("place"),
+                      **({"vibes": a["vibes"]} if a.get("vibes") else {}),
+                      **({"size": a["shot_size"]} if a.get("shot_size") else {}),
+                      **({"angle": a["angle"]} if a.get("angle") else {})})
     for i in range(len(segs) - 1):
         e, nx = segs[i], segs[i + 1]
         if e.get("incam_out") or e.get("panel") or nx.get("panel"):
@@ -168,8 +171,16 @@ def _rules(plan: dict, by_id: dict, cfg: dict) -> dict:
         a = (by_id.get(nx.get("shot_id")) or {}).get("ai") or {}
         tags = " ".join(a.get("tags") or []).lower() + " " + str(a.get("time_of_day") or "").lower()
         lvl = nx.get("level", "medium")
+        vib = a.get("vibes") or {}
+        top = max(vib, key=vib.get) if vib else None
         if e.get("beatless") and nx.get("beatless"):
             pick = ["dissolve"]
+        elif top == "nostalgic" and vib[top] >= 0.6:
+            pick = ["leak", "burn"]
+        elif top in ("romantic", "serene") and vib[top] >= 0.7 and lvl != "intense":
+            pick = ["luma", "dissolve"]
+        elif a.get("angle") == "aerial" and lvl != "calm":
+            pick = ["zoom_in", "push"]
         elif nx.get("drop") or lvl == "intense":
             pick = ["zoomblur", "flash", "shake"]
         elif any(w in tags for w in ("sunset", "golden", "dusk", "sunrise")):
@@ -320,6 +331,19 @@ def direct(plan: dict, by_id: dict, style: dict, backend=None) -> dict:
             raw = None
     if not isinstance(raw, dict):
         raw, by = _rules(plan, by_id, cfg), "rules"
+        if cfg.get("shots", True):   # without an AI, a shot whose own vibe is strong gets the effect made for it
+            segs = plan["segments"]
+            for i, sg in enumerate(segs):
+                a = (by_id.get(sg.get("shot_id")) or {}).get("ai") or {}
+                vib = a.get("vibes") or {}
+                if sg.get("panel") or not vib or len(raw["effects"]) >= int(cfg.get("max_shot_effects", 2)):
+                    continue
+                top = max(vib, key=vib.get)
+                fid = {"nostalgic": "dust", "romantic": "dream", "serene": "glow" if str(a.get("time_of_day")) in
+                       ("sunset", "golden-hour", "sunrise") else None}.get(top)
+                if fid and vib[top] >= 0.8:
+                    raw["effects"].append({"shot": i + 1, "id": fid, "amount": SHOT_EFFECTS[fid][3] * 0.8,
+                                           "why": f"a {top} shot"})
     ch = _check(raw, plan, cuts, cfg)
     done = apply_choices(plan, ch, cfg)
     why = [f"cut {t['cut']}: {t.get('why')}" for t in raw.get("transitions") or [] if isinstance(t, dict) and t.get("why")]

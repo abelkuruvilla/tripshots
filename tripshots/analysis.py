@@ -241,7 +241,8 @@ def similar_groups(items: list[tuple[str, str]], max_bits: int = 8) -> dict[str,
 # ================================================================== the run
 def analyze(inputs: list[Path], backend_name: str | None = None, ai: bool = True, faces: bool = True,
             places: bool = True, watch_mode: str | None = None, rescore: bool = False, cached: bool = False,
-            out_dir: Path | None = None, label: str | None = None, source_opts: dict | None = None) -> dict:
+            out_dir: Path | None = None, label: str | None = None, source_opts: dict | None = None,
+            details: bool = True) -> dict:
     """Analyse footage (incrementally) and write media.jsonl + summary.json + schema.json."""
     from . import ai as ai_mod
     from . import catalog
@@ -284,6 +285,18 @@ def analyze(inputs: list[Path], backend_name: str | None = None, ai: bool = True
             if c:
                 wlogs[m["sig"]] = c
     watch_mod.apply(shots, wlogs)
+
+    # the extra details (insight.py on this computer; the AI's vibe, shot size, angle, faces, best moment)
+    from . import insight
+    if details and not cached:
+        insight.attach(shots)
+        if backend:
+            try:
+                ai_mod.enrich_shots(shots, backend, work)
+            except Exception as e:
+                log(f"AI details failed ({e}); the rest of the analysis stands")
+    insight.load(shots)
+    ai_mod.apply_enriched(shots)
 
     # records the catalog knows (time, place), faces, places, trips
     recs = {m["sig"]: {**m, "time": catalog._dt(m.get("created"))} for m in media}
@@ -414,6 +427,9 @@ def build_record(r: dict, shots: list[dict], tech: dict, faces: list | None, tri
             "duration": float(s["dur"]) if s.get("dur") else None, "best_moment": _best_moment(s),
             "thumbnail": s.get("thumb"), "technical": tch, "ai": ai_block, "faces": fcs,
             "similar_group": dup.get(key),
+            "details": {k: a.get(k) for k in ("vibes", "shot_size", "angle", "face", "action_peak", "first_frame")
+                        if a.get(k) is not None} if a.get("x") else None,
+            "insight": {k: v for k, v in (s.get("insight") or {}).items() if k not in ("v", "deep")} or None,
             "uses": {"reel": {"score": a.get("score"), "role": a.get("role"), "mood": a.get("mood"),
                               "motion": a.get("motion"), "subject_x": a.get("subject_x"),
                               "subject_box": a.get("subject_box"), "note": a.get("note")}},

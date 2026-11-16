@@ -98,7 +98,8 @@ def relayout() -> None:
         SAFE.update({"top": 70, "bottom": H - 80, "left": 130, "right": W - 130})
         BANDS.update({"upper": (90, 440), "center": (330, 750), "lower": (640, 990)})
     else:
-        SAFE.update({"top": 250, "bottom": H - 440, "left": 80, "right": W - 150})
+        # Instagram's caption, buttons and audio bar sit over the bottom ~480 px and the right 230 px of an upright reel
+        SAFE.update({"top": 250, "bottom": H - 480, "left": 80, "right": W - 230})
         BANDS.update({"upper": (300, 760), "center": (720, 1200), "lower": (1050, 1440)})
 
 

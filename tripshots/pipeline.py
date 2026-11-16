@@ -66,8 +66,27 @@ def prepare_shots(inputs: list[Path], backend_name: str | None, work: Path | Non
     changed = watch_mod.apply(shots, logs)
     if changed:
         log(f"watch: {changed} shots scored with what Gemini saw (best instant, shake, tilt, exposure)")
+    shot_details(shots, backend, work)
     write_json(work / "shots_scored.json", shots)
     return shots, backend, work
+
+
+def shot_details(shots: list[dict], backend, work: Path) -> None:
+    """The extra details a reel uses (insight.py on this computer, ai.enrich_shots from the AI) for the shots this
+    reel is likely to use; what `tripshots analyze` already found for the others is put on them as well. Never stops
+    a reel."""
+    from . import insight
+    from .planner import _quality
+    try:
+        insight.load(shots)
+        ai_mod.apply_enriched(shots)
+        likely = [s for s in sorted(shots, key=lambda s: -_quality(s)) if (s.get("ai") or {}).get("usable", True)]
+        n = int(os.environ.get("TRIPSHOTS_DETAILS") or 160)
+        insight.attach(likely[:n], deep={s["id"] for s in likely[:n]})
+        if backend and n:
+            ai_mod.enrich_shots(likely[:n], backend, work)
+    except Exception as e:
+        log(f"shot details skipped ({str(e)[:120]})")
 
 
 def resolve_music(music: str | Path | None, cookies: dict | None = None) -> tuple[Path | None, dict]:

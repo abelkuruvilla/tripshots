@@ -87,6 +87,7 @@
       <button class="btn sm ghost icon" onclick={() => move(1)} disabled={s.slot >= reel.segments.length} aria-label="Move later" title="Move later"><Icon name="arrow-right" size={14} /></button>
     </div>
     <p class="quiet small ellipsis" title={s.note}>{s.file}{s.note ? ` · ${s.note}` : ""}</p>
+    {#if s.size || s.vibes?.length}<p class="meta small ellipsis">{[s.size, s.angle, ...(s.vibes || [])].filter(Boolean).join(" · ")}</p>{/if}
     <div class="tools" role="toolbar" aria-label="Shot tools">
       <button class="tool" onclick={() => op({ op: "split", at: frames(inside) })} disabled={!canSplit} title="Split at the playhead (S)"><Icon name="scissors" size={16} /><span>Split</span></button>
       <button class="tool" onclick={() => op({ op: "freeze", at: frames(Math.max(0, Math.min(s.dur, inside))), dur: 1 })} disabled={!plain} title="Hold the frame at the playhead for a second (F)"><Icon name="pause" size={16} /><span>Freeze</span></button>

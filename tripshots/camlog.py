@@ -161,10 +161,13 @@ def detect(shot: dict) -> str | None:
     """The shot's log profile, when its camera films log and the clip looks flat; else None."""
     if shot.get("kind") != "video" or shot.get("hdr"):
         return None
-    make = camera(str(shot.get("src") or ""))
+    ins = shot.get("insight") or {}
+    make = str((ins.get("camera") or {}).get("make") or "").lower() or camera(str(shot.get("src") or ""))
     prof = next((k for k, v in PROFILES.items() if any(m in make for m in v[3])), None)
     if not prof:
         return None
+    if "flat" in ins:   # measured when the footage was analysed (insight.py)
+        return prof if ins["flat"] else None
     import cv2
     im = cv2.imread(str(shot.get("thumb") or ""))
     if im is None:

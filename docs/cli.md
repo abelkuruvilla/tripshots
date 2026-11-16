@@ -858,8 +858,9 @@ options:
 ```text
 usage: tripshots analyze [-h] [-o OUT] [-b {auto,claude-cli,api,minimax,none}] [--no-ai]
                          [--no-faces] [--no-places] [--cached] [--print] [--rescore]
-                         [--watch {auto,gemini,off}] [--exclude GLOB] [--since YYYY-MM-DD]
-                         [--until YYYY-MM-DD] [--no-recursive] [--include-live-photos]
+                         [--no-details] [--watch {auto,gemini,off}] [--exclude GLOB]
+                         [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--no-recursive]
+                         [--include-live-photos]
                          [inputs ...]
 
 positional arguments:
@@ -877,6 +878,10 @@ options:
                         files decoded)
   --print               also print every record
   --rescore             ask the AI again about every shot
+  --no-details          skip the extra details: on this computer (text on the picture, room for
+                        titles, crops, faces, movement at the start, loops, sound, camera) and
+                        from the AI (vibe, shot size, angle, faces, best moment). They are
+                        measured once per shot and kept; only new shots cost anything
   --watch {auto,gemini,off}
   --exclude GLOB
   --since YYYY-MM-DD

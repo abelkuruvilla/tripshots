@@ -455,7 +455,7 @@ def cmd_analyze(a):
     res = analysis.analyze(paths, a.backend, ai=not a.no_ai, faces=not a.no_faces, places=not a.no_places,
                            watch_mode=a.watch, rescore=a.rescore, cached=a.cached,
                            out_dir=Path(a.out) if a.out else None, label=getattr(a, "_label", None),
-                           source_opts=source_opts(a))
+                           source_opts=source_opts(a), details=not a.no_details)
     if a.print:
         res["records"] = list(analysis.load(res["output"]))
     print(json.dumps(res, indent=2, default=str))
@@ -1021,6 +1021,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="no new work: export only what's already analysed (no AI calls, no new files decoded)")
     an.add_argument("--print", action="store_true", help="also print every record")
     an.add_argument("--rescore", action="store_true", help="ask the AI again about every shot")
+    an.add_argument("--no-details", action="store_true",
+                    help="skip the extra details: on this computer (text on the picture, room for titles, crops, faces, "
+                         "movement at the start, loops, sound, camera) and from the AI (vibe, shot size, angle, faces, "
+                         "best moment). They are measured once per shot and kept; only new shots cost anything")
     an.add_argument("--watch", choices=["auto", "gemini", "off"])
     an.add_argument("--exclude", action="append", metavar="GLOB", default=[])
     an.add_argument("--since", metavar="YYYY-MM-DD")

@@ -55,14 +55,17 @@ def pick(plan: dict, n: int) -> list[dict]:
     return [segs[0]] + [s for s in segs[1:] if s in rest]
 
 
-def picture(seg: dict, plan: dict) -> np.ndarray:
-    """The shot as a 4:5 picture, framed at its subject and coloured as in the reel (its thumbnail if the
-    source can't be read)."""
+def picture(seg: dict, plan: dict, size: tuple[int, int] = (W, H), crop: dict | None = None) -> np.ndarray:
+    """The shot as a picture of `size`, framed at its subject and coloured as in the reel (its thumbnail if the
+    source can't be read). `crop` {zoom, x, y}: zoom onto that point of the picture."""
+    from .motion import apply_keys
     from .render import _source_frame
+    W, H = size
     local = float(seg.get("dur", 1.0)) / 2
     frame = _source_frame(seg, local, {**(plan.get("color") or {}), "grade": plan.get("grade")}, (W, H))
     if frame is not None:
-        return np.ascontiguousarray(frame)
+        frame = np.ascontiguousarray(frame)
+        return apply_keys(frame, [{"t": 0, **crop}], 0.0) if crop else frame
     for k in ("thumb", "still", "src"):
         p = seg.get(k)
         if p and Path(p).exists() and Path(p).suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".heic"):
@@ -73,7 +76,8 @@ def picture(seg: dict, plan: dict) -> np.ndarray:
                     im = im.resize((int(im.width * s) + 1, int(im.height * s) + 1))
                     x = int(float(seg.get("subject_x", 0.5)) * (im.width - W))
                     y = (im.height - H) // 2
-                    return np.asarray(im.crop((x, y, x + W, y + H)))
+                    out = np.ascontiguousarray(np.asarray(im.crop((x, y, x + W, y + H))))
+                    return apply_keys(out, [{"t": 0, **crop}], 0.0) if crop else out
             except OSError:
                 continue
     raise ReelError(f"no picture for shot {seg.get('shot_id')}")
@@ -162,13 +166,28 @@ def _stops(plan: dict) -> dict:
         if o.get("type") in ("location", "label") and (o.get("main") or o.get("text")):
             k = max([i for i, st in enumerate(starts) if st <= float(o.get("start", 0)) + 1e-3] or [0])
             names.setdefault(segs[k].get("shot_id"), str(o.get("main") or o["text"]).split(",")[0].strip())
-    try:
-        from .pipeline import _seg_facts
-        by_id = _shots(plan)
-        facts = _seg_facts(plan, by_id, list(by_id.values()), full=True)
-    except Exception as e:  # offline or no positions: the titles on screen are enough
-        log(f"carousel: places not looked up ({str(e)[:60]})")
-        facts = []
+    import os
+    from .pipeline import _seg_facts
+    by_id = _shots(plan)
+    facts = []
+    for offline in ("1", None):   # what is already known first; the map services only when that isn't enough
+        was = os.environ.get("TRIPSHOTS_OFFLINE")
+        try:
+            if offline:
+                os.environ["TRIPSHOTS_OFFLINE"] = offline
+            facts = _seg_facts(plan, by_id, list(by_id.values()), full=True)
+        except Exception as e:  # offline or no positions: the titles on screen are enough
+            log(f"carousel: places not looked up ({str(e)[:60]})")
+            facts = []
+        finally:
+            if offline:
+                if was is None:
+                    os.environ.pop("TRIPSHOTS_OFFLINE", None)
+                else:
+                    os.environ["TRIPSHOTS_OFFLINE"] = was
+        known = {str(f.get("landmark") or f.get("place") or "").split(",")[0] for f in facts} - {""}
+        if len(known | set(names.values())) >= 2:
+            break
     regions = {str(f["region"]).lower() for f in facts if f.get("region")}
     for s, f in zip(segs, facts):
         name = str(f.get("landmark") or f.get("place") or "").split(",")[0].strip()
@@ -192,6 +211,97 @@ def checks(title: str, n: int) -> list[str]:
     return out
 
 
+LAYOUTS = {"single": 1, "duo": 2, "trio": 3}
+GAP = 12
+
+
+def _seg_for(plan: dict, shot_id: str) -> dict | None:
+    """The shot as the reel frames it (its segment), or, for a shot not in the reel, framed from its record."""
+    for s in plan.get("segments") or []:
+        for c in (s.get("clips") or [s]):
+            if c.get("shot_id") == shot_id and not s.get("panel"):
+                return c
+    from .planedit import _shots
+    sh = _shots(plan).get(shot_id)
+    if not sh:
+        return None
+    a = sh.get("ai") or {}
+    e = {"shot_id": sh["id"], "kind": sh["kind"], "src": sh["src"], "src_w": sh.get("w"), "src_h": sh.get("h"),
+         "subject_x": a.get("subject_x", 0.5), "layout": "crop", "thumb": sh.get("thumb"), "dur": 1.0,
+         "hdr": sh.get("hdr", False), "transfer": sh.get("transfer"), "log": sh.get("log")}
+    if sh["kind"] == "video":
+        e["in"] = float(sh.get("t0", 0)) + max(0.0, (float(sh.get("t1", 1)) - float(sh.get("t0", 0))) / 2 - 0.5)
+    else:
+        e["still"] = sh.get("still") or sh["src"]
+    return e
+
+
+def _cells(layout: str) -> list[tuple[int, int, int, int]]:
+    """The picture boxes (x, y, w, h) of a slide layout."""
+    if layout == "duo":   # two stacked
+        h = (H - GAP) // 2
+        return [(0, 0, W, h), (0, h + GAP, W, H - h - GAP)]
+    if layout == "trio":  # one wide on top, two side by side below
+        h = (H - GAP) * 3 // 5
+        w = (W - GAP) // 2
+        return [(0, 0, W, h), (0, h + GAP, w, H - h - GAP), (w + GAP, h + GAP, W - w - GAP, H - h - GAP)]
+    return [(0, 0, W, H)]
+
+
+def draw_slide(sl: dict, k: int, total: int, spec: dict, plan: dict) -> np.ndarray:
+    if sl["kind"] == "route":
+        return _mark(recap(spec.get("places") or []), k, total, spec.get("handle"), dark=True)
+    layout = sl.get("layout", "single")
+    out = np.full((H, W, 3), 245, np.uint8)
+    for (x, y, w, h), sid in zip(_cells(layout), sl.get("shots") or []):
+        seg = _seg_for(plan, sid)
+        if seg is None:
+            continue
+        crops = sl.get("crops") or {}
+        out[y:y + h, x:x + w] = picture(seg, plan, (w, h), crops.get(sid))
+    if k == 1 and spec.get("title"):
+        out = cover(out, spec["title"], spec.get("sub"))
+    if k > 1 or spec.get("handle"):
+        out = _mark(np.ascontiguousarray(out).copy(), k, total, spec.get("handle"))
+    return out
+
+
+def render_spec(spec: dict, plan: dict, folder: Path) -> dict:
+    """Draw every slide of a carousel spec into the folder (unchanged slides come from the cache)."""
+    import hashlib
+    import json
+    from .framing import use_plan
+    use_plan(plan)
+    folder.mkdir(parents=True, exist_ok=True)
+    cache = folder / ".cache"
+    cache.mkdir(exist_ok=True)
+    for old in folder.glob("[0-9][0-9].jpg"):
+        old.unlink()
+    slides = spec["slides"]
+    total = len(slides)
+    looks = json.dumps([plan.get("color"), plan.get("grade")], sort_keys=True, default=str)
+    keep = set()
+    for k, sl in enumerate(slides, 1):
+        key = hashlib.sha1(json.dumps([{x: y for x, y in sl.items() if x != "file"}, k, total, spec.get("handle"), spec.get("title") if k == 1 else None,
+                                       spec.get("sub") if k == 1 else None,
+                                       spec.get("places") if sl["kind"] == "route" else None, looks, "s2"],
+                                      sort_keys=True, default=str).encode()).hexdigest()[:16]
+        cached = cache / f"{key}.jpg"
+        if not cached.exists():
+            log(f"carousel: slide {k}/{total}")
+            Image.fromarray(draw_slide(sl, k, total, spec, plan)).save(cached, quality=92)
+        keep.add(cached.name)
+        f = folder / f"{k:02d}.jpg"
+        f.write_bytes(cached.read_bytes())
+        sl["file"] = str(f)
+    for old in cache.glob("*.jpg"):
+        if old.name not in keep:
+            old.unlink()
+    spec["checks"] = checks(spec.get("title") or "", total)
+    write_json(folder / "carousel.json", spec)
+    return spec
+
+
 def make(plan_path: Path, n: int = 8, title: str | None = None, handle: str | None = None, route: bool = True,
          out_dir: Path | None = None) -> dict:
     from .framing import use_plan
@@ -213,27 +323,123 @@ def make(plan_path: Path, n: int = 8, title: str | None = None, handle: str | No
     sub = here if here and here.lower() not in title.lower() else None
     base = plan_path.name[:-len(".plan.json")] if plan_path.name.endswith(".plan.json") else plan_path.stem
     folder = Path(out_dir).expanduser() if out_dir else plan_path.with_name(f"{base}.carousel")
-    folder.mkdir(parents=True, exist_ok=True)
-    for old in folder.glob("[0-9][0-9].jpg"):
-        old.unlink()
-    total = len(shots) + (1 if with_route else 0)
-    slides = []
-    for k, seg in enumerate(shots, 1):
-        log(f"carousel: slide {k}/{total}")
-        frame = picture(seg, plan)
-        if k == 1 and title:
-            frame = cover(frame, title, sub)
-        frame = _mark(np.ascontiguousarray(frame).copy(), k, total, handle) if k > 1 or handle else frame
-        p = folder / f"{k:02d}.jpg"
-        Image.fromarray(frame).save(p, quality=92)
-        slides.append({"file": str(p), "shot_id": seg["shot_id"], "kind": "cover" if k == 1 else "shot"})
+    slides = [{"kind": "cover" if k == 0 else "shot", "layout": "single", "shots": [s["shot_id"]]}
+              for k, s in enumerate(shots)]
     if with_route:
-        p = folder / f"{total:02d}.jpg"
-        Image.fromarray(_mark(recap(places), total, total, handle, dark=True)).save(p, quality=92)
-        slides.append({"file": str(p), "kind": "route", "places": places})
-    res = {"plan": str(plan_path), "folder": str(folder), "size": [W, H], "cover_text": title, "slides": slides,
-           "checks": checks(title, total),
-           "next": f"tripshots caption {plan_path} writes the words; for a carousel the caption's first line "
-                   "carries the hook"}
-    write_json(folder / "carousel.json", res)
-    return res
+        slides.append({"kind": "route", "places": places})
+    spec = {"plan": str(plan_path), "folder": str(folder), "size": [W, H], "title": title, "sub": sub,
+            "handle": handle, "places": places, "stops": stops, "slides": slides,
+            "next": f"tripshots caption {plan_path} writes the words; for a carousel the caption's first line "
+                    "carries the hook"}
+    spec = render_spec(spec, plan, folder)
+    spec["cover_text"] = title
+    write_json(folder / "carousel.json", spec)
+    return spec
+
+
+def load(plan_path: Path) -> dict | None:
+    plan_path = Path(plan_path)
+    base = plan_path.name[:-len(".plan.json")] if plan_path.name.endswith(".plan.json") else plan_path.stem
+    return read_json(plan_path.with_name(f"{base}.carousel") / "carousel.json")
+
+
+def edit(plan_path: Path, ops: list[dict]) -> dict:
+    """Change a carousel and draw it again (only the slides that changed). Slides are numbered from 1.
+      {"op": "move", "from": 3, "to": 1}         {"op": "remove", "slide": 4}
+      {"op": "add", "shot_id": "S040", "at": 3}  {"op": "swap", "slide": 2, "shot_id": "S040", "cell": 1}
+      {"op": "layout", "slide": 2, "layout": "single|duo|trio", "shots": ["S1", "S2"]}
+      {"op": "crop", "slide": 2, "cell": 1, "zoom": 1.4, "x": 0.4, "y": 0.5}
+      {"op": "title", "text": "...", "sub": "..."}  {"op": "handle", "text": "nadodi_tales"}
+      {"op": "route", "on": true}"""
+    plan_path = Path(plan_path)
+    plan = read_json(plan_path)
+    spec = load(plan_path)
+    if not plan or not spec:
+        raise ReelError("make the carousel first (tripshots carousel PLAN)")
+    slides = spec["slides"]
+
+    def at(n, allow_end=False):
+        i = int(n) - 1
+        if not 0 <= i < len(slides) + (1 if allow_end else 0):
+            raise ReelError(f"slide {n} doesn't exist (1..{len(slides)})")
+        return i
+
+    def known(sid):
+        if _seg_for(plan, sid) is None:
+            raise ReelError(f"unknown shot {sid}")
+        return sid
+    for o in ops:
+        op = o.get("op")
+        if op == "move":
+            a, b = at(o["from"]), at(o["to"])
+            slides.insert(b, slides.pop(a))
+        elif op == "remove":
+            if len(slides) <= 1:
+                raise ReelError("a carousel needs at least one slide")
+            slides.pop(at(o["slide"]))
+        elif op == "add":
+            i = at(o.get("at", len(slides) + 1), allow_end=True)
+            slides.insert(i, {"kind": "shot", "layout": "single", "shots": [known(o["shot_id"])]})
+        elif op == "swap":
+            sl = slides[at(o["slide"])]
+            if sl["kind"] == "route":
+                raise ReelError("the route slide has no picture")
+            c = int(o.get("cell", 1)) - 1
+            shots = list(sl.get("shots") or [])
+            while len(shots) <= c:
+                shots.append(shots[-1] if shots else known(o["shot_id"]))
+            shots[c] = known(o["shot_id"])
+            sl["shots"] = shots
+            (sl.get("crops") or {}).pop(shots[c], None)
+        elif op == "layout":
+            sl = slides[at(o["slide"])]
+            lay = o.get("layout", "single")
+            if lay not in LAYOUTS or sl["kind"] == "route":
+                raise ReelError(f"layout is one of {', '.join(LAYOUTS)}")
+            shots = [known(x) for x in (o.get("shots") or [])] or list(sl.get("shots") or [])
+            if len(shots) < LAYOUTS[lay]:   # fill the new cells with the reel's best shots not on a slide yet
+                from .planedit import _shots
+                used = {x for s2 in slides for x in s2.get("shots") or []} | set(shots)
+                reel = [s2["shot_id"] for s2 in pick(plan, 20)]
+                rest = [i for i, sh in sorted(_shots(plan).items(), key=lambda kv: -float(((kv[1].get("ai") or {})
+                                                                                             .get("score")) or 0))]
+                extra = [x for x in dict.fromkeys(reel + rest) if x not in used]   # the reel's best first, then the trip's
+                again = [x for x in dict.fromkeys(reel + rest) if x not in shots and x not in extra]  # then repeats
+                shots += (extra + again)[:LAYOUTS[lay] - len(shots)]
+            sl["layout"], sl["shots"] = lay, shots[:LAYOUTS[lay]]
+        elif op == "crop":
+            sl = slides[at(o["slide"])]
+            c = int(o.get("cell", 1)) - 1
+            sid = (sl.get("shots") or [None] * (c + 1))[c]
+            if not sid:
+                raise ReelError("no picture there")
+            crops = dict(sl.get("crops") or {})
+            if o.get("reset"):
+                crops.pop(sid, None)
+            else:
+                crops[sid] = {"zoom": round(max(1.0, min(3.0, float(o.get("zoom", 1.0)))), 3),
+                              "x": round(max(0.0, min(1.0, float(o.get("x", 0.5)))), 3),
+                              "y": round(max(0.0, min(1.0, float(o.get("y", 0.5)))), 3)}
+            sl["crops"] = crops
+        elif op == "title":
+            spec["title"] = str(o.get("text") or "").strip()
+            if "sub" in o:
+                spec["sub"] = str(o["sub"] or "").strip() or None
+        elif op == "handle":
+            spec["handle"] = str(o.get("text") or "").strip().lstrip("@") or None
+        elif op == "route":
+            has = any(s2["kind"] == "route" for s2 in slides)
+            if o.get("on", True) and not has:
+                if len(spec.get("places") or []) < 2:
+                    raise ReelError("fewer than two places are known: no route to show")
+                slides.append({"kind": "route", "places": spec["places"]})
+            elif not o.get("on", True):
+                spec["slides"] = slides = [s2 for s2 in slides if s2["kind"] != "route"]
+        else:
+            raise ReelError(f"unknown carousel op {op}")
+    for k, sl in enumerate(slides):   # the first picture slide is the cover
+        if sl["kind"] in ("cover", "shot"):
+            sl["kind"] = "cover" if k == 0 else "shot"
+    if len(slides) > 20:
+        raise ReelError("Instagram takes 20 slides at most")
+    return render_spec(spec, plan, Path(spec["folder"]))

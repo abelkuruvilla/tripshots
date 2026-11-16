@@ -180,6 +180,22 @@ async def split_trip(trip: str | None = None, by: str = "day", make: bool = Fals
 
 
 @mcp.tool()
+async def carousel(plan: str, ops: list[dict] | None = None, slides: int = 8, title: str | None = None,
+                   handle: str | None = None, route: bool = True) -> str:
+    """A carousel post (1080x1350 slides) from a reel. Without ops: make it (best shots, the hook on the cover, a
+    route slide last). With ops: change the one made before, e.g. [{"op":"move","from":3,"to":1},
+    {"op":"layout","slide":2,"layout":"duo"|"trio"|"single"}, {"op":"swap","slide":2,"shot_id":"S040","cell":1},
+    {"op":"crop","slide":2,"cell":1,"zoom":1.4,"x":0.4,"y":0.5}, {"op":"add","shot_id":"S040","at":3},
+    {"op":"remove","slide":4}, {"op":"title","text":"..."}, {"op":"handle","text":"name"}, {"op":"route","on":false}].
+    Returns the slides (files) and checks."""
+    from . import carousel as car
+    p = Path(plan).expanduser()
+    if ops:
+        return _txt(await asyncio.to_thread(car.edit, p, ops))
+    return _txt(await asyncio.to_thread(car.make, p, slides, title, handle, route))
+
+
+@mcp.tool()
 async def list_effects() -> str:
     """The effects library: transitions (for edit_plan transition), text motions (edit_text motion) and text looks
     (edit_text style look), and shot effects (edit_plan effect), each with its energy, mood and what it suits.

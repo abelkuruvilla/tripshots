@@ -6,6 +6,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **A carousel maker in the app.** The reel's **Carousel** tab makes the carousel, then edits it slide by slide: reorder, remove, add any shot of the trip, one/two/three pictures per slide, crop each picture, cover text, handle and route slide. Only the slides that changed are drawn again (`tripshots carousel PLAN --edit OPS`, MCP `carousel`). Making one no longer waits on slow map lookups when the places are already known (2 minutes down to seconds).
 - **Reels as projects.** Pin, favourite, file in collections, rename (every file of the reel moves, with its undo history and results), duplicate a plan, or move a reel to the Trash: from each reel's ⋯ menu in the app, `tripshots reels`, or MCP `manage_reel`. Pinned reels and collections lead the gallery.
 - **One trip, many reels.** `tripshots split-trip TRIP --by day|place [--make]` (the app's **Make → From a trip**, MCP `split_trip`) turns a trip into a selection per day or per place, and a reel from each, filed in the trip's collection.
 - **Picture in picture and keyframes.** In the editor, **On top** puts another shot in a corner from the playhead. It has its own lane on the timeline, can be moved and sized, and fades in and out with rounded corners and a soft shadow. **Zoom and position** keyframes move the picture inside a shot (a slow push in, a pan across), eased between keyframes. Plan edits: `pip_add`, `pip_edit`, `pip_delete`, `keyframe`.

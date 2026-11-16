@@ -408,6 +408,15 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
                          name=b.get("name") or None, **opts), b.get("name") or "new reel"
     if kind == "render":
         return ["render", str(_plan(s("plan")))], Path(s("plan")).name
+    if kind == "carousel":   # a carousel post from the reel (carousel.py)
+        args = ["carousel", str(_plan(s("plan"))), "-n", str(max(3, min(10, int(b.get("slides") or 8))))]
+        if b.get("title"):
+            args += ["--title", s("title")]
+        if b.get("handle"):
+            args += ["--handle", s("handle")]
+        if b.get("route") is False:
+            args.append("--no-route")
+        return args, Path(s("plan")).name
     if kind == "preview":   # the editor's motion preview of unrendered edits (render --draft)
         return ["render", str(_plan(s("plan"))), "--draft"], Path(s("plan")).name
     if kind == "learn":
@@ -559,6 +568,9 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/reels":
                     from .projects import annotate
                     return self._json(annotate(list_reels()))
+                if path == "/api/carousel":   # the reel's carousel as made and edited (carousel.json), or null
+                    from .carousel import load
+                    return self._json(load(_plan(arg("plan"))))
                 if path == "/api/collections":
                     from .projects import collections
                     return self._json(collections())
@@ -622,6 +634,9 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/edit":
                     from .planedit import apply
                     return self._json(apply(_plan(str(b.get("plan"))), list(b.get("edits") or [])))
+                if path == "/api/carousel":   # edit the carousel (only the changed slides are drawn again)
+                    from .carousel import edit
+                    return self._json(edit(_plan(str(b.get("plan"))), list(b.get("ops") or [])))
                 if path == "/api/reel/manage":   # pin, favorite, collection, rename, duplicate, delete (projects.py)
                     from .projects import manage
                     return self._json(manage(_plan(str(b.get("plan"))), str(b.get("action")), b.get("value")))

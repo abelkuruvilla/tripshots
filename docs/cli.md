@@ -342,6 +342,7 @@ options:
 
 ```text
 usage: tripshots carousel [-h] [-n SLIDES] [--title TITLE] [--handle HANDLE] [--no-route] [-o OUT]
+                          [--edit OPS]
                           plan
 
 positional arguments:
@@ -354,6 +355,10 @@ options:
   --handle HANDLE      your handle, small on every slide
   --no-route           no last slide listing the places
   -o, --out OUT        output folder (default: NAME.carousel next to the plan)
+  --edit OPS           change the carousel made before: JSON ops (or a file of them), e.g.
+                       '[{"op": "move", "from": 3, "to": 1}, {"op": "layout", "slide": 2,
+                       "layout": "duo"}]' (ops: move, remove, add, swap, layout single|duo|trio,
+                       crop, title, handle, route)
 ```
 
 ## revise

@@ -13,6 +13,7 @@
   import ShotPanel from "./reel/ShotPanel.svelte";
   import SoundPanel from "./reel/SoundPanel.svelte";
   import ColourPanel from "./reel/ColourPanel.svelte";
+  import CarouselPanel from "./reel/CarouselPanel.svelte";
 
   let video = $state(null);
   let bust = $state(Date.now());
@@ -33,8 +34,8 @@
   });
   let reel = $derived(ed.reel);
   let tabs = $derived(ed.expert
-    ? [["shot", "Shot"], ["text", "Text"], ["colour", "Colour"], ["sound", "Sound"], ["notes", "Notes"], ["post", "Post"]]
-    : [["text", "Text"], ["colour", "Colour"], ["notes", "Notes"], ["post", "Post"]]);
+    ? [["shot", "Shot"], ["text", "Text"], ["colour", "Colour"], ["sound", "Sound"], ["notes", "Notes"], ["post", "Post"], ["carousel", "Carousel"]]
+    : [["text", "Text"], ["colour", "Colour"], ["notes", "Notes"], ["post", "Post"], ["carousel", "Carousel"]]);
 
   // a render of this plan finished: show the new video
   let lastRender = null;
@@ -176,6 +177,12 @@
     cands = [];
     cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
   }
+  // any panel can ask for a shot from this trip (the carousel's slides): the same drawer, its own title
+  async function pickShot(title, note, done) {
+    picking = { mode: "custom", title, note, done };
+    cands = [];
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=80`);
+  }
   async function addOnTop() {
     picking = { mode: "pip" };
     cands = [];
@@ -189,6 +196,7 @@
   async function choose(shot) {
     const p = picking;
     picking = null;
+    if (p.mode === "custom") return p.done(shot);
     if (p.mode === "swap") await edit({ op: "swap", segment: p.seg.slot, shot_id: shot.id });
     else if (p.mode === "pip") {
       const res = await edit({ op: "pip_add", shot_id: shot.id, start: frames(Math.max(0, ed.now)), dur: 2 });
@@ -344,6 +352,7 @@
           {:else if ed.tab === "colour"}<ColourPanel />
           {:else if ed.tab === "sound"}<SoundPanel />
           {:else if ed.tab === "notes"}<NotesPanel onseek={seek} pause={() => video?.pause()} />
+          {:else if ed.tab === "carousel"}<CarouselPanel onpickshot={pickShot} />
           {:else}<PostPanel />{/if}
         </div>
       </aside>
@@ -365,12 +374,12 @@
   <div class="overlay" onclick={(e) => e.target === e.currentTarget && (picking = null)}>
     <div class="drawer" role="dialog" aria-modal="true" aria-label="Choose a shot" tabindex="-1">
       <div class="row">
-        <h2>{picking.mode === "swap" ? `Replace shot ${picking.seg.slot}` : picking.mode === "pip" ? "Put a shot on top" : `Add a shot after shot ${picking.after}`}</h2>
+        <h2>{picking.mode === "custom" ? picking.title : picking.mode === "swap" ? `Replace shot ${picking.seg.slot}` : picking.mode === "pip" ? "Put a shot on top" : `Add a shot after shot ${picking.after}`}</h2>
         {#if picking.mode === "swap"}<span class="meta">{tc(picking.seg.dur)}</span>{/if}
         <div class="spacer"></div>
         <button class="btn ghost icon" onclick={() => (picking = null)} aria-label="Close"><Icon name="x" /></button>
       </div>
-      <p class="muted">{picking.mode === "swap" ? "The best shots of this reel's footage. The slot keeps its length and its place on the beat"
+      <p class="muted">{picking.mode === "custom" ? picking.note : picking.mode === "swap" ? "The best shots of this reel's footage. The slot keeps its length and its place on the beat"
         : picking.mode === "pip" ? "It appears in a corner at the playhead for 2 s; move it, size it and set its length in the Shot tab"
         : "It comes in for 1.5 s; change its length in the Shot tab"}</p>
       {#if !cands.length}<div class="empty"><span class="spin"></span></div>{/if}

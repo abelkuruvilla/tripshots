@@ -272,7 +272,10 @@ def cmd_caption(a):
 
 
 def cmd_carousel(a):
-    from .carousel import make
+    from .carousel import edit, make
+    if a.edit:
+        ops = json.loads(Path(a.edit).read_text() if Path(a.edit).is_file() else a.edit)
+        return print(json.dumps(edit(Path(a.plan), ops if isinstance(ops, list) else [ops]), indent=2, ensure_ascii=False))
     print(json.dumps(make(Path(a.plan), a.slides, a.title, a.handle, route=not a.no_route,
                           out_dir=Path(a.out) if a.out else None), indent=2, ensure_ascii=False))
 
@@ -785,6 +788,9 @@ def build_parser() -> argparse.ArgumentParser:
     ca.add_argument("--handle", help="your handle, small on every slide")
     ca.add_argument("--no-route", action="store_true", help="no last slide listing the places")
     ca.add_argument("-o", "--out", help="output folder (default: NAME.carousel next to the plan)")
+    ca.add_argument("--edit", metavar="OPS", help="change the carousel made before: JSON ops (or a file of them), e.g. "
+                    '\'[{"op": "move", "from": 3, "to": 1}, {"op": "layout", "slide": 2, "layout": "duo"}]\' '
+                    "(ops: move, remove, add, swap, layout single|duo|trio, crop, title, handle, route)")
     ca.set_defaults(fn=cmd_carousel)
 
     rv = sub.add_parser("revise", help="notes on a finished reel, each pinned to a time (\"12.3: too dark here\"), "

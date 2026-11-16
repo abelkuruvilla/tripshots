@@ -82,3 +82,43 @@ def test_carousel_from_a_reel(tmp_path):
     assert carousel.checks("one two three four five six seven", 4) == [
         "the cover title is 7 words: six or fewer read at thumbnail size",
         "4 slides: under 5 the swipe rarely starts (the reel may have too few distinct shots)"]
+
+
+def test_a_carousel_is_edited_slide_by_slide(tmp_path):
+    import json
+    from PIL import Image
+    from tripshots import carousel
+    shots, segs = [], []
+    for i in range(6):
+        f = tmp_path / f"p{i}.jpg"
+        Image.new("RGB", (1600, 1200), (40 * i, 120, 200 - 30 * i)).save(f)
+        shots.append({"id": f"S{i}", "kind": "photo", "src": str(f), "still": str(f), "thumb": str(f), "w": 1600,
+                      "h": 1200, "t0": 0, "t1": 0, "ai": {"score": 9 - i}})
+        if i < 5:
+            segs.append({"kind": "photo", "src": str(f), "still": str(f), "shot_id": f"S{i}", "dur": 1.0,
+                         "layout": "kenburns"})
+    (tmp_path / "shots_scored.json").write_text(json.dumps(shots))
+    plan = tmp_path / "trip.plan.json"
+    plan.write_text(json.dumps({"segments": segs, "overlays": [{"type": "hook", "text": "Five stops"}],
+                                "color": {}, "work": str(tmp_path)}))
+    res = carousel.make(plan, n=5, route=False)
+    assert [s["kind"] for s in res["slides"]] == ["cover", "shot", "shot", "shot", "shot"]
+    cache = tmp_path / "trip.carousel" / ".cache"
+    before = {f.name: f.stat().st_mtime_ns for f in cache.glob("*.jpg")}
+    res = carousel.edit(plan, [{"op": "layout", "slide": 3, "layout": "trio"}, {"op": "handle", "text": "@nadodi_tales"},
+                               {"op": "add", "shot_id": "S5", "at": 2}, {"op": "crop", "slide": 1, "zoom": 1.5, "x": 0.3}])
+    assert len(res["slides"]) == 6 and res["slides"][1]["shots"] == ["S5"] and res["handle"] == "nadodi_tales"
+    trio = res["slides"][3]
+    assert trio["layout"] == "trio" and len(set(trio["shots"])) == 3
+    with Image.open(trio["file"]) as im:
+        px = im.convert("RGB").load()
+        assert px[540, 812] != px[540, 1340] or px[100, 1100] != px[1000, 1100]   # three different pictures
+    res = carousel.edit(plan, [{"op": "move", "from": 6, "to": 1}, {"op": "remove", "slide": 2}])
+    assert res["slides"][0]["kind"] == "cover" and res["slides"][0]["shots"] == ["S4"] and len(res["slides"]) == 5
+    assert len(list((tmp_path / "trip.carousel").glob("[0-9][0-9].jpg"))) == 5
+    import pytest
+    from tripshots.util import ReelError
+    with pytest.raises(ReelError):
+        carousel.edit(plan, [{"op": "swap", "slide": 2, "shot_id": "nope"}])
+    with pytest.raises(ReelError):
+        carousel.edit(plan, [{"op": "route", "on": True}])     # no places known

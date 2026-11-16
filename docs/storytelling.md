@@ -314,3 +314,19 @@ and matches them to the reels TripShots made by their caption.
 
 ---
 [Docs home](README.md)
+
+### Editing a carousel
+
+In the desktop app, the reel's **Carousel** tab makes the carousel, then shows it as a strip of slides. For each
+slide you can:
+- move it earlier or later, or remove it;
+- show one, two or three pictures (stacked, or one wide above two);
+- replace each picture with any shot of the trip;
+- zoom and position each picture.
+
+The cover text, your handle (remembered for next time) and the route slide can be changed at any time, and
+**Add a slide** takes any shot of the trip.
+
+Only the slides that changed are drawn again. On the command line, `tripshots carousel PLAN --edit
+'[{"op": "layout", "slide": 3, "layout": "trio"}]'` does the same. The ops are `move`, `remove`, `add`, `swap`,
+`layout`, `crop`, `title`, `handle` and `route`. Agents use MCP `carousel` with `ops`.

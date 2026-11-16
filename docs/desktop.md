@@ -61,6 +61,9 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
   - Under the viewer, **Your edit** shows a still of the edit at the playhead, **Preview** plays the edits in
     motion (a quick render, `tripshots render --draft`: no sound effects, text without its animation; its clips
     are the ones the real render reuses), and **Last render** plays the finished reel.
+  - **Carousel**: a swipeable post from the reel. Make it, then reorder, add or remove slides; give a slide one,
+    two or three pictures; replace or crop each picture; change the cover text, handle and route slide (see
+    [storytelling](storytelling.md#editing-a-carousel)).
   - **Notes**: watch the reel, and where something is off press **N** (or **Note** under the viewer): it pauses
     and you say what you see ("too dark", "swap this for the canyon", "the words cover her face"). Each note is
     pinned to that moment (a dot on the timeline, a still in the list) and kept until you **Send** them all at

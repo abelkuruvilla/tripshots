@@ -17,6 +17,39 @@ datas = collect_data_files("tripshots", includes=["**/*.yaml", "**/*.yml", "**/*
                                                    "**/*.otf", "**/*.txt", "**/*.cube", "**/*.html", "**/*.js",
                                                    "**/*.css", "**/*.png", "**/*.jpg"])
 binaries = []
+
+
+def _fribidi():
+    """Pillow shapes complex scripts with libraqm, which opens libfribidi by name at run time; Pillow's wheels don't
+    carry it, so the build machine's copy (brew / apt libfribidi0 / MSYS2 mingw-w64-x86_64-fribidi) goes next to
+    the engine, where entry._text_shaping (macOS), PyInstaller's library path (Linux) and its DLL folder (Windows)
+    find it."""
+    import ctypes.util
+    import glob
+    names = {"darwin": ["libfribidi.0.dylib"], "linux": ["libfribidi.so.0"],
+             "win32": ["libfribidi-0.dll", "fribidi-0.dll"]}.get(sys.platform, [])
+    dirs = ["/opt/homebrew/lib", "/usr/local/lib", "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu", "/usr/lib",
+            r"C:\msys64\mingw64\bin", r"C:\msys64\ucrt64\bin"]
+    for n in names:
+        for d in dirs:
+            for p in glob.glob(os.path.join(d, n)):
+                return os.path.realpath(p), n
+        found = ctypes.util.find_library("fribidi")
+        if found and os.path.isabs(found):
+            return os.path.realpath(found), n
+    return None
+
+
+fb = _fribidi()
+if fb:  # copied under the name raqm asks for (the real file may be libfribidi.0.dylib -> .../libfribidi.0.1.0)
+    import shutil
+    import tempfile
+    tmp = os.path.join(tempfile.mkdtemp(), fb[1])
+    shutil.copy2(fb[0], tmp)
+    binaries.append((tmp, "."))
+else:
+    print("WARNING: libfribidi not found (brew install fribidi / apt install libfribidi0 / MSYS2 "
+          "mingw-w64-x86_64-fribidi): complex scripts won't shape")
 hiddenimports = collect_submodules("tripshots")  # commands load modules lazily (and by name: server, mcp_server)
 
 # packages that load parts of themselves at run time (plugins, data files, compiled extensions)

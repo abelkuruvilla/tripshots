@@ -19,6 +19,10 @@
   let bust = $state(Date.now());
   let picking = $state(null); // { mode: "swap", seg } | { mode: "insert", after }
   let cands = $state([]);
+  let kindShown = $state("all"); // the drawer shows clips, photos or both
+  let candQ = $state("");
+  let shownCands = $derived(cands.filter((c) => (kindShown === "all" || c.kind === kindShown)
+    && (!candQ || `${c.note} ${c.file} ${(c.tags || []).join(" ")}`.toLowerCase().includes(candQ.toLowerCase()))));
   let still = $state(""); // the edited frame's address
   let showDraft = $state(false); // the viewer plays the quick preview of the edits (render --draft)
   let stillBusy = $state(false);
@@ -177,24 +181,25 @@
 
   async function pick(seg) {
     picking = { mode: "swap", seg };
+    kindShown = seg.kind === "video" ? "video" : "all"; // a clip's slot: clips first
     cands = [];
-    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
   // any panel can ask for a shot from this trip (the carousel's slides): the same drawer, its own title
   async function pickShot(title, note, done) {
     picking = { mode: "custom", title, note, done };
     cands = [];
-    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=80`);
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
   async function addOnTop() {
     picking = { mode: "pip" };
     cands = [];
-    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
   async function insertAfter(slot) {
     picking = { mode: "insert", after: slot };
     cands = [];
-    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
   async function choose(shot) {
     const p = picking;
@@ -391,12 +396,25 @@
       <p class="muted">{picking.mode === "custom" ? picking.note : picking.mode === "swap" ? "The best shots of this reel's footage. The slot keeps its length and its place on the beat"
         : picking.mode === "pip" ? "It appears in a corner at the playhead for 2 s; move it, size it and set its length in the Shot tab"
         : "It comes in for 1.5 s; change its length in the Shot tab"}</p>
-      {#if !cands.length}<div class="empty"><span class="spin"></span></div>{/if}
+      <div class="row cfilter">
+        <div class="seg" role="radiogroup" aria-label="Show">
+          {#each [["all", "All"], ["video", "Clips"], ["photo", "Photos"]] as [id, label]}
+            <button role="radio" aria-checked={kindShown === id} onclick={() => (kindShown = id)}>{label}
+              <span class="meta">{id === "all" ? cands.length : cands.filter((c) => c.kind === id).length}</span></button>
+          {/each}
+        </div>
+        <input type="search" placeholder="Find: beach, sunset, drone…" bind:value={candQ} aria-label="Find a shot" />
+      </div>
+      {#if !cands.length}<div class="empty"><span class="spin"></span></div>
+      {:else if !shownCands.length}<p class="quiet">No {kindShown === "video" ? "clips" : kindShown === "photo" ? "photos" : "shots"} match</p>{/if}
       <div class="cands">
-        {#each cands as c}
+        {#each shownCands as c (c.id)}
           <button class="cand" onclick={() => choose(c)} disabled={c.used && picking.mode === "swap"}>
-            {#if c.thumb}<img src={media(c.thumb)} alt="" loading="lazy" />{/if}
-            <span class="row"><span class="tc score">{c.score.toFixed(1)}</span>{#if c.len_s}<span class="meta">{c.len_s}s</span>{/if}{#if c.used}<span class="meta">in this reel</span>{/if}</span>
+            <span class="pic">
+              {#if c.thumb}<img src={media(c.thumb)} alt="" loading="lazy" />{/if}
+              {#if c.kind === "video"}<span class="vbadge"><Icon name="play" size={10} /> {c.len_s}s</span>{:else}<span class="vbadge photo">Photo</span>{/if}
+            </span>
+            <span class="row"><span class="tc score">{c.score.toFixed(1)}</span>{#if c.used}<span class="meta">in this reel</span>{/if}</span>
             <span class="note">{c.note}</span>
           </button>
         {/each}
@@ -479,7 +497,13 @@
   }
   .cand:hover:not(:disabled) { border-color: var(--accent); }
   .cand:disabled { opacity: 0.45; }
-  .cand img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-sm); display: block; margin-bottom: 4px; }
+  .pic { position: relative; display: block; margin-bottom: 4px; }
+  .cand img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-sm); display: block; }
+  .vbadge { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 4px;
+            background: rgba(15, 15, 16, 0.78); color: #ededed; font-size: 11px; font-family: var(--mono, monospace); }
+  .vbadge.photo { font-family: inherit; color: #cfcfcf; }
+  .cfilter { gap: 12px; }
+  .cfilter input { flex: 1; min-width: 0; min-height: 32px; height: 32px; }
   .score { font-size: 13px; }
   .note { font-size: 12px; line-height: 16px; color: var(--text-3); display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   @media (max-width: 1080px) { .main { grid-template-columns: minmax(0, 1fr) 380px; } }

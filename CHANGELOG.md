@@ -6,6 +6,12 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Carousel posts from a reel.** `tripshots carousel NAME.plan.json` turns the reel's best shots into 1080x1350 slides coloured like the reel. The cover carries the hook and where it was taken, slides are numbered, `--handle` adds your handle, and the last slide lists the route.
+- **Better caption checks.** `tripshots caption` now also flags search keywords missing from the caption, more than one ask (or none), links, generic hashtags, a hashtag or emoji in the first words, and clichés. Em dashes and invisible characters are removed from the AI's caption; the joiners Malayalam and Hindi need are kept.
+- **Your voice file.** `tripshots caption` follows `~/.claude/instagram/voice.md` (shared with the Instagram agent skills) when it exists.
+- **"vs usual" in `tripshots results`:** each reel's views against your median reel, and which reels beat it 3x or more (also in MCP `reel_results`).
+- Hook lines are marked down for greetings, video preambles, emoji and hashtags, and up for a number or a name near the start.
+- `tripshots skills` lists the Instagram agent skills (`npx skills add Jakeschincariol/instagram-agent-skill`).
 - **Story grammar, from editors' rules.** After casting, middle shots are swapped so that every cut changes something you can see (size, light, colour or subject), shot sizes alternate, each new place opens on a wide view, and no camera move runs three times in a row. The opening, payoff and ending never move. The plan records `story.grammar`; turn it off with `story: {grammar: false}`.
 - **A beat of black before the payoff.** After the song's held breath into an intense payoff, the last three or four frames before the hit go black (`motion.blackout`: `auto`, `on`, `off`).
 - **Travel transitions and titles.** `polaroid`: the next shot drops in as a print and opens into the scene. `mirror`: the next shot opens from the horizon as its own reflection. Text motions `decode` (letters resolve out of random glyphs) and `stamp` (a passport stamp slams down). Both transitions are in the Shot tab.

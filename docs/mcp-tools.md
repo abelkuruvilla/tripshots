@@ -209,8 +209,9 @@ Returns the plan path and the storyboard image to review (or a job id to poll).
 
 How the user's posted reels did, and what works for their audience. With `reel` (a reel's .mp4 or
 .plan.json) and numbers from Instagram Insights (views, avg_watch in seconds, sends = shares, saves...),
-records them first. Returns every recorded reel with its score (watch-through and sends per view) and the
-format / hook type that has done best so far; `make_reel` with format=auto leans on it once confident.
+records them first. Returns every recorded reel with its score (watch-through and sends per view), `vs_usual`
+(its views over the account's median reel: 3+ = a real hit) and the format / hook type that has done best so
+far; `make_reel` with format=auto leans on it once confident.
 
 | Parameter | Type | Default |
 |---|---|---|

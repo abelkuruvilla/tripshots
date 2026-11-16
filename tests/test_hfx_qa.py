@@ -74,7 +74,7 @@ def test_companion_skills_listed(tmp_path, monkeypatch):
     (tmp_path / "hyperframes").mkdir()
     (tmp_path / "hyperframes" / "SKILL.md").write_text("---\nname: hyperframes\n---\n")
     st = {s["name"]: s for s in companions.status()}
-    assert set(st) == {"hyperframes", "remotion", "one-take", "lemo-opuscar"}
+    assert set(st) == {"hyperframes", "remotion", "one-take", "lemo-opuscar", "instagram-agent"}
     assert st["hyperframes"]["installed"] and not st["remotion"]["installed"]
     assert st["one-take"]["install"] == "npx skills add KaranO-Dev/one-take-skill"
 

@@ -324,15 +324,18 @@ async def reel_results(reel: str | None = None, views: float | None = None, avg_
                        comments: float | None = None) -> dict:
     """How the user's posted reels did, and what works for their audience. With `reel` (a reel's .mp4 or
     .plan.json) and numbers from Instagram Insights (views, avg_watch in seconds, sends = shares, saves...),
-    records them first. Returns every recorded reel with its score (watch-through and sends per view) and the
-    format / hook type that has done best so far; `make_reel` with format=auto leans on it once confident."""
+    records them first. Returns every recorded reel with its score (watch-through and sends per view), `vs_usual`
+    (its views over the account's median reel: 3+ = a real hit) and the format / hook type that has done best so
+    far; `make_reel` with format=auto leans on it once confident."""
     from . import results as R
     if reel and any(v is not None for v in (views, avg_watch, sends, saves, likes, comments)):
         await asyncio.to_thread(R.add, reel, {"views": views, "avg_watch": avg_watch, "sends": sends, "saves": saves,
                                               "likes": likes, "comments": comments})
     rows = R.load()
-    return {"reels": [{"reel": r["reel"], "score": r.get("score"), "features": r.get("features"),
-                       "metrics": r.get("metrics")} for r in rows][-30:], "preferences": R.preferences()}
+    mult = R.multiples(rows)
+    return {"reels": [{"reel": r["reel"], "score": r.get("score"), "vs_usual": mult.get(r["reel"]),
+                       "features": r.get("features"), "metrics": r.get("metrics")} for r in rows][-30:],
+            "preferences": R.preferences()}
 
 
 @mcp.tool()

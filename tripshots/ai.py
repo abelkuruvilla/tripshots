@@ -492,16 +492,43 @@ def clean_line(t: str) -> str:
     return re.sub(r"\.{4,}|…\.+|\.+…", "...", out)  # "dream about...." trails off with three dots, like any line
 
 
+_SPOKEN_NUMBERS = {"two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "twelve", "twenty",
+                   "thirty", "fifty", "hundred", "thousand", "million", "dozen", "half", "zero", "km", "miles", "hours",
+                   "days", "nights", "feet", "meters", "°"}
+# openings that spend the first second saying nothing (greetings, video preambles, asking for attention)
+_DEAD_OPENERS = re.compile(r"(?i)^\s*(?:hey|hi|hello|welcome|so|ok(?:ay)?|today|guys)\b|^\s*(?:stop scrolling|don'?t "
+                           r"scroll)|\bin (?:this|today'?s) (?:video|reel)\b|\bi'?m going to show you\b")
+
+
+def _concrete(words: list[str]) -> list[int]:
+    """Positions of the checkable words in a hook: a figure, a spoken number or unit, a name (a capital that isn't
+    the first word, when the line isn't all in capitals or title case)."""
+    caps = [x for x in words if x[:1].isupper()]
+    named = len(caps) < max(2, 0.7 * len(words))
+    out = []
+    for i, x in enumerate(words):
+        bare = x.strip(".,!?:;'\"").lower()
+        if any(ch.isdigit() for ch in x) or bare in _SPOKEN_NUMBERS or (named and i and x[:1].isupper()):
+            out.append(i)
+    return out
+
+
 def _hook_rules(h: str, fmt: str) -> float:
-    """A cheap second opinion on a hook line (0..10): short, concrete, opens a question, no clichés."""
+    """A cheap second opinion on a hook line (0..10): short, concrete (a number or a name, early in the line),
+    opens a question, no clichés, no greeting or preamble, no emoji or hashtag. Text can't tell which of two good
+    hooks will travel; this catches the weak ones."""
     w = h.split()
     v = 6.0
     v += 1.0 if 2 <= len(w) <= 7 else -2.5
     low = h.lower()
     v -= 2.0 * sum(c in low for c in _CLICHES)
-    v += 0.8 if any(ch.isdigit() for ch in h) else 0.0
+    pos = _concrete(w)
+    v += 0.8 if pos else 0.0
+    v += 0.4 if pos and pos[0] <= 2 else 0.0                     # the interesting word comes first
     v += 0.8 if low.startswith("pov") and fmt in ("pov", "montage") else 0.0
     v += 0.6 if "?" in h or any(x in low for x in ("wait", "nobody", "didn't", "never", "why", "how", "this is")) else 0
+    v -= 3.0 if _DEAD_OPENERS.search(h) else 0.0
+    v -= 1.5 if re.search(r"(?<!\w)#\w", h) or re.search("[\U0001F300-\U0001FAFF☀-➿]", h) else 0.0
     return max(0.0, min(10.0, v))
 
 

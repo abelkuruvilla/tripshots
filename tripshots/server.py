@@ -505,6 +505,24 @@ def allowed(path: Path) -> bool:
     return False
 
 
+def telemetry_post(b: dict) -> dict:
+    """The window's side of telemetry: the user's answer, a new id, its events (views, editor tools) and crashes."""
+    from . import telemetry
+    if "consent" in b:
+        return telemetry.set_consent(bool(b["consent"]))
+    if b.get("action") == "reset":
+        return telemetry.reset_id()
+    if b.get("action") == "send":
+        return telemetry.flush(force=True)
+    n = 0
+    for ev in list(b.get("events") or [])[:50]:
+        if isinstance(ev, dict) and isinstance(ev.get("props", {}), dict):
+            n += telemetry.record(str(ev.get("name")), **(ev.get("props") or {}))
+    if isinstance(b.get("crash"), dict):
+        telemetry.outside_crash(b["crash"], "ui")
+    return {"recorded": n}
+
+
 # ------------------------------------------------------------------ HTTP
 class Handler(BaseHTTPRequestHandler):
     server_version = f"tripshots/{__version__}"
@@ -618,6 +636,13 @@ class Handler(BaseHTTPRequestHandler):
                     st = jobs.status(m.group(1))
                     st["log"] = jobs.log_tail(m.group(1), int(arg("lines", "40")))
                     return self._json(st)
+                if path == "/api/telemetry":   # the user's answer, what was sent, what is waiting
+                    from . import telemetry
+                    return self._json({**telemetry.status(), "sent": telemetry.sent_log(int(arg("n", "30"))),
+                                       "errors": telemetry.recent_errors(5)})
+                if path == "/api/report":   # exactly what Report a problem would send, before it is sent
+                    from . import telemetry
+                    return self._json(telemetry.report_payload(arg("message"), arg("email"), arg("diagnostics", "1") == "1"))
                 if path == "/api/selection":
                     from . import catalog
                     sel = catalog.load_selection(arg("id"))
@@ -650,6 +675,12 @@ class Handler(BaseHTTPRequestHandler):
                 if path in ("/api/undo", "/api/redo"):
                     from .planedit import step
                     return self._json(step(_plan(str(b.get("plan"))), back=path == "/api/undo"))
+                if path == "/api/telemetry":   # consent, a new id, events and crashes from the window
+                    return self._json(telemetry_post(b))
+                if path == "/api/report":
+                    from . import telemetry
+                    return self._json(telemetry.send_report(str(b.get("message") or ""), str(b.get("email") or ""),
+                                                            bool(b.get("diagnostics", True))))
                 if path == "/api/ai/test":
                     return self._json(ai_test(str(b.get("provider"))))
                 if path == "/api/caption":
@@ -662,6 +693,11 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             return None
         except Exception as e:  # the app shows it; the server keeps running
+            try:
+                from . import telemetry
+                telemetry.crash(e, f"api:{u.path}")
+            except Exception:
+                pass
             return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
 
     def _file(self, path: Path, trusted: bool = False):
@@ -728,6 +764,9 @@ def serve(port: int = 0, token: str | None = None, watch_stdin: bool = False) ->
     httpd = ThreadingHTTPServer(("127.0.0.1", int(port)), Handler)
     httpd.daemon_threads = True
     url = f"http://127.0.0.1:{httpd.server_address[1]}"
+    from . import telemetry
+    os.environ.setdefault("TRIPSHOTS_VIA", "app")   # the jobs it starts count as the app's
+    telemetry.start_background()
     print(json.dumps({"url": url, "version": __version__}), flush=True)
     if watch_stdin:
         threading.Thread(target=_exit_with_parent, daemon=True).start()

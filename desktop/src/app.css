@@ -163,6 +163,10 @@ b, strong { font-weight: 500; }
 .field { margin-bottom: 20px; }
 .field:last-child { margin-bottom: 0; }
 .check { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 400; font-size: 13px; }
+/* a checkbox with a sentence of explanation: the box, then the words wrapping as one paragraph */
+.check.long { align-items: flex-start; }
+.check.long > input { flex: none; margin-top: 2px; }
+.check.long > span { min-width: 0; }
 
 /* ---- segmented control and tabs: a raised track, the chosen one a card */
 .seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--raised); border-radius: var(--r-ctl); }

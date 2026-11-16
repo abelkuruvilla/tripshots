@@ -6,6 +6,22 @@ use std::sync::Mutex;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, State};
 
+/// A crash note for the engine to pass on with the next batch (only if the user said yes to crash reports; the
+/// engine reads ~/.tripshots/telemetry/pending and removes the user's paths). The app can't send it itself: a
+/// panic ends it, and an engine that won't start can't send anything.
+fn note_crash(kind: &str, message: &str, place: &str) {
+    let home = std::env::var_os("TRIPSHOTS_HOME").map(std::path::PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".tripshots")));
+    let Some(dir) = home.map(|h| h.join("telemetry").join("pending")) else { return };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let note = serde_json::json!({ "type": kind, "message": message.chars().take(400).collect::<String>(), "where": place,
+                                   "frames": [format!("shell {}", env!("CARGO_PKG_VERSION"))] });
+    let _ = std::fs::write(dir.join(format!("{ts}.json")), note.to_string());
+}
+
 #[derive(Default)]
 struct AppState {
     engine: Mutex<Option<engine::Running>>,
@@ -62,7 +78,10 @@ async fn engine_start(app: AppHandle, state: State<'_, AppState>, restart: Optio
             *state.engine.lock().unwrap() = Some(r);
             Ok(snapshot(&app, &state, None))
         }
-        Err(e) => Ok(snapshot(&app, &state, Some(e))),
+        Err(e) => {
+            note_crash("EngineStart", &e, "engine_start");
+            Ok(snapshot(&app, &state, Some(e)))
+        }
     }
 }
 
@@ -121,6 +140,14 @@ fn open_terminal(action: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = info.payload().downcast_ref::<&str>().map(|s| s.to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
+        let place = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+        note_crash("panic", &msg, &place);
+        default_hook(info);
+    }));
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

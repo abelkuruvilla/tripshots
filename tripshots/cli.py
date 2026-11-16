@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from . import util
@@ -1056,7 +1057,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("doctor", help="check dependencies").set_defaults(fn=cmd_doctor)
 
+    tl = sub.add_parser("telemetry", help="anonymous usage counts and crash reports: status, on, off, what was sent "
+                                          "(docs/privacy.md)")
+    tl.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "log", "reset", "send"],
+                    help="status (default), on / off (your answer), log (what was sent and what is waiting), "
+                         "reset (a new anonymous id), send (send what is waiting now)")
+    tl.set_defaults(fn=cmd_telemetry)
+
     return p
+
+
+def cmd_telemetry(a) -> None:
+    from . import telemetry
+    print(json.dumps(telemetry.cli(a.action), indent=1))
+
+
+def _flags(p, a, argv) -> list[str]:
+    """The option names used on this run (never their values), for the usage counts."""
+    try:
+        sp = p._subparsers._group_actions[0].choices[a.cmd]
+        known = set(sp._option_string_actions)
+    except (AttributeError, KeyError, IndexError):
+        return []
+    out = []
+    for tok in argv:
+        name = tok.split("=", 1)[0]
+        if name.startswith("--") and name in known and name not in out:
+            out.append(name[2:])
+    return out
 
 
 def _run(p, a) -> None:
@@ -1067,13 +1095,32 @@ def _run(p, a) -> None:
         if not a.inputs and a.fn is not cmd_analyze:  # analyze defaults to the footage folders
             p.error("no input folders given")
     util.VERBOSE = a.verbose
+    from . import telemetry
+    t0, ok, err = time.time(), False, None
     try:
         a.fn(a)
+        ok = True
     except util.ReelError as e:
         util.log(f"error: {e}")
+        err = "ReelError"
+        telemetry.crash(e, f"cli:{a.cmd}", handled=True)
         sys.exit(2)
     except KeyboardInterrupt:
+        err = "cancelled"
         sys.exit(130)
+    except Exception as e:
+        err = type(e).__name__
+        telemetry.crash(e, f"cli:{a.cmd}")
+        raise
+    finally:
+        if a.cmd not in ("serve", "mcp", "telemetry"):   # long-running servers count their own way
+            try:
+                telemetry.record("command", cmd=a.cmd, ok=ok, secs=telemetry.bucket(time.time() - t0),
+                                 via=os.environ.get("TRIPSHOTS_VIA", "cli"), flags=_flags(p, a, sys.argv[1:]),
+                                 error=err)
+                telemetry.flush_if_due()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

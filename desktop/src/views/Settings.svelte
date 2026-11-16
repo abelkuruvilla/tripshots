@@ -7,6 +7,7 @@
   import { theme, applyTheme } from "../lib/theme.svelte.js";
   import Icon from "../lib/Icon.svelte";
   import AiSetup from "./AiSetup.svelte";
+  import Privacy from "./Privacy.svelte";
   import { onMount } from "svelte";
 
   const st = app.status || {};
@@ -34,6 +35,14 @@
     const id = setTimeout(() => save(snapshot), 600);
     return () => clearTimeout(id);
   });
+  // a button's action: its error becomes a toast (defined before anything below uses it)
+  const run = (f) => async () => {
+    try {
+      await f();
+    } catch (e) {
+      toast(String(e.message || e), "error");
+    }
+  };
   // the footage catalogue (tripshots analyze): new files only; "again" re-asks the AI about every shot
   let again = $state(false);
   let detailsOn = $state(true);
@@ -45,7 +54,7 @@
                    again ? "Analyse all footage again" : "Analyse footage");
   });
   const sections = [["ai", "AI"], ["folders", "Folders"], ["analysis", "Footage analysis"], ["appearance", "Appearance"], ["instagram", "Instagram"],
-                    ["outside", "Outside the app"], ["about", "About"]];
+                    ["outside", "Outside the app"], ["privacy", "Privacy"], ["about", "About"]];
   const go = (id) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
   let engineUpdate = $state(null);
   let cli = $state(null);
@@ -76,13 +85,6 @@
       saving = false;
     }
   }
-  const run = (f) => async () => {
-    try {
-      await f();
-    } catch (e) {
-      toast(String(e.message || e), "error");
-    }
-  };
   const checkEngine = run(async () => (engineUpdate = await invoke("engine_check_update")));
   const updateEngine = run(async () => {
     toast("Updating the engine", "info");
@@ -143,11 +145,11 @@
           what the AI sees in it. That is what finding footage and picking shots use. Reels analyse their own footage as they
           go; this catalogues everything in your footage folders ahead of time, so searches and new reels start faster.</p>
         <p class="quiet small">Already-analysed files are skipped, so running it again only does the new ones.</p>
-        <label class="check"><input type="checkbox" bind:checked={detailsOn} /> The extra details
+        <label class="check long"><input type="checkbox" bind:checked={detailsOn} /><span>The extra details
           <span class="hint">· vibe, shot size, angle, faces and best moment from the AI (asked once, without describing shots again);
-          words drawn on pictures, room for titles, crops, movement at the start, loops and sound measured on this Mac</span></label>
-        <label class="check"><input type="checkbox" bind:checked={again} /> Ask the AI again about every shot
-          <span class="hint">· slow; only after a big change to how shots are described</span></label>
+          words drawn on pictures, room for titles, crops, movement at the start, loops and sound measured on this Mac</span></span></label>
+        <label class="check long"><input type="checkbox" bind:checked={again} /><span>Ask the AI again about every shot
+          <span class="hint">· slow; only after a big change to how shots are described</span></span></label>
         <div class="row">
           <button class="btn" onclick={analyse} disabled={!!analysing}>
             {#if analysing}<span class="spin" style="width: 10px; height: 10px; border-width: 1.5px"></span> Analysing{:else}<Icon name="sparkle" size={14} /> {again ? "Analyse everything again" : "Analyse footage"}{/if}</button>
@@ -197,6 +199,8 @@
           <p class="small selectable">Added to Claude Desktop. Restart Claude to use it. For Claude Code run<br /><span class="tc">{claude.claude_code_command}</span></p>
         {/if}
       </section>
+
+      <Privacy />
 
       <section class="surface block" id="about">
         <h2>About</h2>

@@ -650,6 +650,10 @@ def _default_out():
 def main(http: str | None = None) -> None:
     load_env()
     _default_out()
+    from . import telemetry
+    os.environ.setdefault("TRIPSHOTS_VIA", "agent")   # the jobs it starts count as an agent's
+    telemetry.record("feature", name="mcp_start", kind="http" if http else "stdio")
+    telemetry.start_background()
     if not http:
         mcp.run("stdio")
         return

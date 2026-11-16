@@ -1,0 +1,20 @@
+# The TripShots collector. docs/telemetry.md walks through deploying it.
+name = "tripshots-telemetry"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tripshots"
+database_id = "REPLACE_WITH_YOUR_D1_ID"   # printed by: npx wrangler d1 create tripshots
+
+[vars]
+GITHUB_REPO = "abelkuruvilla/tripshots"   # whose release downloads the dashboard shows
+KEEP_DAYS = "395"                          # raw events are deleted after this; installs and crash groups stay
+
+# once a day: release download counts from GitHub, and old events deleted
+[triggers]
+crons = ["17 4 * * *"]
+
+# secrets (never in this file): npx wrangler secret put DASHBOARD_PASSWORD
+#                                npx wrangler secret put GITHUB_TOKEN   (only if the repository is private)

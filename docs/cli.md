@@ -45,6 +45,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`mcp`](#mcp) | run as an MCP server for AI agents (Claude Desktop/Code, OpenClaw, ...) |
 | [`serve`](#serve) | the desktop app's local API (JSON over HTTP on 127.0.0.1, token required) |
 | [`doctor`](#doctor) | check dependencies |
+| [`telemetry`](#telemetry) | anonymous usage counts and crash reports: status, on, off, what was sent (docs/privacy.md) |
 
 ## make
 
@@ -939,4 +940,18 @@ usage: tripshots doctor [-h]
 
 options:
   -h, --help  show this help message and exit
+```
+
+## telemetry
+
+```text
+usage: tripshots telemetry [-h] [{status,on,off,log,reset,send}]
+
+positional arguments:
+  {status,on,off,log,reset,send}
+                        status (default), on / off (your answer), log (what was sent and what is
+                        waiting), reset (a new anonymous id), send (send what is waiting now)
+
+options:
+  -h, --help            show this help message and exit
 ```

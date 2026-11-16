@@ -92,8 +92,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: stamp the version
-        run: python tools/set_version.py ${{ needs.prepare.outputs.version }}
+      - name: stamp the version (and the telemetry collector, when the repository variable TELEMETRY_URL is set)
+        run: python tools/set_version.py ${{ needs.prepare.outputs.version }} --telemetry "${{ vars.TELEMETRY_URL }}"
       - name: install the engine and PyInstaller
         run: |
           python -m pip install --upgrade pip

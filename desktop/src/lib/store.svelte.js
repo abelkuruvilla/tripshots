@@ -2,6 +2,7 @@
 // Rust side chose; every call carries it. Media (<video>, <img>) use ?t= because they can't set headers.
 import { invoke } from "@tauri-apps/api/core";
 import { kindName } from "./steps.js";
+import { track } from "./telemetry.js";
 
 export const app = $state({
   engine: null, // { url, token, version, path, source }
@@ -34,7 +35,12 @@ export async function api(path, body) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const err = new Error(data.error || `${res.status} ${res.statusText}`);
+    err.fromEngine = true;   // the engine already noted its own crashes (telemetry.js skips these)
+    throw err;
+  }
+  if (path === "/api/edit") for (const e of body.edits || []) if (e && e.op) track("edit", { op: String(e.op) });
   return data;
 }
 

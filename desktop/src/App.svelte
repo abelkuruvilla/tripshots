@@ -11,8 +11,23 @@
   import Styles from "./views/Styles.svelte";
   import Jobs from "./views/Jobs.svelte";
   import Settings from "./views/Settings.svelte";
+  import Consent from "./views/Consent.svelte";
+  import { track, watchErrors } from "./lib/telemetry.js";
+  import { api } from "./lib/store.svelte.js";
 
   let booting = $state(true);
+  let asking = $state(false);   // the one-time question about anonymous counts
+  const opened = () => track("app_open", { app: app.engineState?.app_version || "" });
+  async function telemetryStart() {
+    const t = await api("/api/telemetry?n=0").catch(() => null);
+    if (!t) return;
+    if (t.consent == null && t.endpoint && !t.blocked) asking = true;
+    else opened();
+  }
+  // which screen is open (names only)
+  $effect(() => {
+    if (app.engine && !booting) track("view", { view: app.view });
+  });
   const nav = [
     { id: "reels", label: "Projects", icon: "film" },
     { id: "make", label: "Make", icon: "plus" },
@@ -47,12 +62,14 @@
         await refreshReels();
         watchJobs();
         refreshAi();
+        telemetryStart();
       }
     } finally {
       booting = false;
     }
   }
   onMount(() => {
+    watchErrors();
     applyTheme();
     boot();
   });
@@ -120,6 +137,8 @@
       <Settings />
     {/if}
   </main>
+
+  {#if asking}<Consent ondone={(yes) => { asking = false; if (yes) opened(); }} />{/if}
 
   <div class="toasts" role="status" aria-live="polite">
     {#each app.toasts as t (t.id)}

@@ -104,7 +104,8 @@ def reel_detail(plan: Path) -> dict:
                      "light": s.get("grade_note"), "layers": s.get("layers") or [],
                      "backdrop": (s.get("backdrop") or {}).get("mode"), "people": bool(s.get("people")),
                      "stabilize": bool(s.get("stabilize")), "freeze": bool(s.get("freeze")),
-                     "reverse": bool(s.get("reverse")), "effect": s.get("effect"), "log": s.get("log")})
+                     "reverse": bool(s.get("reverse")), "effect": s.get("effect"), "log": s.get("log"),
+                     "keys": s.get("keys") or []})
     from .planedit import history, texts as plan_texts
     cap = _side(plan, ".caption.txt")
     music = p.get("music") or {}
@@ -118,7 +119,9 @@ def reel_detail(plan: Path) -> dict:
             "grading": {k: (p.get("grade") or {}).get(k) for k in ("look", "strength", "grain", "vignette", "why")},
             "beat_punch": (p.get("motion") or {}).get("beat_punch"),
             "sound_sheet": _side(plan, ".sound.jpg"), "grade": _side(plan, ".grade.jpg"),
-            "draft": _draft(plan), "effects": p.get("effects")}
+            "draft": _draft(plan), "effects": p.get("effects"),
+            "pips": [{"index": k + 1, **{x: q.get(x) for x in ("shot_id", "kind", "start", "dur", "x", "y", "scale", "thumb")}}
+                     for k, q in enumerate(p.get("pips") or [])]}
 
 
 def _draft(plan: Path) -> str | None:

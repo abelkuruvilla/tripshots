@@ -63,6 +63,10 @@
     } else if (drag.kind === "trim") {
       const end = e.altKey ? frames(it.start + it.dur + dx / pps) : snapBeat(it.start + it.dur + dx / pps);
       drag.value = Math.max(4 / 30, end - it.start);
+    } else if (drag.kind === "pmove") {
+      drag.value = Math.max(0, Math.min(total - 0.5, frames(it.start + dx / pps)));
+    } else if (drag.kind === "plen") {
+      drag.value = Math.max(0.5, Math.min(total - it.start, frames(it.dur + dx / pps)));
     } else if (drag.kind === "tmove") {
       drag.value = Math.max(0, Math.min(total - it.duration, frames(it.start + dx / pps)));
     } else if (drag.kind === "tlen") {
@@ -78,6 +82,8 @@
     if (d.kind === "reorder" && d.value !== d.item.slot) edit({ op: "move", from: d.item.slot, to: d.value });
     if (d.kind === "trim" && Math.abs(d.value - d.item.dur) > 0.01) edit({ op: "duration", segment: d.item.slot, dur: d.value });
     if (d.kind === "ltrim" && Math.abs(d.value) > 0.01) edit({ op: "trim", segment: d.item.slot, side: "left", by: d.value });
+    if (d.kind === "pmove") edit({ op: "pip_edit", index: d.item.index, start: d.value }, true);
+    if (d.kind === "plen") edit({ op: "pip_edit", index: d.item.index, dur: d.value }, true);
     if (d.kind === "tmove") edit({ op: "edit_text", index: d.item.index, start: d.value }, true);
     if (d.kind === "tlen") edit({ op: "edit_text", index: d.item.index, duration: d.value }, true);
   }
@@ -121,6 +127,23 @@
                 onclick={(e) => (e.stopPropagation(), onseek(n.t), (ed.tab = "notes"))}></button>
       {/each}
     </div>
+
+    {#if reel.pips?.length}
+      <div class="pips" aria-label="Pictures in picture">
+        {#each reel.pips as q (q.index)}
+          {@const st = drag?.kind === "pmove" && drag.item.index === q.index && drag.value != null ? drag.value : q.start}
+          {@const du = drag?.kind === "plen" && drag.item.index === q.index && drag.value != null ? drag.value : q.dur}
+          <div class="pip" class:sel={ed.sel?.kind === "pip" && ed.sel.index === q.index} style="left: {x(st)}px; width: {Math.max(8, x(du) - 2)}px">
+            <button class="pbody" title={`Picture in picture ${q.index}: ${q.shot_id}`}
+                    onpointerdown={(e) => begin(e, "pmove", q)} onpointerup={(e) => end(e, () => (select({ kind: "pip", index: q.index }), onseek(q.start + 0.1)))}>
+              {#if q.thumb}<img src={media(q.thumb)} alt="" draggable="false" />{/if}<span class="meta">On top</span>
+            </button>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="whandle" onpointerdown={(e) => begin(e, "plen", q)} onpointerup={(e) => end(e)}></div>
+          </div>
+        {/each}
+      </div>
+    {/if}
 
     <div class="clips">
       {#each reel.segments as s (s.slot + ":" + s.shot_id + ":" + s.start)}
@@ -204,6 +227,12 @@
   .slot:hover .handle::after { opacity: 0.9; }
   .drop { position: absolute; top: -3px; height: 86px; border: 2px solid var(--accent); border-radius: 6px; pointer-events: none; }
   .words { position: relative; margin-top: 22px; }
+  .pips { position: relative; height: 30px; margin-bottom: 6px; }
+  .pip { position: absolute; top: 0; height: 28px; }
+  .pbody { width: 100%; height: 100%; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 0; overflow: hidden; border: 0; border-radius: 4px;
+           background: var(--raised); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: grab; color: var(--text-2); font-size: 11px; }
+  .pbody img { height: 100%; aspect-ratio: 16 / 9; object-fit: cover; pointer-events: none; }
+  .pip.sel .pbody { box-shadow: inset 0 0 0 2px var(--accent); }
   .word { position: absolute; height: 24px; }
   .wbody {
     width: 100%; height: 100%; border: 0; border-radius: 4px; padding: 0 8px; text-align: left; cursor: grab; font-size: 12px;

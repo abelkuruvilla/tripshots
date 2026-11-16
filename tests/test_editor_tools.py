@@ -116,3 +116,59 @@ def test_the_draft_leaves_out_sound_motion_text_and_checks():
     plan = draft_plan({"segments": [], "sound": {"sfx": "on", "level_db": 2}, "frame": {}})
     assert plan["sound"] == {"sfx": "off", "ambience": "off", "level_db": 2}
     assert plan["text"]["motion"] == "off" and plan["qa"] == "off" and plan["frame"] == {}
+
+
+def test_keyframes_zoom_onto_a_point_and_ease_between():
+    from tripshots.motion import apply_keys, keyframe_at
+    keys = [{"t": 0.0, "zoom": 1.0, "x": 0.5, "y": 0.5}, {"t": 1.0, "zoom": 2.0, "x": 0.25, "y": 0.25, "ease": "linear"}]
+    assert keyframe_at(keys, -1) == (1.0, 0.5, 0.5) and keyframe_at(keys, 5) == (2.0, 0.25, 0.25)
+    z, x, y = keyframe_at(keys, 0.5)
+    assert z == pytest.approx(1.5) and x == pytest.approx(0.375)
+    img = np.zeros((200, 100, 3), np.uint8)
+    img[:100, :50] = 255     # the top-left quarter is white
+    out = apply_keys(img, [{"t": 0, "zoom": 2.0, "x": 0.25, "y": 0.25}], 0.0)
+    assert out.mean() > 240                       # zoomed onto it, it fills the frame
+    edge = apply_keys(img, [{"t": 0, "zoom": 2.0, "x": 0.0, "y": 0.0}], 0.0)
+    assert np.array_equal(edge, out)              # never past the picture's edge
+
+
+def test_pictures_in_picture_are_added_edited_and_cut_with_the_reel(tmp_path, quiet):
+    p = _video_plan(tmp_path)
+    planedit.apply(p, [{"op": "pip_add", "shot_id": "V2", "start": 1.0, "dur": 2.0},
+                       {"op": "pip_add", "shot_id": "V1", "start": 4.5, "dur": 3.0}])
+    plan = json.loads(p.read_text())
+    assert len(plan["pips"]) == 2 and plan["pips"][0]["in"] >= 0 and plan["pips"][1]["dur"] == 1.5   # ends with the reel
+    planedit.apply(p, [{"op": "pip_edit", "index": 1, "x": 0.2, "scale": 0.6, "start": 0.5},
+                       {"op": "keyframe", "segment": 1, "t": 1.0, "zoom": 1.5, "x": 0.3},
+                       {"op": "keyframe", "segment": 1, "t": 0.0}])
+    plan = json.loads(p.read_text())
+    assert plan["pips"][0]["x"] == 0.2 and plan["pips"][0]["scale"] == 0.6 and plan["pips"][0]["start"] == 0.5
+    assert [k["t"] for k in plan["segments"][0]["keys"]] == [0.0, 1.0]
+    planedit.apply(p, [{"op": "delete", "segment": 3}, {"op": "pip_delete", "index": 1}])
+    plan = json.loads(p.read_text())
+    assert plan["pips"] == []                  # the second one started after the new end
+    with pytest.raises(ReelError):
+        planedit.apply(p, [{"op": "pip_edit", "index": 4, "x": 0.1}])
+
+
+@needs_ffmpeg
+def test_a_picture_in_picture_renders_in_its_corner(tmp_path):
+    from tripshots.config import CANVAS
+    from tripshots.framing import set_canvas
+    from tripshots.render import Pips, pip_box
+    set_canvas(False)
+    src = tmp_path / "red.mp4"
+    ff("-f", "lavfi", "-i", "color=c=red:s=320x180:r=30:d=2", "-c:v", "libx264", "-preset", "ultrafast",
+       "-pix_fmt", "yuv420p", src)
+    p = {"kind": "video", "src": str(src), "in": 0.0, "start": 0.5, "dur": 1.0, "x": 0.72, "y": 0.28, "scale": 0.4,
+         "src_w": 320, "src_h": 180}
+    pips = Pips({"pips": [p], "color": {}}, tmp_path)
+    try:
+        base = np.zeros((CANVAS.h, CANVAS.w, 3), np.uint8)
+        assert np.array_equal(pips.draw(base.copy(), 5), base)          # not on screen yet
+        out = pips.draw(base.copy(), 30)
+        x, y, w, h = pip_box(p)
+        mid = out[y + h // 2, x + w // 2]
+        assert mid[0] > 180 and mid[1] < 60 and out[10, 10].sum() == 0
+    finally:
+        pips.close()

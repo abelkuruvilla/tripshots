@@ -35,6 +35,12 @@ The timeline (expert mode; times snap to whole frames, later text moves with the
   {"op": "duplicate", "segment": 3}
   {"op": "effect", "segment": 3, "id": "glow", "amount": 0.5}   a video effect on a shot (vfx.py; id null removes)
   {"op": "auto_effects"}                                     let the effects director choose again (fxlib.py)
+  {"op": "keyframe", "segment": 3, "t": 0.5, "zoom": 1.6, "x": 0.4, "y": 0.5, "ease": "out"}
+      zoom 1.6x onto that point of the picture at 0.5 s into the slot (eased between keyframes; "remove": true
+      drops the one at t, "clear": true all of them)
+  {"op": "pip_add", "shot_id": "S040", "start": 3.0, "dur": 2.0, "x": 0.72, "y": 0.28, "scale": 0.4}
+      another shot on top (x, y its centre, scale its width); {"op": "pip_edit", "index": 1, ...},
+      {"op": "pip_delete", "index": 1}
   {"op": "log", "segment": 3, "profile": "dlog"}             flat log footage made normal (camlog.py; auto, or null = as filmed)
   {"op": "insert", "after": 2, "shot_id": "S040", "dur": 1.2}    a new slot (after 0 = at the start)
   {"op": "music", "start": 12.0, "gain_db": -3, "fade_out": 1.2}  where the song starts, its level
@@ -257,6 +263,13 @@ def retime(plan: dict) -> None:
             o["duration"] = round(min(float(o["duration"]), t - st), 4)
         keep.append(o)
     plan["overlays"] = keep
+    pips = []
+    for pp in plan.get("pips") or []:
+        if float(pp.get("start", 0)) < t - 0.3:
+            pp["dur"] = round(min(float(pp["dur"]), t - float(pp["start"])), 4)
+            pips.append(pp)
+    if "pips" in plan:
+        plan["pips"] = pips
     if plan.get("freeze") and float(plan["freeze"].get("t", 0)) >= t:
         plan.pop("freeze")
     if plan["segments"]:
@@ -707,6 +720,70 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
                     n += 1
             regrade = True
             done.append(f"camera log {prof or 'off'} on " + (f"{n} clips" if ed.get("segment") == "all" else f"slot {targets[0] + 1}"))
+        elif op == "keyframe":   # zoom and position over time inside one shot (motion.apply_keys)
+            i = _slot(plan, ed["segment"])
+            sg = segs[i]
+            if sg.get("panel"):
+                raise ReelError(f"slot {i + 1} is a split screen: keyframe its panels' shots instead")
+            keys = [dict(k) for k in sg.get("keys") or []]
+            if ed.get("clear"):
+                keys = []
+            else:
+                t = _frames(max(0.0, min(float(sg["dur"]), float(ed.get("t", 0.0)))), 0)
+                keys = [k for k in keys if abs(float(k["t"]) - t) > 0.5 / FPS]
+                if not ed.get("remove"):
+                    from .motion import EASES
+                    k = {"t": t, "zoom": round(max(1.0, min(4.0, float(ed.get("zoom", 1.0)))), 3),
+                         "x": round(max(0.0, min(1.0, float(ed.get("x", 0.5)))), 4),
+                         "y": round(max(0.0, min(1.0, float(ed.get("y", 0.5)))), 4)}
+                    if ed.get("ease") in EASES:
+                        k["ease"] = ed["ease"]
+                    keys.append(k)
+            keys.sort(key=lambda k: k["t"])
+            if keys:
+                sg["keys"] = keys
+            else:
+                sg.pop("keys", None)
+            done.append(f"slot {i + 1}: {len(keys)} keyframe(s)")
+        elif op == "pip_add":   # another shot on top, in a corner (render.Pips)
+            sh = shots.get(ed.get("shot_id"))
+            if not sh:
+                raise ReelError(f"unknown shot {ed.get('shot_id')} (see the plan's shot candidates)")
+            total = sum(float(x["dur"]) for x in segs)
+            start = _frames(max(0.0, min(float(ed.get("start", 0.0)), total - 0.5)), 0)
+            dur = _frames(max(0.5, min(float(ed.get("dur", 2.0)), total - start)), 4)
+            pip = {"shot_id": sh["id"], "kind": sh["kind"], "src": sh["src"], "start": start, "dur": dur,
+                   "x": round(float(ed.get("x", 0.72)), 4), "y": round(float(ed.get("y", 0.28)), 4),
+                   "scale": round(max(0.15, min(1.0, float(ed.get("scale", 0.4)))), 3),
+                   "src_w": sh.get("w"), "src_h": sh.get("h"), "thumb": sh.get("thumb")}
+            if sh["kind"] == "video":
+                from .planner import _best_window
+                pip.update({"in": round(_best_window(sh, dur), 3), "hdr": sh.get("hdr", False),
+                            "transfer": sh.get("transfer")})
+            else:
+                pip["still"] = sh.get("still") or sh["src"]
+            plan.setdefault("pips", []).append(pip)
+            done.append(f"picture in picture {len(plan['pips'])}: {sh['id']} at {start:.2f}s")
+        elif op in ("pip_edit", "pip_delete"):
+            pips = plan.get("pips") or []
+            k = int(ed.get("index", 0)) - 1
+            if not 0 <= k < len(pips):
+                raise ReelError(f"picture in picture {ed.get('index')} doesn't exist (1..{len(pips)})")
+            if op == "pip_delete":
+                pips.pop(k)
+                done.append(f"picture in picture {k + 1} removed")
+            else:
+                pp = pips[k]
+                total = sum(float(x["dur"]) for x in segs)
+                for key, lo, hi in (("x", 0.0, 1.0), ("y", 0.0, 1.0), ("scale", 0.15, 1.0), ("round", 0.0, 0.5)):
+                    if key in ed:
+                        pp[key] = round(max(lo, min(hi, float(ed[key]))), 4)
+                if "start" in ed:
+                    pp["start"] = _frames(max(0.0, min(float(ed["start"]), total - 0.5)), 0)
+                if "dur" in ed or "start" in ed:
+                    pp["dur"] = _frames(max(0.5, min(float(ed.get("dur", pp["dur"])), total - pp["start"])), 4)
+                done.append(f"picture in picture {k + 1} changed")
+            plan["pips"] = pips
         elif op == "auto_effects":   # the effects director again (fxlib.direct): AI if there is one, else rules
             from . import fxlib
             from .ai import get_backend

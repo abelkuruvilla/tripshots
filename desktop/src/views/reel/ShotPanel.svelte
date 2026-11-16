@@ -5,8 +5,9 @@
   import { tc } from "../../lib/store.svelte.js";
   import { ed, edit, frames, select } from "./editor.svelte.js";
   import FxPicker from "./FxPicker.svelte";
+  import PipPanel from "./PipPanel.svelte";
 
-  let { onpick, oninsert } = $props();
+  let { onpick, oninsert, onontop } = $props();
   const ramps = [[null, "None"], ["velocity", "Velocity"], ["slam", "Slam"], ["bullet", "Bullet"], ["rush", "Rush"], ["impact", "Impact"], ["surge", "Surge"]];
   const layouts = [["crop", "Crop to the subject"], ["pan", "Pan across"], ["blur_fill", "Whole frame, blurred behind"], ["fill", "Fill (already upright)"]];
   const roles = { hook: "Opening", setup: "Setup", build: "Build", peak: "Peak", release: "Release", ending: "Ending" };
@@ -19,6 +20,15 @@
   let plain = $derived(video && !s.ramp && !s.freeze); // a moving clip without a ramp: it can be held or turned round
 
   let amount = $state(0.6);
+  // zoom and position at the playhead (keyframes): what the picture is set to there
+  let kz = $state(1);
+  let kx = $state(0.5);
+  let ky = $state(0.5);
+  let keyAt = $derived(s ? (s.keys || []).find((k) => Math.abs(k.t - inside) < 0.02) : null);
+  $effect(() => {
+    if (keyAt) ((kz = keyAt.zoom), (kx = keyAt.x), (ky = keyAt.y));
+  });
+  const keyHere = () => op({ op: "keyframe", t: frames(Math.max(0, Math.min(s.dur, inside))), zoom: +kz, x: +kx, y: +ky }, true);
   let dur = $state(1);
   let speed = $state(1);
   let from = $state(0);
@@ -48,7 +58,9 @@
   }
 </script>
 
-{#if !s}
+{#if ed.sel?.kind === "pip"}
+  <PipPanel />
+{:else if !s}
   <div class="none">
     <Icon name="film" size={18} />
     <p>Select a shot on the timeline to change its length, speed, framing, transition or effect</p>
@@ -85,6 +97,7 @@
       <button class="btn sm" onclick={() => op({ op: "duplicate" })}><Icon name="copy" size={14} /> Repeat</button>
       <button class="btn sm" onclick={() => onpick(s)}><Icon name="swap" size={14} /> Replace</button>
       <button class="btn sm" onclick={() => oninsert(s.slot)}><Icon name="plus" size={14} /> Add after</button>
+      <button class="btn sm" onclick={() => onontop?.()} title="Put another shot on top, in a corner, from the playhead"><Icon name="plus" size={14} /> On top</button>
       <div class="spacer"></div>
       <button class="btn sm ghost danger" onclick={() => op({ op: "delete" })} disabled={reel.segments.length < 2}><Icon name="trash" size={14} /> Remove</button>
     </div>
@@ -134,6 +147,42 @@
   </section>
 
   {#if !s.panel}
+    <section class="panel">
+      <div class="row">
+        <h3>Zoom and position</h3>
+        <span class="meta">{(s.keys || []).length ? `${s.keys.length} keyframe${s.keys.length > 1 ? "s" : ""}` : ""}</span>
+      </div>
+      <div class="grid3">
+        <div class="field">
+          <label for="kz">Zoom <span class="hint">· {(+kz).toFixed(2)}×</span></label>
+          <input id="kz" type="range" min="1" max="3" step="0.05" bind:value={kz} onchange={() => (keyAt || s.keys?.length) && keyHere()} />
+        </div>
+        <div class="field">
+          <label for="kx">Across</label>
+          <input id="kx" type="range" min="0" max="1" step="0.01" bind:value={kx} onchange={() => (keyAt || s.keys?.length) && keyHere()} />
+        </div>
+        <div class="field">
+          <label for="ky">Down</label>
+          <input id="ky" type="range" min="0" max="1" step="0.01" bind:value={ky} onchange={() => (keyAt || s.keys?.length) && keyHere()} />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn sm" onclick={keyHere} title="Set the zoom and position at the playhead; the picture moves smoothly between keyframes">
+          <Icon name="plus" size={14} /> Keyframe here</button>
+        {#if keyAt}<button class="btn sm ghost" onclick={() => op({ op: "keyframe", t: keyAt.t, remove: true }, true)}>Remove this one</button>{/if}
+        {#if s.keys?.length}<button class="btn sm ghost" onclick={() => op({ op: "keyframe", clear: true }, true)}>Clear all</button>{/if}
+      </div>
+      {#if s.keys?.length}
+        <div class="keys">
+          {#each s.keys as k}
+            <button class="kchip" class:on={keyAt?.t === k.t} onclick={() => ed.now = s.start + k.t + 0.001}>{tc(k.t)} · {k.zoom}×</button>
+          {/each}
+        </div>
+      {:else}
+        <p class="quiet small help">Two keyframes make a move: a slow push in onto a face, a pan across a skyline</p>
+      {/if}
+    </section>
+
     <section class="panel">
       <h3>Effect</h3>
       <FxPicker kind="effect" slot={s.slot} value={s.effect?.id} onpick={(id) => op({ op: "effect", id, amount: +amount })} />
@@ -192,6 +241,10 @@
   .marks { display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px; }
   .sub { margin-top: 8px; font-size: 12px; color: var(--text-2); }
   .help { margin-top: 8px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .keys { display: flex; flex-wrap: wrap; gap: 6px; }
+  .kchip { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--card); color: var(--text-2); cursor: pointer; }
+  .kchip.on { border-color: var(--accent); color: var(--accent); }
   .why { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
   input[type="range"] { margin-top: 8px; }
   kbd { height: 16px; min-width: 16px; font-size: 10px; }

@@ -66,7 +66,10 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
     beats on the ruler, drag a shot to another place, drag its right edge to change its length (it snaps to the
     beat; hold Alt for single frames) or its left edge to trim its start (the end of the clip stays where it
     was). **Shot**: move it earlier or later, split at the playhead (S), hold the frame at the playhead for a
-    second (F, a freeze frame), play the clip backwards (R), repeat,
+    second (F, a freeze frame), play the clip backwards (R), **On top** (another shot in a corner from the playhead: a
+    picture in picture with its own lane on the timeline, where you drag it or its end; select it to place it in a
+    corner or anywhere, size it and set its length), **Zoom and position** (set zoom and where the picture sits, then
+    **Keyframe here**; the picture moves smoothly between keyframes, e.g. a slow push in onto a face), repeat,
     replace, add a shot after it, remove it, its length, which part of the clip plays, speed and speed ramps, the
     transition into the next shot and an effect on the shot (pickers that draw each one on your own shots, filtered
     by energy; with no shot selected, **Choose effects with AI**: see [the effects library](effects.md)), framing (crop, pan, whole frame). **Sound**: where the song starts, the music

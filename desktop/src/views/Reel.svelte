@@ -176,6 +176,11 @@
     cands = [];
     cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
   }
+  async function addOnTop() {
+    picking = { mode: "pip" };
+    cands = [];
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
+  }
   async function insertAfter(slot) {
     picking = { mode: "insert", after: slot };
     cands = [];
@@ -185,7 +190,10 @@
     const p = picking;
     picking = null;
     if (p.mode === "swap") await edit({ op: "swap", segment: p.seg.slot, shot_id: shot.id });
-    else {
+    else if (p.mode === "pip") {
+      const res = await edit({ op: "pip_add", shot_id: shot.id, start: frames(Math.max(0, ed.now)), dur: 2 });
+      if (res) select({ kind: "pip", index: ed.reel.pips.length });
+    } else {
       const res = await edit({ op: "insert", after: p.after, shot_id: shot.id, dur: 1.5 });
       if (res) select({ kind: "clip", slot: p.after + 1 });
     }
@@ -235,6 +243,9 @@
       if (sel.kind === "text") {
         ed.sel = null;
         edit({ op: "delete_text", index: sel.index });
+      } else if (sel.kind === "pip") {
+        ed.sel = null;
+        edit({ op: "pip_delete", index: sel.index });
       } else if (ed.expert && reel.segments.length > 1) {
         ed.sel = null;
         edit({ op: "delete", segment: sel.slot });
@@ -328,7 +339,7 @@
           {/each}
         </div>
         <div class="pane" id="tabpanel" role="tabpanel" aria-labelledby={`tab-${ed.tab}`}>
-          {#if ed.tab === "shot"}<ShotPanel onpick={pick} oninsert={insertAfter} />
+          {#if ed.tab === "shot"}<ShotPanel onpick={pick} oninsert={insertAfter} onontop={addOnTop} />
           {:else if ed.tab === "text"}<TextPanel />
           {:else if ed.tab === "colour"}<ColourPanel />
           {:else if ed.tab === "sound"}<SoundPanel />
@@ -354,12 +365,14 @@
   <div class="overlay" onclick={(e) => e.target === e.currentTarget && (picking = null)}>
     <div class="drawer" role="dialog" aria-modal="true" aria-label="Choose a shot" tabindex="-1">
       <div class="row">
-        <h2>{picking.mode === "swap" ? `Replace shot ${picking.seg.slot}` : `Add a shot after shot ${picking.after}`}</h2>
+        <h2>{picking.mode === "swap" ? `Replace shot ${picking.seg.slot}` : picking.mode === "pip" ? "Put a shot on top" : `Add a shot after shot ${picking.after}`}</h2>
         {#if picking.mode === "swap"}<span class="meta">{tc(picking.seg.dur)}</span>{/if}
         <div class="spacer"></div>
         <button class="btn ghost icon" onclick={() => (picking = null)} aria-label="Close"><Icon name="x" /></button>
       </div>
-      <p class="muted">{picking.mode === "swap" ? "The best shots of this reel's footage. The slot keeps its length and its place on the beat" : "It comes in for 1.5 s; change its length in the Shot tab"}</p>
+      <p class="muted">{picking.mode === "swap" ? "The best shots of this reel's footage. The slot keeps its length and its place on the beat"
+        : picking.mode === "pip" ? "It appears in a corner at the playhead for 2 s; move it, size it and set its length in the Shot tab"
+        : "It comes in for 1.5 s; change its length in the Shot tab"}</p>
       {#if !cands.length}<div class="empty"><span class="spin"></span></div>{/if}
       <div class="cands">
         {#each cands as c}

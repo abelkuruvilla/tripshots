@@ -842,6 +842,36 @@ EASE_EXPR = {
 }
 
 
+def keyframe_at(keys: list[dict], t: float) -> tuple[float, float, float]:
+    """(zoom, x, y) at t seconds into a shot from its keyframes [{t, zoom, x, y, ease}]: x, y is the point of the
+    picture (0..1) held in the middle of the frame. Eased from each keyframe to the next by that keyframe's ease."""
+    ks = sorted(keys, key=lambda k: float(k.get("t", 0)))
+    def val(k):
+        return float(k.get("zoom", 1.0)), float(k.get("x", 0.5)), float(k.get("y", 0.5))
+    if t <= float(ks[0].get("t", 0)):
+        return val(ks[0])
+    for a, b in zip(ks, ks[1:]):
+        ta, tb = float(a.get("t", 0)), float(b.get("t", 0))
+        if t <= tb:
+            u = ease(a.get("ease") or "sine", (t - ta) / max(1e-6, tb - ta))
+            va, vb = val(a), val(b)
+            return tuple(x + (y - x) * u for x, y in zip(va, vb))
+    return val(ks[-1])
+
+
+def apply_keys(img: np.ndarray, keys: list[dict] | None, t: float) -> np.ndarray:
+    """A shot's zoom and position keyframes on one frame (the picture never leaves an edge uncovered)."""
+    if not keys:
+        return img
+    z, x, y = keyframe_at(keys, t)
+    z = max(1.0, z)
+    lim = 0.5 - 0.5 / z   # how far from the middle the held point may be at this zoom
+    x = 0.5 + max(-lim, min(lim, x - 0.5))
+    y = 0.5 + max(-lim, min(lim, y - 0.5))
+    h, w = img.shape[:2]
+    return affine(img, z, 0.0, -(x - 0.5) * w * z, -(y - 0.5) * h * z)
+
+
 def ease(name: str | None, u: float) -> float:
     u = max(0.0, min(1.0, u))
     return EASES.get(name or "sine", EASES["sine"])(u)

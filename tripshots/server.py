@@ -101,7 +101,8 @@ def reel_detail(plan: Path) -> dict:
                      "layout": s.get("layout"), "subject_x": s.get("subject_x"), "kb": s.get("kb"),
                      "trans_dur": s.get("trans_dur"), "adjust": s.get("adjust") or {},
                      "graded": bool(s.get("lut")) and not s.get("no_grade"), "no_grade": bool(s.get("no_grade")),
-                     "light": s.get("grade_note"), "layers": s.get("layers") or []})
+                     "light": s.get("grade_note"), "layers": s.get("layers") or [],
+                     "backdrop": (s.get("backdrop") or {}).get("mode"), "people": bool(s.get("people"))})
     from .planedit import history, texts as plan_texts
     cap = _side(plan, ".caption.txt")
     music = p.get("music") or {}

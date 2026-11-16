@@ -42,6 +42,10 @@ Colour:
      a secondary on part of the frame (sky, subject, skin, greens, water, ground, edges); "on": false turns it off,
      "remove": true drops it; "segment": "all" for every shot
   {"op": "layers_auto", "segment": 3}            a shot's layers back to automatic ("all" for every shot)
+
+The person stays, the world changes (a video shot with a person in it):
+  {"op": "backdrop", "segment": 1, "mode": "places"}   on each beat another place of the trip behind them
+                                                        ("colour": flat colours from the shot; "off": none)
 """
 from __future__ import annotations
 
@@ -719,6 +723,27 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
                 note, _ = ai_notes([sh], {sh["id"]: shot_stats(sh)}, None, Path(plan.get("work") or "."), False)
                 set_layers(sg, sh, note.get(sh["id"]) or {}, look)   # the colourist's remembered verdict, or the rules
             done.append("layers back to automatic")
+        elif op == "backdrop":   # the person stays while the background changes on the beat (render.Backdrops)
+            i = _slot(plan, ed["segment"])
+            mode = str(ed.get("mode") or "places")
+            if mode in ("off", "none", "null"):
+                segs[i].pop("backdrop", None)
+                done.append(f"slot {i + 1}: its own background")
+            else:
+                if mode not in ("places", "colour"):
+                    raise ReelError("backdrop mode: places, colour or off")
+                if segs[i].get("kind") != "video" or segs[i].get("panel"):
+                    raise ReelError(f"slot {i + 1} isn't a single video clip: the swap needs a moving shot of a person")
+                from .planner import backdrop_items
+                bl = 60.0 / float(plan.get("tempo") or 120)
+                every = bl if bl >= 0.3 else 2 * bl
+                beats = max(1, int(float(segs[i]["dur"]) / every) - 1)
+                items = backdrop_items(mode, segs[i], list(shots.values()), {s.get("shot_id") for s in segs}, beats)
+                if not items:
+                    raise ReelError("no other places with a picture to put behind the person")
+                segs[i]["backdrop"] = {"mode": mode, "items": items, "every": round(every, 4)}
+                done.append(f"slot {i + 1}: " + ("other places" if mode == "places" else "flat colours")
+                            + " behind the person, on each beat")
         elif op == "music":
             m = plan.setdefault("music", {})
             if "start" in ed:

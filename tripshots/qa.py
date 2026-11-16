@@ -199,8 +199,8 @@ def picture_checks(video: Path, plan: dict) -> list[tuple]:
                 "a sudden jump from bright to dark (or back) across a cut feels like a mistake"))
     hitch = []
     for i, s in enumerate(segs):
-        if s.get("kind") != "video" or s.get("panel"):
-            continue
+        if s.get("kind") != "video" or s.get("panel") or s.get("mosaic") or s.get("backdrop"):
+            continue  # (a photo wall or a background swap changes the picture on its own)
         # only the shot itself: the transitions at either end change the picture on their own
         lead = float(segs[i - 1].get("trans_dur") or 0) / 2 if i and segs[i - 1].get("trans_out") else 0.0
         tail = float(s.get("trans_dur") or 0) / 2 if s.get("trans_out") else 0.0

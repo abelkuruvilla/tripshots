@@ -637,6 +637,9 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/carousel":   # edit the carousel (only the changed slides are drawn again)
                     from .carousel import edit
                     return self._json(edit(_plan(str(b.get("plan"))), list(b.get("ops") or [])))
+                if path == "/api/collections":   # add, rename or remove a collection (projects.py)
+                    from .projects import collection
+                    return self._json(collection(str(b.get("action")), str(b.get("name") or ""), b.get("to")))
                 if path == "/api/reel/manage":   # pin, favorite, collection, rename, duplicate, delete (projects.py)
                     from .projects import manage
                     return self._json(manage(_plan(str(b.get("plan"))), str(b.get("action")), b.get("value")))

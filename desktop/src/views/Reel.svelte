@@ -33,9 +33,12 @@
     load().then(() => ((ed.preview = !ed.reel?.video), loadNotes()));
   });
   let reel = $derived(ed.reel);
+  // the inspector's tools, down a rail at its side (always all in view, like an editor's tool bar)
   let tabs = $derived(ed.expert
-    ? [["shot", "Shot"], ["text", "Text"], ["colour", "Colour"], ["sound", "Sound"], ["notes", "Notes"], ["post", "Post"], ["carousel", "Carousel"]]
-    : [["text", "Text"], ["colour", "Colour"], ["notes", "Notes"], ["post", "Post"], ["carousel", "Carousel"]]);
+    ? [["shot", "Shot", "scissors"], ["text", "Text", "type"], ["colour", "Colour", "palette"], ["sound", "Sound", "music"],
+       ["notes", "Notes", "message"], ["post", "Post", "send"], ["carousel", "Carousel", "grid"]]
+    : [["text", "Text", "type"], ["colour", "Colour", "palette"], ["notes", "Notes", "message"], ["post", "Post", "send"],
+       ["carousel", "Carousel", "grid"]]);
 
   // a render of this plan finished: show the new video
   let lastRender = null;
@@ -210,7 +213,7 @@
   // tabs: arrow keys move between them
   function tabKeys(e) {
     const i = tabs.findIndex(([id]) => id === ed.tab);
-    const j = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
+    const j = e.key === "ArrowDown" || e.key === "ArrowRight" ? i + 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? i - 1 : null;
     if (j === null) return;
     e.preventDefault();
     e.stopPropagation();
@@ -272,7 +275,7 @@
 
 <div class="editor">
   <header class="bar">
-    <button class="btn ghost" onclick={() => (app.view = "reels")}><Icon name="back" /> Reels</button>
+    <button class="btn ghost" onclick={() => (app.view = "reels")}><Icon name="back" /> Projects</button>
     {#if reel}
       <div class="title">
         <h1 class="ellipsis">{reel.name}</h1>
@@ -297,6 +300,7 @@
   {#if ed.error}<p class="err-text pad">{ed.error}</p>{/if}
   {#if reel}
     <div class="main">
+      <div class="left">
       <div class="stage">
         <div class="screen">
           <div class="player" style="--ar: {reel.width / reel.height}">
@@ -337,13 +341,24 @@
           <span class="quiet small hint-line">{showDraft && !ed.preview ? "Preview: no sound effects, text without motion" : ed.preview ? (ed.split ? "Drag the divider to compare" : selText ? "Click the picture to place the text" : "A still of your edit, without motion") : reel.stale ? "Older than your edits" : ""}</span>
         </div>
       </div>
+      <section class="tl" aria-label="Timeline">
+        <Timeline onseek={seek} onpick={pick} />
+        <p class="quiet keys">
+          <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>⌘Z</kbd> undo · <kbd>⌫</kbd> remove · <kbd>←</kbd><kbd>→</kbd> a frame{#if ed.expert} · <kbd>S</kbd> split · <kbd>F</kbd> freeze · <kbd>R</kbd> reverse · drag a shot to move it, its edges to trim it{/if}
+        </p>
+      </section>
+      </div>
 
       <aside class="inspector surface" aria-label="Inspector">
         <!-- svelte-ignore a11y_interactive_supports_focus -->
-        <div class="tabs" role="tablist" aria-label="Edit" bind:this={tabsEl} onkeydown={tabKeys}>
-          {#each tabs as [id, label]}
+        <div class="rail" role="tablist" aria-label="Tools" aria-orientation="vertical" bind:this={tabsEl} onkeydown={tabKeys}>
+          {#each tabs as [id, label, icon]}
             <button role="tab" id={`tab-${id}`} aria-selected={ed.tab === id} aria-controls="tabpanel" tabindex={ed.tab === id ? 0 : -1}
-                    onclick={() => (ed.tab = id)}>{label}{#if id === "notes" && ed.notes.length} <span class="count">{ed.notes.length}</span>{/if}</button>
+                    onclick={() => (ed.tab = id)} title={label}>
+              <Icon name={icon} size={18} />
+              <span class="rl">{label}</span>
+              {#if id === "notes" && ed.notes.length}<span class="count">{ed.notes.length}</span>{/if}
+            </button>
           {/each}
         </div>
         <div class="pane" id="tabpanel" role="tabpanel" aria-labelledby={`tab-${ed.tab}`}>
@@ -358,12 +373,6 @@
       </aside>
     </div>
 
-    <section class="tl" aria-label="Timeline">
-      <Timeline onseek={seek} onpick={pick} />
-      <p class="quiet keys">
-        <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>⌘Z</kbd> undo · <kbd>⌫</kbd> remove · <kbd>←</kbd><kbd>→</kbd> a frame{#if ed.expert} · <kbd>S</kbd> split · <kbd>F</kbd> freeze · <kbd>R</kbd> reverse · drag a shot to move it, its edges to trim it{/if}
-      </p>
-    </section>
   {:else if !ed.error}
     <div class="empty"><span class="spin"></span></div>
   {/if}
@@ -411,8 +420,10 @@
   .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
   .pad { padding: 0 4px; }
 
-  .main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; }
-  .stage { min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+  /* the viewer and the timeline on the left, the inspector the whole height on the right (as editors lay it out) */
+  .main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 16px; }
+  .left { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
   .screen { flex: 1; min-height: 0; display: grid; place-items: center; container-type: size; }
   .player {
     position: relative; aspect-ratio: var(--ar); width: min(100cqw, calc(100cqh * var(--ar)));
@@ -436,10 +447,19 @@
   .now { flex: none; }
   .hint-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .inspector { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .tabs { padding: 0 8px; flex: none; }
-  .count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 600; }
-  .pane { flex: 1; min-height: 0; overflow: auto; }
+  .inspector { min-height: 0; display: flex; flex-direction: row; overflow: hidden; }
+  .rail { flex: none; width: 64px; display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; border-right: 1px solid var(--line); overflow-y: auto; }
+  .rail > button {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px; border: 0;
+    border-radius: var(--r-sm); background: transparent; color: var(--text-3); font-size: 10.5px; line-height: 12px; font-weight: 500;
+    transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+  }
+  .rail > button:hover { background: var(--raised); color: var(--text); }
+  .rail > button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+  .rail > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .rl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .count { position: absolute; top: 4px; right: 6px; display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-size: 10px; font-weight: 600; }
+  .pane { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 
   .tl { flex: none; }
   .keys { font-size: 12px; margin-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -462,5 +482,5 @@
   .cand img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-sm); display: block; margin-bottom: 4px; }
   .score { font-size: 13px; }
   .note { font-size: 12px; line-height: 16px; color: var(--text-3); display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  @media (max-width: 1080px) { .main { grid-template-columns: minmax(0, 1fr) 340px; } }
+  @media (max-width: 1080px) { .main { grid-template-columns: minmax(0, 1fr) 380px; } }
 </style>

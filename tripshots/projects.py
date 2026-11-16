@@ -175,6 +175,34 @@ def trash(plan: Path) -> list[str]:
     return moved
 
 
+def collection(action: str, name: str, to: str | None = None) -> list[str]:
+    """Collections themselves: add an empty one, rename one (its reels follow), or remove one (its reels stay,
+    outside any collection). Returns the collections."""
+    name = str(name or "").strip()
+    if not name:
+        raise ReelError("a collection needs a name")
+    d = _load()
+    if action == "add":
+        if name not in d["collections"]:
+            d["collections"].append(name)
+    elif action in ("rename", "remove"):
+        new = str(to or "").strip() if action == "rename" else None
+        if action == "rename" and not new:
+            raise ReelError("rename to what?")
+        d["collections"] = [c for c in d["collections"] if c != name] + ([new] if new and new not in d["collections"] else [])
+        for f in d["reels"].values():
+            if f.get("collection") == name:
+                if new:
+                    f["collection"] = new
+                else:
+                    f.pop("collection")
+        d["reels"] = {k: v for k, v in d["reels"].items() if v}
+    else:
+        raise ReelError("collection action: add, rename or remove")
+    _save(d)
+    return collections()
+
+
 def manage(plan: Path, action: str, value=None) -> dict:
     """One action on a reel: pin, unpin, favorite, unfavorite, collection (value: name or null), rename (value),
     duplicate (value: optional name), delete. Returns {plan, ...}."""

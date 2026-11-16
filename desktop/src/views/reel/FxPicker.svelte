@@ -4,7 +4,7 @@
   import { app, api } from "../../lib/store.svelte.js";
   import { ed } from "./editor.svelte.js";
 
-  let { kind = "transition", slot, value = null, onpick, none = "None" } = $props();
+  let { kind = "transition", at, value = null, onpick, none = "None" } = $props();
   let energy = $state("all");
   let lib = $state(null);
 
@@ -15,7 +15,7 @@
   let shown = $derived(items.filter((x) => energy === "all" || x.energy === energy));
   const nice = (id) => id.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
   const thumb = (id) => app.engine
-    ? `${app.engine.url}/api/fxthumb?t=${app.engine.token}&plan=${encodeURIComponent(ed.reel.plan)}&slot=${slot}&kind=${kind}&id=${id}`
+    ? `${app.engine.url}/api/fxthumb?t=${app.engine.token}&plan=${encodeURIComponent(ed.reel.plan)}&slot=${at}&kind=${kind}&id=${id}`
     : "";
 </script>
 

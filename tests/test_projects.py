@@ -96,3 +96,12 @@ def test_a_trip_splits_by_day_and_by_place(tmp_path, monkeypatch):
     assert [p["places"][0] for p in by_place["parts"]] == ["Reykjavik", "Vik", "Hofn"]
     with pytest.raises(ReelError):
         catalog.split_trip("trip-1999-01-01", ["/f"])
+
+
+def test_collections_are_added_renamed_and_removed(tmp_path, home):
+    p = _reel(tmp_path / "reels")
+    assert projects.collection("add", "Utah") == ["Utah"]
+    projects.manage(p, "collection", "Utah")
+    assert projects.collection("rename", "Utah", "Utah 2026") == ["Utah 2026"]
+    assert projects.flags(p)["collection"] == "Utah 2026"
+    assert projects.collection("remove", "Utah 2026") == [] and not projects.flags(p)

@@ -14,7 +14,7 @@
 
   let booting = $state(true);
   const nav = [
-    { id: "reels", label: "Reels", icon: "film" },
+    { id: "reels", label: "Projects", icon: "film" },
     { id: "make", label: "Make", icon: "plus" },
     { id: "styles", label: "Styles", icon: "layers" },
     { id: "jobs", label: "Activity", icon: "activity" },

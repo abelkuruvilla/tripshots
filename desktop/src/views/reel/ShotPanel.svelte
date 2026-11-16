@@ -6,10 +6,12 @@
   import { ed, edit, frames, select } from "./editor.svelte.js";
   import FxPicker from "./FxPicker.svelte";
   import PipPanel from "./PipPanel.svelte";
+  import Section from "../../lib/Section.svelte";
 
   let { onpick, oninsert, onontop } = $props();
   const ramps = [[null, "None"], ["velocity", "Velocity"], ["slam", "Slam"], ["bullet", "Bullet"], ["rush", "Rush"], ["impact", "Impact"], ["surge", "Surge"]];
   const layouts = [["crop", "Crop to the subject"], ["pan", "Pan across"], ["blur_fill", "Whole frame, blurred behind"], ["fill", "Fill (already upright)"]];
+  const nice = (id) => id.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
   const roles = { hook: "Opening", setup: "Setup", build: "Build", peak: "Peak", release: "Release", ending: "Ending" };
 
   let reel = $derived(ed.reel);
@@ -63,48 +65,42 @@
 {:else if !s}
   <div class="none">
     <Icon name="film" size={18} />
-    <p>Select a shot on the timeline to change its length, speed, framing, transition or effect</p>
+    <p>Select a shot on the timeline to edit it</p>
     <p class="quiet small">Drag a shot to move it, drag its edges to trim it</p>
   </div>
-  <section class="panel">
-    <h3>Effects</h3>
-    {#if reel?.effects?.summary}<p class="quiet small">{reel.effects.summary} <span class="meta">({reel.effects.by === "ai" ? "AI" : "rules"})</span></p>{/if}
+  <Section id="shot-ai" title="Effects for the whole reel" open={true} summary={reel?.effects ? (reel.effects.by === "ai" ? "chosen by AI" : "by rules") : ""}>
+    {#if reel?.effects?.summary}<p class="quiet small">{reel.effects.summary}</p>{/if}
     <button class="btn sm" onclick={() => edit({ op: "auto_effects" })} disabled={ed.busy}
             title="The AI picks transitions, text motion and looks, and a shot effect or two, for this reel's shots and music">
       <Icon name="sparkle" size={14} /> Choose effects with AI</button>
     {#if reel?.effects?.why?.length}
       <ul class="why quiet small">{#each reel.effects.why.slice(0, 6) as w}<li>{w}</li>{/each}</ul>
     {/if}
-  </section>
+  </Section>
 {:else}
-  <section class="panel">
+  <div class="head">
     <div class="row">
       <h2>Shot {s.slot}</h2>
-      <span class="meta">{[tc(s.start), roles[s.role], s.kind === "video" ? "clip" : "photo"].filter(Boolean).join(" · ")}</span>
+      <span class="meta ellipsis">{[tc(s.start), roles[s.role], s.kind === "video" ? "clip" : "photo"].filter(Boolean).join(" · ")}</span>
       <div class="spacer"></div>
       <button class="btn sm ghost icon" onclick={() => move(-1)} disabled={s.slot < 2} aria-label="Move earlier" title="Move earlier"><Icon name="arrow-left" size={14} /></button>
       <button class="btn sm ghost icon" onclick={() => move(1)} disabled={s.slot >= reel.segments.length} aria-label="Move later" title="Move later"><Icon name="arrow-right" size={14} /></button>
     </div>
-    <p class="quiet ellipsis" title={s.note}>{s.file}{s.note ? ` · ${s.note}` : ""}</p>
-
-    <div class="actions">
-      <button class="btn sm" onclick={() => op({ op: "split", at: frames(inside) })} disabled={!canSplit}
-              title="Cut this shot in two at the playhead"><Icon name="scissors" size={14} /> Split <kbd>S</kbd></button>
-      <button class="btn sm" onclick={() => op({ op: "freeze", at: frames(Math.max(0, Math.min(s.dur, inside))), dur: 1 })}
-              disabled={!plain} title="Hold the frame at the playhead for a second"><Icon name="pause" size={14} /> Freeze <kbd>F</kbd></button>
-      <button class="btn sm" class:on={s.reverse} onclick={() => op({ op: "reverse", on: !s.reverse })} disabled={!plain && !s.reverse}
-              aria-pressed={!!s.reverse} title="Play this clip backwards"><Icon name="undo" size={14} /> Reverse <kbd>R</kbd></button>
-      <button class="btn sm" onclick={() => op({ op: "duplicate" })}><Icon name="copy" size={14} /> Repeat</button>
-      <button class="btn sm" onclick={() => onpick(s)}><Icon name="swap" size={14} /> Replace</button>
-      <button class="btn sm" onclick={() => oninsert(s.slot)}><Icon name="plus" size={14} /> Add after</button>
-      <button class="btn sm" onclick={() => onontop?.()} title="Put another shot on top, in a corner, from the playhead"><Icon name="plus" size={14} /> On top</button>
-      <div class="spacer"></div>
-      <button class="btn sm ghost danger" onclick={() => op({ op: "delete" })} disabled={reel.segments.length < 2}><Icon name="trash" size={14} /> Remove</button>
+    <p class="quiet small ellipsis" title={s.note}>{s.file}{s.note ? ` · ${s.note}` : ""}</p>
+    <div class="tools" role="toolbar" aria-label="Shot tools">
+      <button class="tool" onclick={() => op({ op: "split", at: frames(inside) })} disabled={!canSplit} title="Split at the playhead (S)"><Icon name="scissors" size={16} /><span>Split</span></button>
+      <button class="tool" onclick={() => op({ op: "freeze", at: frames(Math.max(0, Math.min(s.dur, inside))), dur: 1 })} disabled={!plain} title="Hold the frame at the playhead for a second (F)"><Icon name="pause" size={16} /><span>Freeze</span></button>
+      <button class="tool" class:on={s.reverse} onclick={() => op({ op: "reverse", on: !s.reverse })} disabled={!plain && !s.reverse} aria-pressed={!!s.reverse} title="Play backwards (R)"><Icon name="undo" size={16} /><span>Reverse</span></button>
+      <button class="tool" onclick={() => op({ op: "duplicate" })} title="Repeat this shot"><Icon name="copy" size={16} /><span>Repeat</span></button>
+      <button class="tool" onclick={() => onpick(s)} title="Replace with another shot"><Icon name="swap" size={16} /><span>Replace</span></button>
+      <button class="tool" onclick={() => oninsert(s.slot)} title="Add a shot after this one"><Icon name="plus" size={16} /><span>After</span></button>
+      <button class="tool" onclick={() => onontop?.()} title="Put another shot on top, in a corner, from the playhead"><Icon name="layers" size={16} /><span>On top</span></button>
+      <button class="tool danger" onclick={() => op({ op: "delete" })} disabled={reel.segments.length < 2} title="Remove this shot (⌫)"><Icon name="trash" size={16} /><span>Remove</span></button>
     </div>
-  </section>
+  </div>
 
-  <section class="panel">
-    <h3>Timing</h3>
+  <Section id="shot-timing" title="Timing" open={true}
+           summary={`${(+s.dur).toFixed(2)} s${video ? ` · ${s.ramp || `${(+(s.speed || 1)).toFixed(2)}×`}` : ""}`}>
     <div class="grid2">
       <div class="field">
         <label for="id">Length <span class="hint">· seconds</span></label>
@@ -132,26 +128,27 @@
         {#each ramps as [id, name]}<option value={id ?? ""}>{name}</option>{/each}
       </select>
     </div>
-  </section>
+  </Section>
 
-  <section class="panel">
-    <h3>Into the next shot</h3>
-    <div class="field">
-      {#if s.slot < reel.segments.length}
-        <FxPicker kind="transition" slot={s.slot} value={s.transition} none="Hard cut" onpick={(id) => op({ op: "transition", to: id })} />
-        <p class="quiet small help">Hard cuts land on the beat; save transitions for a change of place or mood</p>
-      {:else}
-        <p class="quiet small">The last shot: the reel ends here</p>
-      {/if}
-    </div>
-  </section>
+  {#if s.slot < reel.segments.length}
+    <Section id="shot-transition" title="Transition" summary={s.transition ? nice(s.transition) : "Hard cut"}>
+      <FxPicker kind="transition" at={s.slot} value={s.transition} none="Hard cut" onpick={(id) => op({ op: "transition", to: id })} />
+      <p class="quiet small">Into the next shot. Hard cuts land on the beat; save transitions for a change of place or mood</p>
+    </Section>
+  {/if}
 
   {#if !s.panel}
-    <section class="panel">
-      <div class="row">
-        <h3>Zoom and position</h3>
-        <span class="meta">{(s.keys || []).length ? `${s.keys.length} keyframe${s.keys.length > 1 ? "s" : ""}` : ""}</span>
-      </div>
+    <Section id="shot-effect" title="Effect" summary={s.effect ? `${nice(s.effect.id)} · ${Math.round((s.effect.amount ?? 0.6) * 100)}%` : "None"}>
+      <FxPicker kind="effect" at={s.slot} value={s.effect?.id} onpick={(id) => op({ op: "effect", id, amount: +amount })} />
+      {#if s.effect}
+        <div class="field">
+          <label for="iam">Amount <span class="hint">· {Math.round(amount * 100)}%</span></label>
+          <input id="iam" type="range" min="0.1" max="1" step="0.05" bind:value={amount} onchange={() => op({ op: "effect", id: s.effect.id, amount: +amount })} />
+        </div>
+      {/if}
+    </Section>
+
+    <Section id="shot-keys" title="Zoom and position" summary={(s.keys || []).length ? `${s.keys.length} keyframe${s.keys.length > 1 ? "s" : ""}` : "None"}>
       <div class="grid3">
         <div class="field">
           <label for="kz">Zoom <span class="hint">· {(+kz).toFixed(2)}×</span></label>
@@ -179,68 +176,58 @@
           {/each}
         </div>
       {:else}
-        <p class="quiet small help">Two keyframes make a move: a slow push in onto a face, a pan across a skyline</p>
+        <p class="quiet small">Two keyframes make a move: a slow push in onto a face, a pan across a skyline</p>
       {/if}
-    </section>
-
-    <section class="panel">
-      <h3>Effect</h3>
-      <FxPicker kind="effect" slot={s.slot} value={s.effect?.id} onpick={(id) => op({ op: "effect", id, amount: +amount })} />
-      {#if s.effect}
-        <div class="field">
-          <label for="iam">Amount <span class="hint">· {Math.round(amount * 100)}%</span></label>
-          <input id="iam" type="range" min="0.1" max="1" step="0.05" bind:value={amount} onchange={() => op({ op: "effect", id: s.effect.id, amount: +amount })} />
-        </div>
-      {/if}
-    </section>
+    </Section>
   {/if}
 
   {#if !s.panel && s.kind === "video"}
-    <section class="panel">
-      <h3>Framing</h3>
-      <div class="field">
-        <label for="ily" class="sr-only">Framing</label>
-        <select id="ily" value={s.layout || "crop"} onchange={(e) => op({ op: "frame", layout: e.currentTarget.value })}>
-          {#each layouts as [id, name]}<option value={id}>{name}</option>{/each}
-        </select>
-      </div>
+    <Section id="shot-framing" title="Framing" summary={(layouts.find(([id]) => id === (s.layout || "crop")) || [, ""])[1]}>
+      <select id="ily" aria-label="Framing" value={s.layout || "crop"} onchange={(e) => op({ op: "frame", layout: e.currentTarget.value })}>
+        {#each layouts as [id, name]}<option value={id}>{name}</option>{/each}
+      </select>
       <div class="field">
         <label for="isx">Looks at <span class="hint">· {sx < 0.4 ? "left" : sx > 0.6 ? "right" : "middle"}</span></label>
         <input id="isx" type="range" min="0" max="1" step="0.01" bind:value={sx} onchange={() => op({ op: "frame", subject_x: +sx })} />
       </div>
-    </section>
-    <section class="panel">
-      <h3>Steadiness</h3>
+    </Section>
+    <Section id="shot-steady" title="Steadiness" summary={s.stabilize ? "Stabilised" : "As filmed"}>
       <label class="check"><input type="checkbox" checked={s.stabilize} onchange={(e) => op({ op: "stabilize", on: e.currentTarget.checked })} />
         Stabilise this clip</label>
-      <p class="quiet small help">Takes the shake out of a handheld clip (a deliberate pan stays); the picture is zoomed in a little to hide the moving edges</p>
-    </section>
-    <section class="panel">
-      <h3>Behind the person</h3>
-      <div class="field">
-        <label for="ibd" class="sr-only">Background</label>
-        <select id="ibd" value={s.backdrop || "off"} onchange={(e) => op({ op: "backdrop", mode: e.currentTarget.value })}>
-          <option value="off">Their own background</option>
-          <option value="places">Other places of the trip, one per beat</option>
-          <option value="colour">Flat colours from the shot, one per beat</option>
-        </select>
-        <p class="quiet small help">{s.people ? "The person stays; the world behind them changes on the beat, and the last beat is the real place again. Works best on a clip of you facing the camera, held still" : "Needs a clip with a person in it: the cut-out keeps only an upright figure"}</p>
-      </div>
-    </section>
+      <p class="quiet small">Takes the shake out of a handheld clip (a deliberate pan stays); the picture is zoomed in a little to hide the moving edges</p>
+    </Section>
+    <Section id="shot-backdrop" title="Behind the person" summary={s.backdrop === "places" ? "Other places" : s.backdrop === "colour" ? "Flat colours" : "Own background"}>
+      <select id="ibd" aria-label="Background" value={s.backdrop || "off"} onchange={(e) => op({ op: "backdrop", mode: e.currentTarget.value })}>
+        <option value="off">Their own background</option>
+        <option value="places">Other places of the trip, one per beat</option>
+        <option value="colour">Flat colours from the shot, one per beat</option>
+      </select>
+      <p class="quiet small">{s.people ? "The person stays; the world behind them changes on the beat, and the last beat is the real place again. Works best on a clip of you facing the camera, held still" : "Needs a clip with a person in it: the cut-out keeps only an upright figure"}</p>
+    </Section>
   {/if}
 {/if}
 
 <style>
-  .none { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 24px 20px; color: var(--text-2); }
-  .panel { padding: 20px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--line); }
-  .panel:last-child { border-bottom: 0; }
+  .none { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px 16px; color: var(--text-2); border-bottom: 1px solid var(--line); }
+  .head { padding: 12px 12px 8px 16px; display: flex; flex-direction: column; gap: 4px; border-bottom: 1px solid var(--line);
+          position: sticky; top: 0; z-index: 2; background: var(--card); }
+  .head h2 { font-size: 15px; }
+  .tools { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; margin-top: 2px; }
+  .tool { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 5px; border: 0; border-radius: var(--r-sm);
+          background: transparent; color: var(--text-2); font-size: 9.5px; line-height: 11px; white-space: nowrap; min-width: 0;
+          transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
+  .tool span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .tool.on { background: var(--accent-soft); }
+  .tool:hover:not(:disabled) { background: var(--raised); color: var(--text); }
+  .tool:disabled { opacity: 0.4; cursor: default; }
+  .tool.on { border-color: var(--accent); color: var(--accent); }
+  .tool.danger:hover:not(:disabled) { color: var(--err); }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .btn.on { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .field { margin: 0; min-width: 0; }
   .marks { display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px; }
   .sub { margin-top: 8px; font-size: 12px; color: var(--text-2); }
-  .help { margin-top: 8px; }
   .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .keys { display: flex; flex-wrap: wrap; gap: 6px; }
   .kchip { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--card); color: var(--text-2); cursor: pointer; }

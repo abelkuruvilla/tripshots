@@ -53,8 +53,7 @@
 
 <div class="layers">
   <div class="row">
-    <h3>Layers</h3>
-    <span class="quiet small">parts of the frame, each with its own correction</span>
+    <span class="quiet small">Sky, skin, water… each with its own correction</span>
     <div class="spacer"></div>
     {#if layers.some((l) => !l.auto)}
       <button class="btn sm ghost" onclick={() => edit({ op: "layers_auto", segment: shot.slot })} title="Back to what the colourist chose">Automatic</button>
@@ -110,7 +109,7 @@
 </div>
 
 <style>
-  .layers { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 16px; }
+  .layers { display: flex; flex-direction: column; gap: 8px; }
   .layers .row { gap: 8px; }
   ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
   li { border-radius: var(--r-ctl); box-shadow: inset 0 0 0 1px var(--line); }

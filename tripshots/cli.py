@@ -43,7 +43,7 @@ def cmd_make(a):
                extras={"split": a.split_screens, "ramps": a.speed_ramps, "labels": a.labels, "loop": a.loop,
                        "speed_up": a.speed_up, "drop_speed": a.drop_speed, "smooth": a.slowmo_smooth,
                        "format": a.format, "arc": a.arc, "captions": a.captions, "critic": a.critic,
-                       "parallax": a.parallax, "recipe": a.recipe, "orientation": a.orientation, "fresh": a.fresh,
+                       "parallax": a.parallax, "recipe": a.recipe, "orientation": a.orientation, "fresh": a.fresh, "effects": a.effects,
                        "light": a.light, "stabilize": a.stabilize, "text_motion": a.text_motion, "name": a._label},
                look=a.look, grade_strength=a.grade_strength, route_map=a.route_map, sound=sound_args(a))
     print(json.dumps(res, indent=2))
@@ -61,8 +61,11 @@ def cmd_clone(a):
 
 def cmd_render(a):
     from .pipeline import render_plan
-    out = render_plan(Path(a.plan), Path(a.out) if a.out else None, workers=a.workers, text_motion=a.text_motion)
+    out = render_plan(Path(a.plan), Path(a.out) if a.out else None, workers=a.workers, text_motion=a.text_motion,
+                      draft=getattr(a, "draft", False))
     res = {"video": str(out), "plan": str(Path(a.plan).resolve())}
+    if getattr(a, "draft", False):
+        return print(json.dumps({**res, "draft": True}, indent=2))
     for key, ext in (("cover", ".cover.jpg"), ("storyboard", ".storyboard.jpg"), ("caption", ".caption.txt"),
                      ("grade", ".grade.jpg"), ("upload_video", ".noaudio.mp4"), ("upload_video", ".nomusic.mp4"),
                      ("qa", ".qa.json"), ("qa_sheet", ".qa.jpg")):
@@ -269,7 +272,10 @@ def cmd_caption(a):
 
 
 def cmd_carousel(a):
-    from .carousel import make
+    from .carousel import edit, make
+    if a.edit:
+        ops = json.loads(Path(a.edit).read_text() if Path(a.edit).is_file() else a.edit)
+        return print(json.dumps(edit(Path(a.plan), ops if isinstance(ops, list) else [ops]), indent=2, ensure_ascii=False))
     print(json.dumps(make(Path(a.plan), a.slides, a.title, a.handle, route=not a.no_route,
                           out_dir=Path(a.out) if a.out else None), indent=2, ensure_ascii=False))
 
@@ -287,6 +293,69 @@ def cmd_post(a):
     from .post import post
     res = post(Path(a.video), a.platforms.split(","), a.at, a.tz, a.title, send=a.send, force=a.force, again=a.again)
     print(json.dumps({k: v for k, v in res.items() if k != "key"}, indent=2, ensure_ascii=False))
+
+
+def cmd_reels(a):
+    from . import projects
+    if a.action == "list":
+        from .server import list_reels
+        rows = projects.annotate(list_reels())
+        if a.collection:
+            rows = [r for r in rows if r.get("collection") == a.collection]
+        if a.json:
+            return print(json.dumps(rows, indent=2))
+        for r in rows:
+            mark = ("*" if r["pinned"] else " ") + ("♥" if r["favorite"] else " ")
+            print(f"{mark} {r['name']:<40} {r.get('collection') or '':<24} {r['plan']}")
+        return
+    if a.action == "collections":
+        return print(json.dumps(projects.collections(), indent=2))
+    if not a.plan:
+        raise ReelError(f"reels {a.action} needs a plan (NAME.plan.json)")
+    print(json.dumps(projects.manage(Path(a.plan), a.action, a.value), indent=2))
+
+
+def cmd_split_trip(a):
+    """One trip -> a selection per day (or place); with --make, a reel from each, filed in the trip's collection."""
+    import subprocess
+    import sys
+    from . import catalog, projects
+    from .commands import default_out, make_args
+    res = catalog.split_trip(a.trip, a.folders or None, by=a.by, min_files=a.min_files)
+    if not a.make:
+        return print(json.dumps(res, indent=2))
+    default_out()
+    for part in res["parts"]:
+        util.log(f"part {part['part']}/{len(res['parts'])}: {part['label']} ({part['files']} files)")
+        args = make_args([f"sel:{part['selection']}"], dry_run=a.plan_only, name=part["label"],
+                         style=a.style, music=a.music, effects=a.effects)
+        proc = subprocess.run([sys.executable, "-m", "tripshots", *args], capture_output=True, text=True)
+        out = proc.stdout.strip()
+        try:
+            made = json.loads(out[out.index("{"):]) if "{" in out else {}
+        except ValueError:
+            made = {}
+        if proc.returncode != 0 or not made.get("plan"):
+            part["error"] = (proc.stderr.strip().splitlines() or ["make failed"])[-1][:300]
+            util.log(f"  failed: {part['error']}")
+            continue
+        part["plan"] = made["plan"]
+        part["video"] = made.get("video")
+        projects.manage(Path(made["plan"]), "collection", res["collection"])
+    print(json.dumps(res, indent=2))
+
+
+def cmd_effects(a):
+    from . import fxlib
+    lib = fxlib.catalog()
+    if a.kind:
+        lib = {k: v for k, v in lib.items() if k.startswith(a.kind)}
+    if a.json:
+        return print(json.dumps(lib, indent=2))
+    for kind, rows in lib.items():
+        print(f"\n{kind.replace('_', ' ').upper()} ({len(rows)})")
+        for r in rows:
+            print(f"  {r['id']:<11} {r['energy']:<8} {r['mood']:<30} {r['suits']}")
 
 
 def cmd_skills(a):
@@ -386,7 +455,7 @@ def cmd_analyze(a):
     res = analysis.analyze(paths, a.backend, ai=not a.no_ai, faces=not a.no_faces, places=not a.no_places,
                            watch_mode=a.watch, rescore=a.rescore, cached=a.cached,
                            out_dir=Path(a.out) if a.out else None, label=getattr(a, "_label", None),
-                           source_opts=source_opts(a))
+                           source_opts=source_opts(a), details=not a.no_details)
     if a.print:
         res["records"] = list(analysis.load(res["output"]))
     print(json.dumps(res, indent=2, default=str))
@@ -620,6 +689,10 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--light", choices=["golden", "sunset", "blue", "day", "night", "any"],
                    help="only shots in this light (golden: golden hour, sunset and sunrise; blue: blue hour and night; "
                         "day: morning to afternoon), the photo wall too; when too few are, they are preferred instead")
+    m.add_argument("--effects", choices=["auto", "ai", "rules", "off"],
+                   help="the effects director (fxlib.py): auto (default) lets the AI pick transitions, text motion and "
+                        "looks and a shot effect or two from the effects library; rules picks by the music's energy "
+                        "without an AI; off keeps the style's own choices")
     m.add_argument("--fresh", choices=["on", "off"],
                    help="on (default): shots your earlier reels of this footage showed are marked down, and this "
                         "reel opens and ends on something else; off: the best shots, whatever was posted before")
@@ -689,6 +762,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("-o", "--out")
     r.add_argument("-j", "--workers", type=int, default=2)
     r.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema", "decode", "stamp"], help="override how the words animate")
+    r.add_argument("--draft", action="store_true",
+                   help="a quick preview of the edits: still text, no sound effects or checks -> NAME.draft.mp4")
     add_encoder_arg(r)
     r.set_defaults(fn=cmd_render)
 
@@ -713,6 +788,9 @@ def build_parser() -> argparse.ArgumentParser:
     ca.add_argument("--handle", help="your handle, small on every slide")
     ca.add_argument("--no-route", action="store_true", help="no last slide listing the places")
     ca.add_argument("-o", "--out", help="output folder (default: NAME.carousel next to the plan)")
+    ca.add_argument("--edit", metavar="OPS", help="change the carousel made before: JSON ops (or a file of them), e.g. "
+                    '\'[{"op": "move", "from": 3, "to": 1}, {"op": "layout", "slide": 2, "layout": "duo"}]\' '
+                    "(ops: move, remove, add, swap, layout single|duo|trio, crop, title, handle, route)")
     ca.set_defaults(fn=cmd_carousel)
 
     rv = sub.add_parser("revise", help="notes on a finished reel, each pinned to a time (\"12.3: too dark here\"), "
@@ -737,6 +815,36 @@ def build_parser() -> argparse.ArgumentParser:
     po.add_argument("--force", action="store_true", help="post even though its quality checks didn't all pass")
     po.add_argument("--again", action="store_true", help="post it again, though it was posted already")
     po.set_defaults(fn=cmd_post)
+
+    rl = sub.add_parser("reels", help="your reels as projects: list (pinned first), pin, favorite, file in a "
+                                      "collection, rename (every file of the reel moves), duplicate, delete (to the Trash)")
+    rl.add_argument("action", choices=["list", "collections", "pin", "unpin", "favorite", "unfavorite", "collection",
+                                       "rename", "duplicate", "delete"])
+    rl.add_argument("plan", nargs="?", help="the reel's NAME.plan.json")
+    rl.add_argument("value", nargs="?", help="collection: its name (none to take it out); rename / duplicate: the new name")
+    rl.add_argument("--collection", help="list: only this collection")
+    rl.add_argument("--json", action="store_true")
+    rl.set_defaults(fn=cmd_reels)
+
+    st = sub.add_parser("split-trip", help="one trip in parts (a day each, or a place each), each saved as a "
+                                           "selection; --make cuts a reel from every part, filed in the trip's collection")
+    st.add_argument("trip", nargs="?", help="a trip id from `tripshots trips` (trip-YYYY-MM-DD); omit to use all of --folders")
+    st.add_argument("--folders", nargs="+", help="footage folders (default: your footage folders)")
+    st.add_argument("--by", choices=["day", "place"], default="day")
+    st.add_argument("--min-files", type=int, default=8, help="a smaller part joins its neighbour (default 8)")
+    st.add_argument("--make", action="store_true", help="make a reel from each part")
+    st.add_argument("--plan-only", action="store_true", help="with --make: plans and storyboards only (fast)")
+    st.add_argument("-s", "--style")
+    st.add_argument("-m", "--music")
+    st.add_argument("--effects", choices=["auto", "ai", "rules", "off"])
+    st.set_defaults(fn=cmd_split_trip)
+
+    fx = sub.add_parser("effects", help="the effects library: transitions, text motions and looks, shot effects, "
+                                        "each with its energy, mood and what it suits (make --effects lets the AI "
+                                        "pick from it)")
+    fx.add_argument("kind", nargs="?", choices=["transitions", "text", "shot"], help="only one part of it")
+    fx.add_argument("--json", action="store_true")
+    fx.set_defaults(fn=cmd_effects)
 
     sk = sub.add_parser("skills", help="agent skills that work next to TripShots (HyperFrames, Remotion, "
                                        "one-take, Lemo-Opuscar, Instagram agent): what they add, whether installed, "
@@ -913,6 +1021,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="no new work: export only what's already analysed (no AI calls, no new files decoded)")
     an.add_argument("--print", action="store_true", help="also print every record")
     an.add_argument("--rescore", action="store_true", help="ask the AI again about every shot")
+    an.add_argument("--no-details", action="store_true",
+                    help="skip the extra details: on this computer (text on the picture, room for titles, crops, faces, "
+                         "movement at the start, loops, sound, camera) and from the AI (vibe, shot size, angle, faces, "
+                         "best moment). They are measured once per shot and kept; only new shots cost anything")
     an.add_argument("--watch", choices=["auto", "gemini", "off"])
     an.add_argument("--exclude", action="append", metavar="GLOB", default=[])
     an.add_argument("--since", metavar="YYYY-MM-DD")

@@ -66,6 +66,43 @@ its content.
 - **Video shots** depend on scene-cut detection. A fast whip pan inside one take may not be split; the in-camera
   whip detection (watch.py) finds those for reels.
 
+## Extra details
+
+Each shot also gets details added after it was first described. Each is worked out once and kept with the shot:
+
+**From the AI** (`ai.enrich_shots`). These are asked on their own, so adding them never means describing a library
+again. A clip is shown as a strip of its start, middle and end, not one frame.
+- **Vibes:** up to three of serene, epic, playful, nostalgic, romantic, energetic, moody, adventurous, cosy and
+  mysterious, each with a strength.
+- **Shot size and angle:** wide, medium, close or detail; aerial, high, eye level or low.
+- **Face:** looking at the camera, eyes open, smiling.
+- **Clips only:** where the best moment is, and how strong the first frame is as an opening.
+
+**Measured on this computer** (`insight.py`, no AI):
+- **Text on the picture:** lines of type, and how much they look drawn on (an export, a saved reel, a screenshot).
+  The AI's own words in its description decide; the text detector alone counts only when it is nearly sure.
+- **Room for titles:** how busy the upper, middle and lower bands of the upright frame are.
+- **Crop fit:** whether the subjects fit a 9:16, 4:5 or square crop.
+- **Faces:** how many, the biggest, how frontal and how sharp.
+- **Flat log look and camera:** whether the picture looks like flat log footage, plus maker, model, lens, focal
+  length, bit depth and colour transfer.
+- **Clips only:** movement in the first quarter second, how alike the first and last frames are, loudness, and
+  estimates of speech and of music in the clip's own sound.
+
+How they are used:
+- A shot with words drawn on it, or one looking at the camera with its eyes shut, is marked down.
+- The opening shot favours a strong first frame, movement, a sharp frontal face and calm room for the hook.
+- The peak favours epic or energetic shots, and the ending serene, nostalgic or romantic ones.
+- Shot grammar uses the AI's shot size, and the effects director sees vibes, shot size and angle.
+- The carousel prefers shots whose subject survives the 4:5 crop.
+- Flat log detection reads the stored camera and look.
+- A clip that sounds like speech or music doesn't become its own ambience.
+- `tripshots find --text` and the app's shot search match what the AI saw (captions, tags, vibes, shot size).
+
+`analyze` works these out for every shot; `--no-details` skips them. `make` works them out only for the shots it is
+likely to use (`TRIPSHOTS_DETAILS`, default 160) and uses what `analyze` stored for the rest. Records carry them as
+`details` and `insight`.
+
 ## The record
 
 ```json

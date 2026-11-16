@@ -534,7 +534,12 @@ def shot_stats(shot: dict) -> dict:
     im = cv2.imread(str(shot["thumb"]))
     if im is None:
         return measure([np.full((8, 8, 3), 128, np.uint8)])
-    return measure([cv2.cvtColor(im, cv2.COLOR_BGR2RGB)])
+    rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+    if shot.get("log"):   # log footage is measured as it will look after its conversion (camlog.py)
+        from .camlog import PROFILES, convert_rgb8
+        if shot["log"] in PROFILES:
+            rgb = convert_rgb8(rgb, shot["log"])
+    return measure([rgb])
 
 
 def ai_notes(shots: list[dict], stats: dict, backend, work: Path, choose_look: bool):
@@ -675,11 +680,19 @@ def set_layers(seg: dict, shot: dict, note: dict, look: dict | None) -> None:
 def grade_plan(plan: dict, by_id: dict, cfg: dict, backend, work: Path) -> dict | None:
     """Attach a per-shot LUT to every segment / panel clip. Returns the grade summary."""
     from .util import log
+    from . import camlog
+    found = camlog.mark(plan, by_id)   # flat log clips are made normal first, and graded as they then look
+    if found:
+        log(f"log footage made normal: {', '.join(found[:6])}" + (" ..." if len(found) > 6 else ""))
     name = str(cfg.get("look") or "auto")
     if name in ("none", "off", "false", "False"):
         return None
     strength = float(cfg.get("strength", 0.8))
     ids = [i for i in _plan_shot_ids(plan) if i in by_id]
+    for seg in plan["segments"]:
+        for c in (seg.get("clips") or [seg]):
+            if "log" in c and c.get("shot_id") in by_id:
+                by_id[c["shot_id"]]["log"] = c["log"]
     stats = {i: shot_stats(by_id[i]) for i in ids}
     use_ai = cfg.get("ai", True) and backend is not None
     notes, choice = ai_notes([by_id[i] for i in ids], stats, backend if use_ai else None, work, name == "auto")

@@ -103,7 +103,11 @@ def reel_detail(plan: Path) -> dict:
                      "graded": bool(s.get("lut")) and not s.get("no_grade"), "no_grade": bool(s.get("no_grade")),
                      "light": s.get("grade_note"), "layers": s.get("layers") or [],
                      "backdrop": (s.get("backdrop") or {}).get("mode"), "people": bool(s.get("people")),
-                     "stabilize": bool(s.get("stabilize"))})
+                     "stabilize": bool(s.get("stabilize")), "freeze": bool(s.get("freeze")),
+                     "reverse": bool(s.get("reverse")), "effect": s.get("effect"), "log": s.get("log"),
+                     "vibes": list(((sh.get("ai") or {}).get("vibes") or {}))[:3],
+                     "size": (sh.get("ai") or {}).get("shot_size"), "angle": (sh.get("ai") or {}).get("angle"),
+                     "keys": s.get("keys") or []})
     from .planedit import history, texts as plan_texts
     cap = _side(plan, ".caption.txt")
     music = p.get("music") or {}
@@ -116,7 +120,16 @@ def reel_detail(plan: Path) -> dict:
             "music": {k: music.get(k) for k in ("start", "gain_db", "fade_out", "label")} if music.get("path") else None,
             "grading": {k: (p.get("grade") or {}).get(k) for k in ("look", "strength", "grain", "vignette", "why")},
             "beat_punch": (p.get("motion") or {}).get("beat_punch"),
-            "sound_sheet": _side(plan, ".sound.jpg"), "grade": _side(plan, ".grade.jpg")}
+            "sound_sheet": _side(plan, ".sound.jpg"), "grade": _side(plan, ".grade.jpg"),
+            "draft": _draft(plan), "effects": p.get("effects"),
+            "pips": [{"index": k + 1, **{x: q.get(x) for x in ("shot_id", "kind", "start", "dur", "x", "y", "scale", "thumb")}}
+                     for k, q in enumerate(p.get("pips") or [])]}
+
+
+def _draft(plan: Path) -> str | None:
+    """The quick preview of the plan as it stands (render --draft), if one was made since the last edit."""
+    f = Path(f"{_base(plan)}.draft.mp4")
+    return str(f) if f.exists() and f.stat().st_mtime >= plan.stat().st_mtime else None
 
 
 def text_defaults(p: dict) -> dict:
@@ -146,6 +159,54 @@ def still(plan: Path, t: float, raw: bool = False, mask: str | None = None) -> P
             old.unlink(missing_ok=True)   # a few hundred recent frames is plenty
         from .nodes import REGIONS
         render_still(read_json(plan), t, out, raw=raw, mask=mask if mask in REGIONS else None)
+    return out
+
+
+def fx_thumb(plan: Path, slot: int, kind: str, fid: str) -> Path | None:
+    """A small picture of a library item on the reel's own shots (the editor's pickers): a transition as three
+    moments from this shot into the next, a shot effect on this shot's thumbnail."""
+    from .planedit import _shots
+    from .util import short_hash
+    p = read_json(plan)
+    segs = p.get("segments") or []
+    if not segs:
+        return None
+    i = max(0, min(len(segs) - 1, int(slot) - 1))
+    by_id = _shots(p)
+    def thumb(k):
+        sh = by_id.get(segs[k].get("shot_id")) or {}
+        t = sh.get("thumb") or segs[k].get("thumb")
+        return t if t and Path(t).exists() else None
+    a, b = thumb(i), thumb(min(i + 1, len(segs) - 1))
+    if not a or not b:
+        return None
+    d = HOME / "cache" / "fx"
+    out = d / f"{short_hash(f'{a}|{b}|{kind}|{fid}|v1', 16)}.jpg"
+    if out.exists():
+        return out
+    import cv2
+    import numpy as np
+    def load(f):
+        im = cv2.cvtColor(cv2.imread(str(f)), cv2.COLOR_BGR2RGB)
+        h, w = im.shape[:2]
+        tw, th = 144, 256   # an upright window from the middle
+        k = max(tw / w, th / h)
+        im = cv2.resize(im, (int(w * k) + 1, int(h * k) + 1), interpolation=cv2.INTER_AREA)
+        y, x = (im.shape[0] - th) // 2, (im.shape[1] - tw) // 2
+        return np.ascontiguousarray(im[y:y + th, x:x + tw])
+    A, B = load(a), load(b)
+    if kind == "effect":
+        from .vfx import EFFECTS, apply
+        if fid not in EFFECTS:
+            return None
+        img = np.concatenate([A, apply(A, {"id": fid, "amount": 0.8}, 0.4, [0.4])], axis=1)
+    else:
+        from .motion import TRANSITIONS, apply_transition
+        if fid not in TRANSITIONS:
+            return None
+        img = np.concatenate([apply_transition(fid, A, B, q) for q in (0.3, 0.5, 0.7)], axis=1)
+    d.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out), cv2.cvtColor(img, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 85])
     return out
 
 
@@ -349,6 +410,17 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
                          name=b.get("name") or None, **opts), b.get("name") or "new reel"
     if kind == "render":
         return ["render", str(_plan(s("plan")))], Path(s("plan")).name
+    if kind == "carousel":   # a carousel post from the reel (carousel.py)
+        args = ["carousel", str(_plan(s("plan"))), "-n", str(max(3, min(10, int(b.get("slides") or 8))))]
+        if b.get("title"):
+            args += ["--title", s("title")]
+        if b.get("handle"):
+            args += ["--handle", s("handle")]
+        if b.get("route") is False:
+            args.append("--no-route")
+        return args, Path(s("plan")).name
+    if kind == "preview":   # the editor's motion preview of unrendered edits (render --draft)
+        return ["render", str(_plan(s("plan"))), "--draft"], Path(s("plan")).name
     if kind == "learn":
         name = re.sub(r"[^A-Za-z0-9_-]+", "-", s("name")).strip("-") or "mystyle"
         return ["learn", *items("refs"), "-n", name] + (["--add"] if b.get("add") else []), name
@@ -359,6 +431,16 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
         return find_args(**{k: b[k] for k in keys if b.get(k) not in (None, "", [])}), s("label") or s("place")
     if kind == "trips":
         return ["trips", "--", *items("folders")], "trips"
+    if kind == "split":   # one trip in parts, a reel from each (projects in the trip's collection)
+        args = ["split-trip"] + ([s("trip")] if b.get("trip") else []) + ["--by", "place" if b.get("by") == "place" else "day", "--make"]
+        if b.get("plan_only"):
+            args.append("--plan-only")
+        for k, flag in (("style", "-s"), ("music", "-m")):
+            if b.get(k):
+                args += [flag, s(k)]
+        if items("folders"):
+            args += ["--folders", *items("folders")]
+        return args, f"Split {s('trip') or 'trip'}"
     if kind == "music":
         return ["music", s("url")], s("url")
     if kind == "looks":   # the look library: fetch a free pack, add LUT files, remove a pack or a look
@@ -388,8 +470,10 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
         if not notes:
             raise ReelError("no notes")
         return ["revise", str(_plan(s("plan"))), "--notes-json", json.dumps(notes)], Path(s("plan")).name
-    if kind == "analyze":
-        return ["analyze", "--", *items("sources")], "analyse footage"
+    if kind == "analyze":   # the catalogue: new files only, unless asked to look at every shot again
+        flags = (["--rescore"] if b.get("rescore") else []) + (["--no-ai"] if b.get("no_ai") else []) + \
+            (["--no-details"] if b.get("no_details") else [])
+        return ["analyze", *flags, "--", *items("sources")], "analyse footage"
     if kind == "discover":
         return ["people", "discover", "--", *items("folders")], "people"
     raise ReelError(f"unknown job kind: {kind}")
@@ -486,7 +570,14 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/status":
                     return self._json(status())
                 if path == "/api/reels":
-                    return self._json(list_reels())
+                    from .projects import annotate
+                    return self._json(annotate(list_reels()))
+                if path == "/api/carousel":   # the reel's carousel as made and edited (carousel.json), or null
+                    from .carousel import load
+                    return self._json(load(_plan(arg("plan"))))
+                if path == "/api/collections":
+                    from .projects import collections
+                    return self._json(collections())
                 if path == "/api/reel":
                     return self._json(reel_detail(_plan(arg("plan"))))
                 if path == "/api/still":
@@ -497,6 +588,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._file(f, trusted=True) if f else self._json({"error": "no picture"}, 404)
                 if path == "/api/fonts":
                     return self._json(fonts())
+                if path == "/api/effects":   # the effects library (fxlib.py; no numpy needed)
+                    from .fxlib import catalog
+                    return self._json(catalog())
+                if path == "/api/fxthumb":   # one transition or shot effect, drawn on this reel's own shots
+                    f = fx_thumb(_plan(arg("plan")), int(arg("slot", "1")), arg("kind", "transition"), arg("id", ""))
+                    return self._file(f, trusted=True) if f else self._json({"error": "no picture"}, 404)
                 if path == "/api/styles":
                     return self._json(styles())
                 if path == "/api/ai":
@@ -541,6 +638,15 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/edit":
                     from .planedit import apply
                     return self._json(apply(_plan(str(b.get("plan"))), list(b.get("edits") or [])))
+                if path == "/api/carousel":   # edit the carousel (only the changed slides are drawn again)
+                    from .carousel import edit
+                    return self._json(edit(_plan(str(b.get("plan"))), list(b.get("ops") or [])))
+                if path == "/api/collections":   # add, rename or remove a collection (projects.py)
+                    from .projects import collection
+                    return self._json(collection(str(b.get("action")), str(b.get("name") or ""), b.get("to")))
+                if path == "/api/reel/manage":   # pin, favorite, collection, rename, duplicate, delete (projects.py)
+                    from .projects import manage
+                    return self._json(manage(_plan(str(b.get("plan"))), str(b.get("action")), b.get("value")))
                 if path in ("/api/undo", "/api/redo"):
                     from .planedit import step
                     return self._json(step(_plan(str(b.get("plan"))), back=path == "/api/undo"))

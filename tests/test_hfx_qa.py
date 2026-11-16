@@ -38,11 +38,11 @@ def test_motion_choice(monkeypatch):
 
 
 def test_leak_transition_is_warm_and_brightest_at_the_cut():
-    a = np.full((320, 180, 3), (110, 80, 40), np.uint8)
-    b = np.full((320, 180, 3), (40, 80, 60), np.uint8)
+    a = np.full((320, 180, 3), (40, 80, 110), np.uint8)
+    b = np.full((320, 180, 3), (60, 80, 40), np.uint8)
     mid, early = apply_transition("leak", a, b, 0.5), apply_transition("leak", a, b, 0.05)
     assert mid.mean() > early.mean() + 10
-    assert mid[..., 2].mean() > mid[..., 0].mean()                     # BGR: more red than blue
+    assert mid[..., 0].mean() > mid[..., 2].mean()                     # RGB (as render's frames): more red than blue
     assert np.abs(apply_transition("leak", a, b, 0.0).astype(int) - a).mean() < 25
 
 

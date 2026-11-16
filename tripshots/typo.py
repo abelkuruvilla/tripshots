@@ -98,7 +98,8 @@ def relayout() -> None:
         SAFE.update({"top": 70, "bottom": H - 80, "left": 130, "right": W - 130})
         BANDS.update({"upper": (90, 440), "center": (330, 750), "lower": (640, 990)})
     else:
-        SAFE.update({"top": 250, "bottom": H - 440, "left": 80, "right": W - 150})
+        # Instagram's caption, buttons and audio bar sit over the bottom ~480 px and the right 230 px of an upright reel
+        SAFE.update({"top": 250, "bottom": H - 480, "left": 80, "right": W - 230})
         BANDS.update({"upper": (300, 760), "center": (720, 1200), "lower": (1050, 1440)})
 
 
@@ -160,10 +161,16 @@ class Sprite:
     knock: np.ndarray | None = None  # letter mask filled with the picture itself (see-through postcard letters)
 
 
+LOOKS = ("neon", "glow", "outline", "offset")   # text looks (the effects library): how the letters are drawn
+
+
 def _render_text(text: str, fnt, fill=(255, 255, 255), shadow: float = 0.55, stroke: int = 0,
-                 tracking: float = 0.0, fills: list | None = None) -> tuple[np.ndarray, int]:
+                 tracking: float = 0.0, fills: list | None = None, look: str | None = None,
+                 accent=(255, 210, 60)) -> tuple[np.ndarray, int]:
     """RGBA sprite of one piece of text with a soft drop shadow. Returns (array, pad).
-    fills: a colour per character (postcard lettering) instead of one `fill`."""
+    fills: a colour per character (postcard lettering) instead of one `fill`.
+    look: neon (a coloured halo, letters near white), glow (a soft white halo), outline (hollow letters),
+    offset (a hard copy behind in the accent colour)."""
     asc, desc = fnt.getmetrics()
     if tracking:
         widths = [fnt.getlength(c) for c in text]
@@ -171,7 +178,9 @@ def _render_text(text: str, fnt, fill=(255, 255, 255), shadow: float = 0.55, str
     else:
         w = int(math.ceil(fnt.getlength(text))) + 2
     h = asc + desc
-    pad = max(12, int(h * 0.25))
+    pad = max(12, int(h * (0.45 if look in ("neon", "glow") else 0.25)))
+    if look == "outline" and not fills:
+        shadow = 0.0   # a shadow would show through the hollow letters
     W, H = w + 2 * pad, h + 2 * pad
     txt = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(txt)
@@ -192,6 +201,35 @@ def _render_text(text: str, fnt, fill=(255, 255, 255), shadow: float = 0.55, str
         d = ImageDraw.Draw(txt)
     if stroke:
         draw(d, pad, pad, (0, 0, 0, 200), stroke)
+    if look in ("neon", "glow"):
+        halo = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        col = (*fill, 255) if look == "neon" else (255, 255, 255, 200)
+        draw(ImageDraw.Draw(halo), pad, pad, col, max(2, h // 14))
+        for r in (h / 5, h / 11):
+            txt = Image.alpha_composite(txt, halo.filter(ImageFilter.GaussianBlur(r)))
+        d = ImageDraw.Draw(txt)
+        if look == "neon":   # the tube itself burns almost white
+            fill = tuple(int(255 - (255 - c) * 0.25) for c in fill)
+    elif look == "offset":
+        k = max(3, h // 12)
+        draw(d, pad + k, pad + k, (*[int(c) for c in accent[:3]], 255))
+    elif look == "outline" and not fills:
+        sw = max(2, h // 20)
+        ring = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        draw(ImageDraw.Draw(ring), pad, pad, (*fill, 255), sw)
+        hole = Image.new("L", (W, H), 0)
+        hd = ImageDraw.Draw(hole)
+        if tracking:
+            x = pad
+            for c, cw in zip(text, widths):
+                hd.text((x, pad), c, font=fnt, fill=255)
+                x += cw + tracking
+        else:
+            hd.text((pad, pad), text, font=fnt, fill=255)
+        r = np.asarray(ring).copy()
+        r[..., 3] = (r[..., 3].astype(np.float32) * (1 - np.asarray(hole, np.float32) / 255.0)).astype(np.uint8)
+        txt = Image.alpha_composite(txt, Image.fromarray(r))
+        return np.asarray(txt).astype(np.float32) / 255.0, pad
     if fills:
         x = float(pad)
         for i, c in enumerate(text):
@@ -738,8 +776,10 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
             img, km, pad = _render_knock(txt, fnt)
             el.sprites.append(Sprite(img, x - pad, y - pad, ti, li, knock=km))
             continue
-        img, pad = _render_text(txt, fnt, fill=fill, shadow=0.6 if el.scrim < 0.3 else 0.45, fills=fills,
-                                stroke=max(2, size // 36) if palette else edge)
+        look = cfg.get("look") if cfg.get("look") in LOOKS else None
+        img, pad = _render_text(txt, fnt, fill=fill, shadow=0 if look == "neon" else (0.6 if el.scrim < 0.3 else 0.45),
+                                fills=fills, stroke=max(2, size // 36) if palette else edge, look=look,
+                                accent=tuple(cfg.get("lead_color") or (255, 210, 60)))
         el.sprites.append(Sprite(img, x - pad, y - pad, ti, li))
     return el
 

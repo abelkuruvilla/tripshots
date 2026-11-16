@@ -275,9 +275,14 @@ def find(folders=None, place: str | None = None, near: list[float] | None = None
         hints = ai_camera_hints()
         picked = [r for r in picked if camera_kind(r, hints.get(r.get("sig"))) == camera]
         notes.append(f"camera: {camera} ({len(picked)} of {len(recs)} files)")
-    if text:
-        words = _words(text)
-        picked = [r for r in picked if all(w in (r["path"] + " " + (r.get("place") or "")).lower() for w in words)]
+    if text:   # the file's name and place, and what the AI saw in it (captions, tags, vibes, shot size...)
+        words = [w[:-1] if len(w) > 4 and w.endswith("s") else w for w in _words(text)]
+        from . import library as lib
+        seen = lib.ai_words()
+        picked = [r for r in picked
+                  if all(w in (r["path"] + " " + (r.get("place") or "") + " " + seen.get(r.get("sig") or "", "")).lower()
+                         for w in words)]
+        notes.append(f"words: {' '.join(words)} (file names, places and what the AI saw)")
     if place or near:
         if place:
             match, desc, centre = place_matcher(place)
@@ -437,6 +442,57 @@ def group_trips(recs: list[dict], gap_days: float = 2.0) -> list[list[dict]]:
         if r.get("gps"):
             last_gps = r["gps"]
     return groups
+
+
+def split_trip(trip: str | None = None, folders=None, by: str = "day", min_files: int = 8) -> dict:
+    """One trip's footage in parts, each saved as a selection to make its own reel from: a part per day, or per
+    place (a run of footage at one place). Parts with fewer than `min_files` files join their neighbour.
+    `trip`: an id from `trips` (trip-YYYY-MM-DD); without one, all of `folders` is the trip."""
+    recs = [r for r in records(folders) if r.get("time") and r.get("created_from") != "mtime"]
+    recs.sort(key=lambda r: r["time"])
+    name_places(recs)
+    groups = group_trips(recs)
+    if trip:
+        groups = [g for g in groups if trip_id(g) == trip]
+        if not groups:
+            raise ReelError(f"no trip {trip} in this footage (see `tripshots trips`)")
+    elif len(groups) > 1:
+        groups = [[r for g in groups for r in g]]
+    if not groups or not groups[0]:
+        raise ReelError("no dated footage to split")
+    g = groups[0]
+    if by not in ("day", "place"):
+        raise ReelError("split by day or by place")
+    parts: list[list[dict]] = []
+    for r in g:
+        key = r["time"].date().isoformat() if by == "day" else (r.get("place") or "")
+        last = parts[-1][-1] if parts else None
+        lkey = (last["time"].date().isoformat() if by == "day" else (last.get("place") or "")) if last else None
+        if last is None or (key != lkey and (by == "day" or key)):
+            parts.append([])
+        parts[-1].append(r)
+    merged: list[list[dict]] = []
+    for p in parts:   # a part too small for a reel joins the one before (or the next, at the start)
+        if merged and (len(p) < min_files or len(merged[-1]) < min_files):
+            merged[-1] += p
+        else:
+            merged.append(p)
+    tid, summary = trip_id(g), _trip_summary(g)
+
+    def short(place: str) -> str:   # "Teton County, Wyoming" -> "Teton"
+        return re.sub(r"\s+(County|Parish|Borough|District)$", "", place.split(",")[0].strip())
+    tops = list(dict.fromkeys(short(x) for x in summary["places"][:3]))[:2]
+    out = []
+    for k, p in enumerate(merged, 1):
+        days = sorted({r["time"].date().isoformat() for r in p})
+        places = [x for x, _ in Counter(r["place"] for r in p if r.get("place")).most_common(3)]
+        here = re.sub(r"[^A-Za-z0-9]+", "-", short(places[0])).strip("-") if places else "part"
+        name = f"{summary['from']}-{'day' if by == 'day' else 'stop'}{k:02d}-{here}"
+        sel = _save_selection(p, {"trip": tid, "by": by, "part": k}, len(g), [f"part {k} of {tid}"], {}, name)
+        out.append({"part": k, "selection": sel["selection"], "label": name, "days": days, "files": len(p),
+                    "photos": sum(r["kind"] == "photo" for r in p), "videos": sum(r["kind"] == "video" for r in p),
+                    "places": places})
+    return {"trip": tid, "collection": f"{', '.join(tops) or 'Trip'} ({summary['from']})", "by": by, "parts": out}
 
 
 def trip_id(g: list[dict]) -> str:

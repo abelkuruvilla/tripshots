@@ -13,12 +13,18 @@
   import ShotPanel from "./reel/ShotPanel.svelte";
   import SoundPanel from "./reel/SoundPanel.svelte";
   import ColourPanel from "./reel/ColourPanel.svelte";
+  import CarouselPanel from "./reel/CarouselPanel.svelte";
 
   let video = $state(null);
   let bust = $state(Date.now());
   let picking = $state(null); // { mode: "swap", seg } | { mode: "insert", after }
   let cands = $state([]);
+  let kindShown = $state("all"); // the drawer shows clips, photos or both
+  let candQ = $state("");
+  let shownCands = $derived(cands.filter((c) => (kindShown === "all" || c.kind === kindShown)
+    && (!candQ || candQ.toLowerCase().split(/\s+/).every((w) => `${c.caption} ${c.note} ${c.file} ${(c.tags || []).join(" ")} ${(c.vibes || []).join(" ")} ${c.size || ""} ${c.angle || ""}`.toLowerCase().includes(w)))));
   let still = $state(""); // the edited frame's address
+  let showDraft = $state(false); // the viewer plays the quick preview of the edits (render --draft)
   let stillBusy = $state(false);
   let tabsEl = $state(null);
 
@@ -31,19 +37,48 @@
     load().then(() => ((ed.preview = !ed.reel?.video), loadNotes()));
   });
   let reel = $derived(ed.reel);
+  // the inspector's tools, down a rail at its side (always all in view, like an editor's tool bar)
   let tabs = $derived(ed.expert
-    ? [["shot", "Shot"], ["text", "Text"], ["colour", "Colour"], ["sound", "Sound"], ["notes", "Notes"], ["post", "Post"]]
-    : [["text", "Text"], ["colour", "Colour"], ["notes", "Notes"], ["post", "Post"]]);
+    ? [["shot", "Shot", "scissors"], ["text", "Text", "type"], ["colour", "Colour", "palette"], ["sound", "Sound", "music"],
+       ["notes", "Notes", "message"], ["post", "Post", "send"], ["carousel", "Carousel", "grid"]]
+    : [["text", "Text", "type"], ["colour", "Colour", "palette"], ["notes", "Notes", "message"], ["post", "Post", "send"],
+       ["carousel", "Carousel", "grid"]]);
 
   // a render of this plan finished: show the new video
   let lastRender = null;
   $effect(() => {
     const done = app.jobs.find((j) => j.kind === "render" && j.state === "done" && reel && j.label === reel.name + ".plan.json");
     if (done && done.id !== lastRender) {
-      if (lastRender !== null) load().then(() => ((bust = Date.now()), (ed.preview = false)));
+      if (lastRender !== null) load().then(() => ((bust = Date.now()), (ed.preview = false), (showDraft = false)));
       lastRender = done.id;
     }
   });
+  // a quick preview of the edits finished: play it
+  let lastPreview = null;
+  $effect(() => {
+    const done = app.jobs.find((j) => j.kind === "preview" && j.state === "done" && reel && j.label === reel.name + ".plan.json");
+    if (done && done.id !== lastPreview) {
+      if (lastPreview !== null) load().then(() => ((bust = Date.now()), (showDraft = !!ed.reel?.draft), (ed.preview = !ed.reel?.draft),
+                                                    showDraft && setTimeout(() => video?.play(), 0)));
+      lastPreview = done.id;
+    }
+  });
+  // an edit makes the preview out of date: back to the still of the edit
+  $effect(() => {
+    if (showDraft && reel && !reel.draft) ((showDraft = false), (ed.preview = true));
+  });
+  let previewJob = $derived(app.jobs.find((j) => j.kind === "preview" && j.state === "running" && reel && j.label === reel.name + ".plan.json"));
+  async function playEdit() {
+    if (reel.draft) {
+      showDraft = true;
+      ed.preview = false;
+      setTimeout(() => video?.play(), 0);
+      return;
+    }
+    video?.pause();
+    await startJob("preview", { plan: reel.plan }, `Preview of ${reel.name}`);
+  }
+
   // notes were turned into edits (and rendered): show the result
   let lastRevise = null;
   $effect(() => {
@@ -146,19 +181,35 @@
 
   async function pick(seg) {
     picking = { mode: "swap", seg };
+    kindShown = seg.kind === "video" ? "video" : "all"; // a clip's slot: clips first
     cands = [];
-    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
+  }
+  // any panel can ask for a shot from this trip (the carousel's slides): the same drawer, its own title
+  async function pickShot(title, note, done) {
+    picking = { mode: "custom", title, note, done };
+    cands = [];
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
+  }
+  async function addOnTop() {
+    picking = { mode: "pip" };
+    cands = [];
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
   async function insertAfter(slot) {
     picking = { mode: "insert", after: slot };
     cands = [];
-    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=60`);
+    cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
   async function choose(shot) {
     const p = picking;
     picking = null;
+    if (p.mode === "custom") return p.done(shot);
     if (p.mode === "swap") await edit({ op: "swap", segment: p.seg.slot, shot_id: shot.id });
-    else {
+    else if (p.mode === "pip") {
+      const res = await edit({ op: "pip_add", shot_id: shot.id, start: frames(Math.max(0, ed.now)), dur: 2 });
+      if (res) select({ kind: "pip", index: ed.reel.pips.length });
+    } else {
       const res = await edit({ op: "insert", after: p.after, shot_id: shot.id, dur: 1.5 });
       if (res) select({ kind: "clip", slot: p.after + 1 });
     }
@@ -167,7 +218,7 @@
   // tabs: arrow keys move between them
   function tabKeys(e) {
     const i = tabs.findIndex(([id]) => id === ed.tab);
-    const j = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
+    const j = e.key === "ArrowDown" || e.key === "ArrowRight" ? i + 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? i - 1 : null;
     if (j === null) return;
     e.preventDefault();
     e.stopPropagation();
@@ -197,12 +248,20 @@
       const s = reel.segments[ed.sel.slot - 1];
       const at = ed.now - s.start;
       if (at > 0.07 && at < s.dur - 0.07) edit({ op: "split", segment: s.slot, at: frames(at) });
+    } else if (ed.expert && !mod && ed.sel?.kind === "clip" && "fr".includes(e.key.toLowerCase())) {
+      const s = reel.segments[ed.sel.slot - 1];
+      if (s.kind !== "video" || s.panel || s.ramp || (s.freeze && e.key.toLowerCase() === "f")) return;
+      if (e.key.toLowerCase() === "r") edit({ op: "reverse", segment: s.slot, on: !s.reverse });
+      else edit({ op: "freeze", segment: s.slot, at: frames(Math.max(0, Math.min(s.dur, ed.now - s.start))), dur: 1 });
     } else if ((e.key === "Backspace" || e.key === "Delete") && ed.sel && !mod) {
       e.preventDefault();
       const sel = ed.sel;
       if (sel.kind === "text") {
         ed.sel = null;
         edit({ op: "delete_text", index: sel.index });
+      } else if (sel.kind === "pip") {
+        ed.sel = null;
+        edit({ op: "pip_delete", index: sel.index });
       } else if (ed.expert && reel.segments.length > 1) {
         ed.sel = null;
         edit({ op: "delete", segment: sel.slot });
@@ -221,7 +280,7 @@
 
 <div class="editor">
   <header class="bar">
-    <button class="btn ghost" onclick={() => (app.view = "reels")}><Icon name="back" /> Reels</button>
+    <button class="btn ghost" onclick={() => (app.view = "reels")}><Icon name="back" /> Projects</button>
     {#if reel}
       <div class="title">
         <h1 class="ellipsis">{reel.name}</h1>
@@ -246,12 +305,14 @@
   {#if ed.error}<p class="err-text pad">{ed.error}</p>{/if}
   {#if reel}
     <div class="main">
+      <div class="left">
       <div class="stage">
         <div class="screen">
           <div class="player" style="--ar: {reel.width / reel.height}">
-            {#if reel.video}
+            {#if reel.video || (showDraft && reel.draft)}
               <!-- svelte-ignore a11y_media_has_caption -->
-              <video bind:this={video} class:hidden={ed.preview} src={media(reel.video, bust)} controls playsinline poster={media(reel.cover, bust)}></video>
+              <video bind:this={video} class:hidden={ed.preview} src={media(showDraft && reel.draft ? reel.draft : reel.video, bust)} controls playsinline
+                     poster={showDraft ? undefined : media(reel.cover, bust)}></video>
             {/if}
             {#if (ed.preview || !reel.video) && still}
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions (text is also placed with the Place buttons) -->
@@ -274,40 +335,49 @@
         </div>
         <div class="under">
           <div class="seg" role="radiogroup" aria-label="The viewer shows">
-            <button role="radio" aria-checked={ed.preview} onclick={() => (video?.pause(), (ed.preview = true))}><Icon name="eye" size={14} /> Your edit</button>
-            <button role="radio" aria-checked={!ed.preview} disabled={!reel.video} onclick={() => (ed.preview = false)}><Icon name="play" size={14} /> Last render</button>
+            <button role="radio" aria-checked={ed.preview} onclick={() => (video?.pause(), (ed.preview = true), (showDraft = false))}><Icon name="eye" size={14} /> Your edit</button>
+            <button role="radio" aria-checked={!ed.preview && showDraft} onclick={playEdit} disabled={!!previewJob}
+                    title="Play your edits in motion: a quick render without sound effects or animated text">
+              {#if previewJob}<span class="spin"></span> Preparing{:else}<Icon name="film" size={14} /> Preview{/if}</button>
+            <button role="radio" aria-checked={!ed.preview && !showDraft} disabled={!reel.video} onclick={() => ((ed.preview = false), (showDraft = false))}><Icon name="play" size={14} /> Last render</button>
           </div>
           <span class="meta now">{tc(ed.now)} / {tc(reel.duration)}</span>
           <button class="btn sm ghost" onclick={noteHere} title="Pause and note what should change here (N)"><Icon name="message" size={14} /> Note</button>
-          <span class="quiet small hint-line">{ed.preview ? (ed.split ? "Drag the divider to compare" : selText ? "Click the picture to place the text" : "A still of your edit, without motion") : reel.stale ? "Older than your edits" : ""}</span>
+          <span class="quiet small hint-line">{showDraft && !ed.preview ? "Preview: no sound effects, text without motion" : ed.preview ? (ed.split ? "Drag the divider to compare" : selText ? "Click the picture to place the text" : "A still of your edit, without motion") : reel.stale ? "Older than your edits" : ""}</span>
         </div>
+      </div>
+      <section class="tl" aria-label="Timeline">
+        <Timeline onseek={seek} onpick={pick} />
+        <p class="quiet keys">
+          <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>⌘Z</kbd> undo · <kbd>⌫</kbd> remove · <kbd>←</kbd><kbd>→</kbd> a frame{#if ed.expert} · <kbd>S</kbd> split · <kbd>F</kbd> freeze · <kbd>R</kbd> reverse · drag a shot to move it, its edges to trim it{/if}
+        </p>
+      </section>
       </div>
 
       <aside class="inspector surface" aria-label="Inspector">
         <!-- svelte-ignore a11y_interactive_supports_focus -->
-        <div class="tabs" role="tablist" aria-label="Edit" bind:this={tabsEl} onkeydown={tabKeys}>
-          {#each tabs as [id, label]}
+        <div class="rail" role="tablist" aria-label="Tools" aria-orientation="vertical" bind:this={tabsEl} onkeydown={tabKeys}>
+          {#each tabs as [id, label, icon]}
             <button role="tab" id={`tab-${id}`} aria-selected={ed.tab === id} aria-controls="tabpanel" tabindex={ed.tab === id ? 0 : -1}
-                    onclick={() => (ed.tab = id)}>{label}{#if id === "notes" && ed.notes.length} <span class="count">{ed.notes.length}</span>{/if}</button>
+                    onclick={() => (ed.tab = id)} title={label}>
+              <Icon name={icon} size={18} />
+              <span class="rl">{label}</span>
+              {#if id === "notes" && ed.notes.length}<span class="count">{ed.notes.length}</span>{/if}
+            </button>
           {/each}
         </div>
         <div class="pane" id="tabpanel" role="tabpanel" aria-labelledby={`tab-${ed.tab}`}>
-          {#if ed.tab === "shot"}<ShotPanel onpick={pick} oninsert={insertAfter} />
+          {#if ed.tab === "shot"}<ShotPanel onpick={pick} oninsert={insertAfter} onontop={addOnTop} />
           {:else if ed.tab === "text"}<TextPanel />
           {:else if ed.tab === "colour"}<ColourPanel />
           {:else if ed.tab === "sound"}<SoundPanel />
           {:else if ed.tab === "notes"}<NotesPanel onseek={seek} pause={() => video?.pause()} />
+          {:else if ed.tab === "carousel"}<CarouselPanel onpickshot={pickShot} />
           {:else}<PostPanel />{/if}
         </div>
       </aside>
     </div>
 
-    <section class="tl" aria-label="Timeline">
-      <Timeline onseek={seek} onpick={pick} />
-      <p class="quiet keys">
-        <kbd>Space</kbd> play · <kbd>N</kbd> note · <kbd>⌘Z</kbd> undo · <kbd>⌫</kbd> remove · <kbd>←</kbd><kbd>→</kbd> a frame{#if ed.expert} · <kbd>S</kbd> split · drag a shot to move it, its edge to change its length{/if}
-      </p>
-    </section>
   {:else if !ed.error}
     <div class="empty"><span class="spin"></span></div>
   {/if}
@@ -318,19 +388,36 @@
   <div class="overlay" onclick={(e) => e.target === e.currentTarget && (picking = null)}>
     <div class="drawer" role="dialog" aria-modal="true" aria-label="Choose a shot" tabindex="-1">
       <div class="row">
-        <h2>{picking.mode === "swap" ? `Replace shot ${picking.seg.slot}` : `Add a shot after shot ${picking.after}`}</h2>
+        <h2>{picking.mode === "custom" ? picking.title : picking.mode === "swap" ? `Replace shot ${picking.seg.slot}` : picking.mode === "pip" ? "Put a shot on top" : `Add a shot after shot ${picking.after}`}</h2>
         {#if picking.mode === "swap"}<span class="meta">{tc(picking.seg.dur)}</span>{/if}
         <div class="spacer"></div>
         <button class="btn ghost icon" onclick={() => (picking = null)} aria-label="Close"><Icon name="x" /></button>
       </div>
-      <p class="muted">{picking.mode === "swap" ? "The best shots of this reel's footage. The slot keeps its length and its place on the beat" : "It comes in for 1.5 s; change its length in the Shot tab"}</p>
-      {#if !cands.length}<div class="empty"><span class="spin"></span></div>{/if}
+      <p class="muted">{picking.mode === "custom" ? picking.note : picking.mode === "swap" ? "The best shots of this reel's footage. The slot keeps its length and its place on the beat"
+        : picking.mode === "pip" ? "It appears in a corner at the playhead for 2 s; move it, size it and set its length in the Shot tab"
+        : "It comes in for 1.5 s; change its length in the Shot tab"}</p>
+      <div class="row cfilter">
+        <div class="seg" role="radiogroup" aria-label="Show">
+          {#each [["all", "All"], ["video", "Clips"], ["photo", "Photos"]] as [id, label]}
+            <button role="radio" aria-checked={kindShown === id} onclick={() => (kindShown = id)}>{label}
+              <span class="meta">{id === "all" ? cands.length : cands.filter((c) => c.kind === id).length}</span></button>
+          {/each}
+        </div>
+        <input type="search" placeholder="Find: bison, aerial, serene, close…" bind:value={candQ} aria-label="Find a shot" />
+      </div>
+      {#if !cands.length}<div class="empty"><span class="spin"></span></div>
+      {:else if !shownCands.length}<p class="quiet">No {kindShown === "video" ? "clips" : kindShown === "photo" ? "photos" : "shots"} match</p>{/if}
       <div class="cands">
-        {#each cands as c}
+        {#each shownCands as c (c.id)}
           <button class="cand" onclick={() => choose(c)} disabled={c.used && picking.mode === "swap"}>
-            {#if c.thumb}<img src={media(c.thumb)} alt="" loading="lazy" />{/if}
-            <span class="row"><span class="tc score">{c.score.toFixed(1)}</span>{#if c.len_s}<span class="meta">{c.len_s}s</span>{/if}{#if c.used}<span class="meta">in this reel</span>{/if}</span>
-            <span class="note">{c.note}</span>
+            <span class="pic">
+              {#if c.thumb}<img src={media(c.thumb)} alt="" loading="lazy" />{/if}
+              {#if c.kind === "video"}<span class="vbadge"><Icon name="play" size={10} /> {c.len_s}s</span>{:else}<span class="vbadge photo">Photo</span>{/if}
+              {#if c.words}<span class="vbadge warn" title="Words are drawn on this picture (an edited export or a screenshot)">Text on it</span>{/if}
+            </span>
+            <span class="row"><span class="tc score">{c.score.toFixed(1)}</span>{#if c.used}<span class="meta">in this reel</span>{/if}</span>
+            <span class="note">{c.caption || c.note}</span>
+            {#if c.vibes?.length || c.size}<span class="chips2">{#each [c.size, c.angle === "aerial" ? "aerial" : null, ...(c.vibes || [])].filter(Boolean) as v}<span class="vchip">{v}</span>{/each}</span>{/if}
           </button>
         {/each}
       </div>
@@ -353,8 +440,10 @@
   .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
   .pad { padding: 0 4px; }
 
-  .main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; }
-  .stage { min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+  /* the viewer and the timeline on the left, the inspector the whole height on the right (as editors lay it out) */
+  .main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 16px; }
+  .left { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
   .screen { flex: 1; min-height: 0; display: grid; place-items: center; container-type: size; }
   .player {
     position: relative; aspect-ratio: var(--ar); width: min(100cqw, calc(100cqh * var(--ar)));
@@ -378,10 +467,19 @@
   .now { flex: none; }
   .hint-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .inspector { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .tabs { padding: 0 8px; flex: none; }
-  .count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 600; }
-  .pane { flex: 1; min-height: 0; overflow: auto; }
+  .inspector { min-height: 0; display: flex; flex-direction: row; overflow: hidden; }
+  .rail { flex: none; width: 64px; display: flex; flex-direction: column; gap: 2px; padding: 8px 6px; border-right: 1px solid var(--line); overflow-y: auto; }
+  .rail > button {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px; border: 0;
+    border-radius: var(--r-sm); background: transparent; color: var(--text-3); font-size: 10.5px; line-height: 12px; font-weight: 500;
+    transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+  }
+  .rail > button:hover { background: var(--raised); color: var(--text); }
+  .rail > button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+  .rail > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .rl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .count { position: absolute; top: 4px; right: 6px; display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-size: 10px; font-weight: 600; }
+  .pane { flex: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 
   .tl { flex: none; }
   .keys { font-size: 12px; margin-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -401,8 +499,17 @@
   }
   .cand:hover:not(:disabled) { border-color: var(--accent); }
   .cand:disabled { opacity: 0.45; }
-  .cand img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-sm); display: block; margin-bottom: 4px; }
+  .pic { position: relative; display: block; margin-bottom: 4px; }
+  .cand img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-sm); display: block; }
+  .vbadge { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 4px;
+            background: rgba(15, 15, 16, 0.78); color: #ededed; font-size: 11px; font-family: var(--mono, monospace); }
+  .vbadge.photo { font-family: inherit; color: #cfcfcf; }
+  .vbadge.warn { left: auto; right: 6px; font-family: inherit; color: #ffcf8a; }
+  .chips2 { display: flex; flex-wrap: wrap; gap: 3px; }
+  .vchip { font-size: 10px; line-height: 14px; padding: 0 5px; border-radius: 7px; background: var(--raised); color: var(--text-2); }
+  .cfilter { gap: 12px; }
+  .cfilter input { flex: 1; min-width: 0; min-height: 32px; height: 32px; }
   .score { font-size: 13px; }
   .note { font-size: 12px; line-height: 16px; color: var(--text-3); display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  @media (max-width: 1080px) { .main { grid-template-columns: minmax(0, 1fr) 340px; } }
+  @media (max-width: 1080px) { .main { grid-template-columns: minmax(0, 1fr) 380px; } }
 </style>

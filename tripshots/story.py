@@ -483,7 +483,8 @@ def moving(s: dict) -> bool:
 
 
 def _q(s):
-    return float(_ai(s).get("score", 5.0))
+    from .planner import _quality
+    return _quality(s)
 
 
 def role_score(s: dict, role: str, ctx: dict) -> float:
@@ -496,13 +497,19 @@ def role_score(s: dict, role: str, ctx: dict) -> float:
     if role == "hook":
         v += 1.5 * (a.get("role") == "hook") + 0.6 * dyn + (1.0 if moving(s) else 0.0) + 0.6 * pw * people
         v += 0.3 * float(a.get("aesthetic", q) or q) / 10
+        from .planner import opening_bonus
+        v += opening_bonus(s)
         if ctx.get("tease"):  # reveal format: open on something intriguing, keep the best for the payoff
             v = 5 + 1.0 * moving(s) + 0.5 * people - 0.3 * q
     elif role == "peak":
         v += 0.8 * dyn + 0.8 * moving(s) + 0.8 * pw * people
+        vib = a.get("vibes") or {}
+        v += 0.6 * max(vib.get("epic", 0), vib.get("energetic", 0))
         v += 0.6 if s.get("kind") == "video" and float(s.get("fps") or 0) >= 48 else 0.0
     elif role == "ending":
         v = 0.6 * q + 2.0 * (a.get("role") == "closer") + 0.8 * (a.get("mood") == "calm") + 0.8 * pw * people
+        vib = a.get("vibes") or {}
+        v += 0.6 * max(vib.get("serene", 0), vib.get("nostalgic", 0), vib.get("romantic", 0))   # an ending that settles
         if ctx.get("loop_ref") is not None and ctx.get("looks", {}).get(s["id"]) is not None:
             from .diversity import look_similarity
             v += 3.0 * look_similarity(ctx["loop_ref"], ctx["looks"][s["id"]])
@@ -890,7 +897,10 @@ def _part_places(order: list, free: list[int], where: dict | None) -> None:
 # (size, light, colour, subject), shot sizes alternate rather than repeat, each new place opens wide before its
 # details, and the camera doesn't make the same move three shots running (three pushes in a row read as a slideshow).
 def size(s: dict) -> str:
-    """wide | medium | close: how big the subject is in the frame."""
+    """wide | medium | close: how big the subject is in the frame (the AI's shot size when it gave one)."""
+    ss = _ai(s).get("shot_size")
+    if ss in ("wide", "medium", "close", "detail"):
+        return "close" if ss == "detail" else ss
     from .framing import person_box
     if _ai(s).get("scene") in DETAIL_SCENES and _ai(s).get("scene") != "portrait":
         return "close"

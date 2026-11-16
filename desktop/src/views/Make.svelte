@@ -24,6 +24,34 @@
   let hook = $state("");
   let planOnly = $state(false);
   let styles = $state([]);
+  // from a trip: one reel per day or per place (tripshots split-trip)
+  let trips = $state(null);
+  let tripsBusy = $state(false);
+  let trip = $state(null);
+  let by = $state("day");
+  async function findTrips() {
+    tripsBusy = true;
+    try {
+      const st = await api("/api/jobs", { kind: "trips", folders: folders });
+      let cur = st;
+      while (cur.state === "running") {
+        await new Promise((r) => setTimeout(r, 1200));
+        cur = await api(`/api/jobs/${st.id}`);
+      }
+      trips = (cur.result?.trips || []).slice().reverse();
+      if (cur.state === "failed") toast(cur.error || "Couldn't read the trips", "error");
+    } catch (e) {
+      toast(String(e.message || e), "error");
+    } finally {
+      tripsBusy = false;
+    }
+  }
+  function split() {
+    if (!trip) return;
+    run("split", { trip: trip.id, by, style: style || null, music: sound.trim() || null, plan_only: planOnly },
+        `${(trip.places || []).slice(0, 2).join(", ") || trip.id} in parts`);
+  }
+  const days = (t) => `${t.from}${t.to !== t.from ? ` to ${t.to}` : ""} · ${t.days} day${t.days > 1 ? "s" : ""}`;
   onMount(async () => {
     app.prefill = null;
     styles = await api("/api/styles").catch(() => []);
@@ -104,6 +132,7 @@
     <div class="seg modes" role="tablist" aria-label="How to make it">
       <button role="tab" aria-selected={mode === "describe"} onclick={() => (mode = "describe")}><Icon name="message" size={14} /> Describe it</button>
       <button role="tab" aria-selected={mode === "choose"} onclick={() => (mode = "choose")}><Icon name="sliders" size={14} /> Choose it yourself</button>
+      <button role="tab" aria-selected={mode === "trip"} onclick={() => ((mode = "trip"), !trips && !tripsBusy && findTrips())}><Icon name="folder" size={14} /> From a trip</button>
     </div>
 
     {#if mode === "describe"}
@@ -123,6 +152,54 @@
           <label class="check"><input type="checkbox" bind:checked={planOnly} /> Plan first</label>
           <button class="btn primary" onclick={() => describe()} disabled={!request.trim() || running}>Make the reel <kbd class="kbd-on">⌘↵</kbd></button>
         </div>
+      </section>
+    {:else if mode === "trip"}
+      <section class="surface box">
+        <div class="row">
+          <h2>Your trips</h2>
+          <span class="meta">{trips ? trips.length : ""}</span>
+          <div class="spacer"></div>
+          <button class="btn sm ghost" onclick={findTrips} disabled={tripsBusy}>{#if tripsBusy}<span class="spin"></span> Looking{:else}Look again{/if}</button>
+        </div>
+        {#if tripsBusy && !trips}<p class="quiet">Reading the dates and places of your footage…</p>{/if}
+        {#if trips && !trips.length}<p class="quiet">No dated footage in your footage folders</p>{/if}
+        <div class="trips">
+          {#each trips || [] as t (t.id)}
+            <button class="trip" class:on={trip?.id === t.id} onclick={() => (trip = t)}>
+              <span class="tname ellipsis">{(t.places || []).slice(0, 3).join(", ") || t.id}</span>
+              <span class="meta">{days(t)} · {t.videos} clips · {t.photos} photos</span>
+            </button>
+          {/each}
+        </div>
+        {#if trip}
+          <div class="grid2">
+            <div class="field">
+              <span class="lbl">One reel per</span>
+              <div class="seg" role="radiogroup" aria-label="Split by">
+                <button role="radio" aria-checked={by === "day"} onclick={() => (by = "day")}>Day</button>
+                <button role="radio" aria-checked={by === "place"} onclick={() => (by = "place")}>Place</button>
+              </div>
+              <p class="quiet small help">{by === "day" ? `${trip.days} days; a day with little footage joins the one before` : "A stretch of footage at one place each"}</p>
+            </div>
+            <div class="field">
+              <label for="tsty">Style</label>
+              <select id="tsty" bind:value={style}>
+                <option value="">Automatic</option>
+                {#each styles as s}<option value={s.name}>{nice(s.name)}{s.user ? " · yours" : ""}</option>{/each}
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="tsnd">Sound <span class="hint">· optional, the same for every part</span></label>
+            <input id="tsnd" type="text" placeholder="instagram.com/reel/… or an audio file" bind:value={sound} />
+          </div>
+          <div class="row foot">
+            <span class="quiet small">The reels go into a collection named after the trip</span>
+            <div class="spacer"></div>
+            <label class="check"><input type="checkbox" bind:checked={planOnly} /> Plans first</label>
+            <button class="btn primary" onclick={split} disabled={running}>Make the reels</button>
+          </div>
+        {/if}
       </section>
     {:else}
       <section class="surface box form">
@@ -237,6 +314,19 @@
             {/if}
             {#if running && now}<div class="fact"><span class="lbl2 meta">Now</span><p class="muted ellipsis" title={now}>{now}</p></div>{/if}
             {#if job.state === "failed"}<div class="fact"><span class="lbl2 meta">What happened</span><p class="err-text selectable">{job.error || now}</p></div>{/if}
+            {#if res?.parts}
+              <div class="fact">
+                <span class="lbl2 meta">{res.collection}</span>
+                {#each res.parts as pt}
+                  <div class="row part">
+                    <span class="ellipsis">{pt.label}</span>
+                    <span class="meta">{pt.days?.join(", ")} · {pt.files} files</span>
+                    <div class="spacer"></div>
+                    {#if pt.plan}<button class="btn sm" onclick={() => openReel(pt.plan)}>Open</button>{:else if pt.error}<span class="err-text small" title={pt.error}>Failed</span>{/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
             {#if job.state === "done" && plan}
               <p class="muted">{res?.dry_run || planOnly ? "The plan and its storyboard are ready: open it to look, swap shots and render it" : "Open it to watch it, change its words and colour, and copy the caption"}</p>
             {/if}
@@ -281,5 +371,11 @@
   .reply { margin-top: 8px; max-width: 520px; }
   .sheet { width: 100%; max-height: 240px; object-fit: cover; object-position: top; border-radius: var(--r-ctl); box-shadow: inset 0 0 0 1px var(--line); margin-top: 8px; }
   details summary { color: var(--text-3); }
+  .trips { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 300px; overflow: auto; }
+  .trip { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; padding: 10px 12px; text-align: left; border: 1px solid var(--line);
+          border-radius: var(--r-ctl); background: var(--card); color: inherit; cursor: pointer; min-width: 0; }
+  .trip.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .tname { font-weight: 500; max-width: 100%; }
+  .part { gap: 8px; }
   details .log { margin-top: 8px; max-height: 220px; }
 </style>

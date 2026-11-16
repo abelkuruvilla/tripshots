@@ -3,6 +3,7 @@
   import Icon from "../../lib/Icon.svelte";
   import { tc } from "../../lib/store.svelte.js";
   import FontPicker from "./FontPicker.svelte";
+  import Section from "../../lib/Section.svelte";
   import { ed, edit, hex, frames, select as pick } from "./editor.svelte.js";
 
   const kinds = { hook: "Hook", location: "Place", cta: "Ending", label: "Label", caption: "Subtitle", text: "Text" };
@@ -10,6 +11,10 @@
   const anims = [["pop", "Pop"], ["slide", "Slide up"], ["fade", "Fade"], ["scale", "Grow"], ["typewriter", "Typewriter"],
                  ["tracking", "Spread"], ["rise", "Rise"], ["cut", "Cut"]];
   const positions = [["auto", "Auto"], ["upper", "Top"], ["center", "Middle"], ["lower", "Bottom"]];
+  // animated motions (rendered as motion pages) and how the letters are drawn: the effects library (fxlib.py)
+  const motions = [["", "Automatic"], ["rise", "Rise"], ["focus", "Pull focus"], ["cinema", "Film title"], ["tracking", "Spread"],
+                   ["typewriter", "Typewriter"], ["write", "Handwritten"], ["decode", "Decode"], ["stamp", "Stamp"], ["slam", "Slam"]];
+  const looks = [["", "Plain"], ["neon", "Neon"], ["glow", "Glow"], ["outline", "Outline"], ["offset", "Offset"]];
 
   let reel = $derived(ed.reel);
   let t = $derived(ed.sel?.kind === "text" ? reel?.texts.find((x) => x.index === ed.sel.index) : null);
@@ -85,8 +90,9 @@
     <p class="quiet">No words on this reel. Add a line where the playhead is</p>
   {/if}
 
+</section>
   {#if t}
-    <div class="editor">
+    <Section id="text-words" title="Words and timing" open={true} summary={`${tc(t.start)} · ${(+t.duration).toFixed(1)} s`}>
       <div class="field">
         <label for="tw">Words</label>
         <textarea id="tw" rows="2" bind:value={words} onblur={saveWords}
@@ -108,6 +114,8 @@
         </div>
       </div>
 
+    </Section>
+    <Section id="text-letters" title="Lettering" open={true} summary={[look.size && `${look.size}px`, look.position || "auto"].filter(Boolean).join(" · ")}>
       <div class="field">
         <span class="lbl">Font</span>
         <FontPicker value={t.style.font} fallback={base.font} onpick={(id) => style({ font: id })} />
@@ -141,6 +149,8 @@
         <p class="quiet small">{look.y != null ? "Placed by hand. " : ""}Or click the preview where it should go</p>
       </div>
 
+    </Section>
+    <Section id="text-motion" title="Movement and look" summary={[t.motion || look.anim || "fade", look.look].filter(Boolean).join(" · ")}>
       <div class="grid2">
         <div class="field">
           <label for="ta">Comes in</label>
@@ -148,15 +158,29 @@
             {#each anims as [id, name]}<option value={id}>{name}</option>{/each}
           </select>
         </div>
+      </div>
+
+      <div class="grid2">
         <div class="field">
-          <span class="lbl">Letters</span>
-          <div class="toggles">
-            <label class="check"><input type="checkbox" checked={!!look.uppercase} onchange={(e) => style({ uppercase: e.currentTarget.checked })} /> Capitals</label>
-            <label class="check" title="The picture shows through the letters"><input type="checkbox" checked={look.fill === "picture"} onchange={(e) => style({ fill: e.currentTarget.checked ? "picture" : null })} /> See-through</label>
-          </div>
+          <label for="tm">Motion <span class="hint">· animated</span></label>
+          <select id="tm" value={t.motion || ""} onchange={(e) => edit({ op: "edit_text", index: t.index, motion: e.currentTarget.value || null }, true)}>
+            {#each motions as [id, name]}<option value={id}>{name}</option>{/each}
+          </select>
+        </div>
+        <div class="field">
+          <label for="tlk">Look</label>
+          <select id="tlk" value={look.look || ""} onchange={(e) => style({ look: e.currentTarget.value || null })}>
+            {#each looks as [id, name]}<option value={id}>{name}</option>{/each}
+          </select>
         </div>
       </div>
 
+    </Section>
+    <Section id="text-extras" title="Extras" summary={[look.uppercase && "capitals", look.fill === "picture" && "see-through", t.lead && "line above"].filter(Boolean).join(" · ") || "none"}>
+      <div class="toggles">
+        <label class="check"><input type="checkbox" checked={!!look.uppercase} onchange={(e) => style({ uppercase: e.currentTarget.checked })} /> Capitals</label>
+        <label class="check" title="The picture shows through the letters"><input type="checkbox" checked={look.fill === "picture"} onchange={(e) => style({ fill: e.currentTarget.checked ? "picture" : null })} /> See-through</label>
+      </div>
       <div class="field">
         <label for="tlead">Small line above <span class="hint">· optional</span></label>
         <input id="tlead" type="text" bind:value={lead} onblur={saveLead} onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()} placeholder="e.g. welcome to" />
@@ -167,12 +191,11 @@
         <div class="spacer"></div>
         {#if Object.keys(t.style).length}<button class="btn sm ghost" onclick={() => style(Object.fromEntries(Object.keys(t.style).map((k) => [k, null])))}>Reset lettering</button>{/if}
       </div>
-    </div>
+    </Section>
   {/if}
-</section>
 
 <style>
-  .panel { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .panel { padding: 16px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--line); }
   .panel + .panel { border-top: 1px solid var(--line); }
   .panel p { margin: 0; }
   .spacer { flex: 1; }

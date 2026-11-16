@@ -22,9 +22,27 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
 
 ## What's where
 
-- **Reels**: every reel in your reels folder and `~/.tripshots/reels`, newest first, grouped by folder. Show all,
-  upright, wide, plans not rendered yet, or reels edited since their render.
-- **Make** (⌘2): **Describe it** ("a reel with all my drone footage"): TripShots finds the footage, picks one of your
+- **Projects**: every reel in your reels folder and `~/.tripshots/reels`, with a sidebar of its own:
+  - **Library**: all projects (pinned first), pinned, favourites, plans to render, reels edited since their render;
+  - **Collections**: **+** makes one; drag a reel onto it to file it there; rename or remove one from its **⋯**;
+  - **Folders**: the folders reels sit in.
+
+  The page itself has search, upright or wide, and sorting by recent, name or length. On each card, hover for
+  the quick pin and favourite buttons. Each reel's **⋯** menu can:
+  - pin it or make it a favourite;
+  - put it in a collection (a trip, a series);
+  - rename it (every file of the reel moves with it, its undo history too);
+  - duplicate its plan to try something else;
+  - move it to the Trash.
+
+  `tripshots reels` and MCP `manage_reel` do the same.
+- **Settings → Footage analysis**: catalogues everything in your footage folders ahead of time (`tripshots analyze`);
+  files already analysed are skipped. **Ask the AI again about every shot** re-describes them all (slow).
+- **The editor's inspector**: a rail of tools down its side (Shot, Text, Colour, Sound, Notes, Post, Carousel), each
+  a column of sections that fold away and show a one-line summary when closed ("Transition · Dissolve"). The
+  editor remembers which sections are open. The inspector runs the whole height, with the timeline under the viewer.
+- **Make** (⌘2): **From a trip** lists your trips; pick one, then one reel per day or per place
+  (`tripshots split-trip`), filed in the trip's collection. **Describe it** ("a reel with all my drone footage"): TripShots finds the footage, picks one of your
   styles and a sound, and makes it; or **Choose it yourself**: footage, sound (a reel link, so its cut and sound
   are used, or an audio file), style, shape, up to four versions, an opening line. **Plan first** gives the
   storyboard in about a minute. The job shows here step by step (reading the request, finding footage, choosing
@@ -49,6 +67,12 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
     **Use on every shot**. The look strip filters built-in looks, yours and each LUT pack; **More looks** adds your
     own LUT files (`.cube`, HaldCLUT images, zips) or fetches a free pack. **Hold to compare** (or hold Space on it) shows the shot as filmed; **Before and after**
     splits the viewer between the shot as filmed and your edit, with a divider to drag (or move with ← →).
+  - Under the viewer, **Your edit** shows a still of the edit at the playhead, **Preview** plays the edits in
+    motion (a quick render, `tripshots render --draft`: no sound effects, text without its animation; its clips
+    are the ones the real render reuses), and **Last render** plays the finished reel.
+  - **Carousel**: a swipeable post from the reel. Make it, then reorder, add or remove slides; give a slide one,
+    two or three pictures; replace or crop each picture; change the cover text, handle and route slide (see
+    [storytelling](storytelling.md#editing-a-carousel)).
   - **Notes**: watch the reel, and where something is off press **N** (or **Note** under the viewer): it pauses
     and you say what you see ("too dark", "swap this for the canyon", "the words cover her face"). Each note is
     pinned to that moment (a dot on the timeline, a still in the list) and kept until you **Send** them all at
@@ -61,9 +85,15 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
     comment to pin and two other opening lines to pick from. **Voice** sets the tone ("funny and short").
   - **Expert** (the switch in the header) adds the **Shot** and **Sound** tabs and timeline editing: zoom, the
     beats on the ruler, drag a shot to another place, drag its right edge to change its length (it snaps to the
-    beat; hold Alt for single frames). **Shot**: move it earlier or later, split at the playhead (S), repeat,
+    beat; hold Alt for single frames) or its left edge to trim its start (the end of the clip stays where it
+    was). **Shot**: move it earlier or later, split at the playhead (S), hold the frame at the playhead for a
+    second (F, a freeze frame), play the clip backwards (R), **On top** (another shot in a corner from the playhead: a
+    picture in picture with its own lane on the timeline, where you drag it or its end; select it to place it in a
+    corner or anywhere, size it and set its length), **Zoom and position** (set zoom and where the picture sits, then
+    **Keyframe here**; the picture moves smoothly between keyframes, e.g. a slow push in onto a face), repeat,
     replace, add a shot after it, remove it, its length, which part of the clip plays, speed and speed ramps, the
-    transition into the next shot, framing (crop, pan, whole frame). **Sound**: where the song starts, the music
+    transition into the next shot and an effect on the shot (pickers that draw each one on your own shots, filtered
+    by energy; with no shot selected, **Choose effects with AI**: see [the effects library](effects.md)), framing (crop, pan, whole frame). **Sound**: where the song starts, the music
     level, its fade out and the beat punch. Space plays, ← → step a frame (⇧ a second). Later text moves with the
     cuts; subtitles and lyrics stay with the song.
 - **Styles** (⌘3): yours, then the built-in ones, each with **Make a reel**. **Learn a style** takes reel links

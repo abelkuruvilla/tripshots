@@ -115,7 +115,32 @@ def cut_grid(music: dict | None, style: dict, target: float) -> dict:
 
 # ------------------------------------------------------------ shot selection
 def _quality(s: dict) -> float:
-    return float(s.get("ai", {}).get("score", 5.0))
+    """The AI's score as a reel shot, less what the extra details show is wrong: words drawn onto the picture (an
+    export, a saved reel, a screenshot) and a face looking at the camera with its eyes shut."""
+    a = s.get("ai") or {}
+    q = float(a.get("score", 5.0))
+    from .insight import burned_in
+    b = burned_in(s)
+    if b >= 0.5:
+        q -= 3.0 * b
+    f = a.get("face") or {}
+    if f.get("looking") and f.get("eyes_open") is False:
+        q -= 1.0
+    return q
+
+
+def opening_bonus(s: dict) -> float:
+    """How well a shot opens a reel, beyond its score (0..~2): the AI's first-frame strength for a clip, movement in
+    its first quarter second, a sharp frontal face, and calm room for the hook (insight.hook_bonus)."""
+    from .insight import hook_bonus
+    a = s.get("ai") or {}
+    v = hook_bonus(s)
+    ff = a.get("first_frame")
+    if ff is not None and s.get("kind") == "video":
+        v += (float(ff) - 6.0) * 0.25          # a weak opening frame (the action is later) costs, a strong one helps
+    if (a.get("face") or {}).get("looking"):
+        v += 0.3
+    return round(v, 3)
 
 
 def taste_scores(shots: list[dict], style: dict) -> dict[str, float]:
@@ -292,7 +317,7 @@ def assign(chosen: list[dict], segs: list[dict], style: dict) -> list[dict]:
 
     def hook_v(s):
         return (_quality(s) + (1.5 if s.get("ai", {}).get("role") == "hook" else 0)
-                + (0.5 if s.get("ai", {}).get("mood") == "dynamic" else 0))
+                + (0.5 if s.get("ai", {}).get("mood") == "dynamic" else 0) + opening_bonus(s))
     # hook: strongest attention-grabber (variant k opens with the k-th best one)
     hooks = sorted(pool, key=hook_v, reverse=True)
     order[0] = hooks[min(variant, len(hooks) - 1)] if hooks else take(hook_v)

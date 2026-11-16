@@ -76,6 +76,7 @@ export async function load() {
     // a selection that no longer exists (the text was removed, the slot merged) goes away
     if (ed.sel?.kind === "text" && !ed.reel.texts.some((t) => t.index === ed.sel.index)) ed.sel = null;
     if (ed.sel?.kind === "clip" && ed.sel.slot > ed.reel.segments.length) ed.sel = null;
+    if (ed.sel?.kind === "pip" && ed.sel.index > (ed.reel.pips || []).length) ed.sel = null;
   } catch (e) {
     ed.error = String(e.message || e);
   }
@@ -146,7 +147,8 @@ const sentence = (t) => t.replace(/^./, (c) => c.toUpperCase());
 // select a shot or a line of text, and show its tab
 export function select(sel) {
   ed.sel = sel;
-  if (sel?.kind === "clip" && ed.expert) ed.tab = "shot";
+  if ((sel?.kind === "clip" || sel?.kind === "pip") && ed.expert) ed.tab = "shot";
+  if (sel?.kind === "pip") ed.preview = true;
   if (sel?.kind === "text") {
     ed.tab = "text";
     ed.preview = true;

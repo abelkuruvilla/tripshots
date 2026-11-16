@@ -29,7 +29,19 @@ The timeline (expert mode; times snap to whole frames, later text moves with the
   {"op": "slip", "segment": 3, "in": 12.4}                       which part of the clip plays (video)
   {"op": "split", "segment": 3, "at": 0.8}                       two slots, at seconds into the slot
   {"op": "delete", "segment": 3}
+  {"op": "trim", "segment": 3, "side": "left", "by": 0.4}     shorten from the start (negative lengthens); "right" = the end
+  {"op": "freeze", "segment": 3, "at": 0.8, "dur": 1.0}      hold the frame at 0.8 s into slot 3 for a second (cut in there)
+  {"op": "reverse", "segment": 3, "on": true}               the clip plays backwards
   {"op": "duplicate", "segment": 3}
+  {"op": "effect", "segment": 3, "id": "glow", "amount": 0.5}   a video effect on a shot (vfx.py; id null removes)
+  {"op": "auto_effects"}                                     let the effects director choose again (fxlib.py)
+  {"op": "keyframe", "segment": 3, "t": 0.5, "zoom": 1.6, "x": 0.4, "y": 0.5, "ease": "out"}
+      zoom 1.6x onto that point of the picture at 0.5 s into the slot (eased between keyframes; "remove": true
+      drops the one at t, "clear": true all of them)
+  {"op": "pip_add", "shot_id": "S040", "start": 3.0, "dur": 2.0, "x": 0.72, "y": 0.28, "scale": 0.4}
+      another shot on top (x, y its centre, scale its width); {"op": "pip_edit", "index": 1, ...},
+      {"op": "pip_delete", "index": 1}
+  {"op": "log", "segment": 3, "profile": "dlog"}             flat log footage made normal (camlog.py; auto, or null = as filmed)
   {"op": "insert", "after": 2, "shot_id": "S040", "dur": 1.2}    a new slot (after 0 = at the start)
   {"op": "music", "start": 12.0, "gain_db": -3, "fade_out": 1.2}  where the song starts, its level
 
@@ -59,8 +71,8 @@ from .util import ReelError, read_json, write_json
 
 SLOT_KEYS = {"dur", "out_start", "idx", "level", "drop", "trans_out", "trans_dur", "trans_params", "incam_out",
              "incam_in", "hero", "role", "hold"}   # a slot's place in the story stays when its shot changes
-TRANSITIONS = {None, "whip", "zoom_in", "zoom_out", "spin", "flash", "glitch", "blur", "dissolve", "dip", "leak",
-               "split", "vsplit", "iris", "slats", "stripes", "diamond", "frame", "cells", "mirror", "polaroid"}
+from .motion import TRANSITIONS as _MOTION_TRANSITIONS
+TRANSITIONS = {None} | (set(_MOTION_TRANSITIONS) - {"cut", "fade"})   # every one in motion.py (fxlib describes them)
 
 
 def _content(seg: dict) -> dict:
@@ -96,7 +108,7 @@ def _refit(seg: dict, plan: dict, style: dict) -> None:
     """After a shot lands in a slot of another length: pick its best window for this slot's duration."""
     from .planner import _best_window
     sh = _shots(plan).get(seg.get("shot_id"))
-    if sh and seg.get("kind") == "video" and not seg.get("panel"):
+    if sh and seg.get("kind") == "video" and not seg.get("panel") and not seg.get("freeze"):
         if seg.get("ramp"):
             from .planner import _set_ramp
             if _set_ramp(seg, sh, seg["ramp"], seg.get("ramp_hit")):
@@ -121,8 +133,8 @@ def _refit_keep_in(seg: dict, plan: dict, style: dict) -> None:
     """A slot changed length: keep where its clip starts while the clip has enough footage, else slide back,
     else slow it down a little."""
     sh = _shots(plan).get(seg.get("shot_id"))
-    if not sh or seg.get("kind") != "video" or "in" not in seg:
-        return
+    if not sh or seg.get("kind") != "video" or "in" not in seg or seg.get("freeze"):
+        return   # a held frame keeps its frame
     t0, t1 = float(sh["t0"]), float(sh["t1"])
     speed = float(seg.get("speed", 1.0))
     use = float(seg["dur"]) * speed
@@ -194,6 +206,11 @@ def _text_style(cur: dict, new: dict) -> dict:
             if v not in ANIMS:
                 raise ReelError(f"animation is one of {', '.join(ANIMS)}")
             out[k] = v
+        elif k == "look":
+            from .typo import LOOKS
+            if v not in LOOKS:
+                raise ReelError(f"text look is one of {', '.join(LOOKS)} (or null)")
+            out[k] = v
         elif k in ("uppercase", "fixed"):
             out[k] = bool(v)
         elif k in ("line_gap", "shadow", "fit", "exit"):
@@ -246,6 +263,13 @@ def retime(plan: dict) -> None:
             o["duration"] = round(min(float(o["duration"]), t - st), 4)
         keep.append(o)
     plan["overlays"] = keep
+    pips = []
+    for pp in plan.get("pips") or []:
+        if float(pp.get("start", 0)) < t - 0.3:
+            pp["dur"] = round(min(float(pp["dur"]), t - float(pp["start"])), 4)
+            pips.append(pp)
+    if "pips" in plan:
+        plan["pips"] = pips
     if plan.get("freeze") and float(plan["freeze"].get("t", 0)) >= t:
         plan.pop("freeze")
     if plan["segments"]:
@@ -576,8 +600,11 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
                 raise ReelError(f"cut slot {i + 1} somewhere between 0.07 and {float(s['dur']) - 0.07:.2f}s")
             b = json_copy(s)
             s["dur"], b["dur"] = at, _frames(float(s["dur"]) - at, 2)
-            if s.get("kind") == "video" and "in" in s:
-                b["in"] = round(float(s["in"]) + at * float(s.get("speed", 1.0)), 3)
+            if s.get("kind") == "video" and "in" in s and not s.get("freeze"):
+                if s.get("reverse"):   # backwards: the first piece shows the later part of the window
+                    s["in"] = round(float(s["in"]) + float(b["dur"]) * float(s.get("speed", 1.0)), 3)
+                else:
+                    b["in"] = round(float(s["in"]) + at * float(s.get("speed", 1.0)), 3)
             s.update({"trans_out": None, "trans_dur": 0.0, "trans_params": {}})
             s.pop("incam_out", None)
             b.pop("incam_in", None)
@@ -585,6 +612,192 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             segs.insert(i + 1, b)
             retime(plan)
             done.append(f"slot {i + 1} cut in two at {at:.2f}s")
+        elif op == "trim":   # take time off (or add it back to) one end of a slot; the clip's other end stays put
+            i = _slot(plan, ed["segment"])
+            s = segs[i]
+            if s.get("panel") or s.get("ramp"):
+                raise ReelError(f"slot {i + 1} has a split screen or a speed ramp: change its length instead")
+            side, by = ed.get("side", "right"), float(ed.get("by", 0))
+            if side not in ("left", "right"):
+                raise ReelError("trim side is left or right")
+            old = float(s["dur"])
+            dur = _frames(old - by, 4)
+            by = old - dur
+            speed = 1.0 if s.get("freeze") else float(s.get("speed", 1.0))
+            moves_in = (side == "left") != bool(s.get("reverse"))   # backwards, the clip's start is the slot's end
+            if moves_in and s.get("kind") == "video" and "in" in s and not s.get("freeze"):
+                sh = shots.get(s.get("shot_id"))
+                lo = float(sh["t0"]) if sh else 0.0
+                new_in = float(s["in"]) + by * speed
+                if new_in < lo - 1e-3:   # no footage before the clip's start: lengthen only as far as there is
+                    dur = _frames(old + (float(s["in"]) - lo) / speed, 4)
+                    by, new_in = old - dur, lo
+                s["in"] = round(new_in, 3)
+                s["track"] = False
+            s["dur"] = dur
+            if not moves_in:
+                _refit_keep_in(s, plan, style)
+            _shift_text(plan, float(s.get("out_start", 0)) + old, -by)
+            retime(plan)
+            done.append(f"slot {i + 1} trimmed at the {'start' if side == 'left' else 'end'}: {dur:.2f}s (was {old:.2f}s)")
+        elif op == "freeze":   # hold one frame: the slot's frame at `at` seconds, for `dur` seconds, cut in there
+            i = _slot(plan, ed["segment"])
+            s = segs[i]
+            if s.get("kind") != "video" or s.get("panel") or s.get("ramp"):
+                raise ReelError(f"slot {i + 1} isn't a plain video clip: only a clip's frame can be held")
+            at = _frames(ed.get("at", 0.0), 0) if float(ed.get("at", 0.0)) > 0 else 0.0
+            hold = _frames(ed.get("dur", 1.0), 4)
+            if not 0 <= at <= float(s["dur"]):
+                raise ReelError(f"freeze somewhere between 0 and {float(s['dur']):.2f}s into slot {i + 1}")
+            speed = float(s.get("speed", 1.0))
+            src_t = float(s.get("in", 0.0)) + (float(s["dur"]) - at if s.get("reverse") else at) * speed
+            fz = {k: v for k, v in json_copy(s).items() if k not in ("incam_in", "incam_out", "hold", "reverse")}
+            fz.update({"dur": hold, "in": round(src_t, 3), "freeze": True, "speed": 1.0, "track": False,
+                       "trans_out": None, "trans_dur": 0.0, "trans_params": {}, "role": None})
+            fz.pop("stabilize", None)
+            if 2 / FPS <= at <= float(s["dur"]) - 2 / FPS:   # in the middle: cut the clip there, the hold between
+                b = json_copy(s)
+                s["dur"], b["dur"] = at, _frames(float(s["dur"]) - at, 2)
+                if "in" in s and not s.get("reverse"):
+                    b["in"] = round(float(s["in"]) + at * speed, 3)
+                elif s.get("reverse"):
+                    s["in"] = round(float(s["in"]) + float(b["dur"]) * speed, 3)
+                s.update({"trans_out": None, "trans_dur": 0.0, "trans_params": {}})
+                s.pop("incam_out", None)
+                b.pop("incam_in", None)
+                b.pop("hold", None)
+                segs[i + 1:i + 1] = [fz, b]
+                start = float(s.get("out_start", 0)) + at
+            elif at < 2 / FPS:   # at its start: the hold comes first
+                segs.insert(i, fz)
+                start = float(s.get("out_start", 0))
+            else:                # at its end
+                segs.insert(i + 1, fz)
+                start = float(s.get("out_start", 0)) + float(s["dur"])
+            _shift_text(plan, start, hold)
+            retime(plan)
+            done.append(f"frame held for {hold:.2f}s in slot {i + 1}")
+        elif op == "reverse":   # the slot's window of the clip plays backwards
+            i = _slot(plan, ed["segment"])
+            s = segs[i]
+            if s.get("kind") != "video" or s.get("panel") or s.get("ramp") or s.get("freeze"):
+                raise ReelError(f"slot {i + 1} isn't a plain video clip: only a moving clip can play backwards")
+            if ed.get("on", not s.get("reverse")):
+                s["reverse"] = True
+            else:
+                s.pop("reverse", None)
+            s["track"] = False
+            done.append(f"slot {i + 1} " + ("plays backwards" if s.get("reverse") else "plays forwards"))
+        elif op == "effect":   # a video effect on one shot (vfx.py; "id": null removes it)
+            from .vfx import EFFECTS
+            targets = range(len(segs)) if ed.get("segment") == "all" else [_slot(plan, ed["segment"])]
+            fid = ed.get("id")
+            if fid and fid not in EFFECTS:
+                raise ReelError(f"unknown effect {fid} ({', '.join(EFFECTS)}, or null)")
+            for i in targets:
+                if segs[i].get("panel"):
+                    continue
+                if fid:
+                    amt = float(ed.get("amount", (segs[i].get("effect") or {}).get("amount", 0.6)))
+                    segs[i]["effect"] = {"id": fid, "amount": round(max(0.0, min(1.0, amt)), 2)}
+                else:
+                    segs[i].pop("effect", None)
+            done.append((f"{fid} on " if fid else "no effect on ") +
+                        ("every shot" if ed.get("segment") == "all" else f"slot {targets[0] + 1}"))
+        elif op == "log":   # flat log footage: which camera's curve makes it normal (camlog.py); null = as filmed
+            from .camlog import PROFILES, detect
+            prof = ed.get("profile")
+            targets = range(len(segs)) if ed.get("segment") == "all" else [_slot(plan, ed["segment"])]
+            if prof not in PROFILES and prof not in (None, "auto"):
+                raise ReelError(f"camera log is one of {', '.join(PROFILES)}, auto, or null")
+            n = 0
+            for i in targets:
+                for c in (segs[i].get("clips") or [segs[i]]):
+                    if c.get("kind") != "video":
+                        continue
+                    sh = shots.get(c.get("shot_id")) or {}
+                    c["log"] = (detect(sh) if sh else None) if prof == "auto" else prof
+                    n += 1
+            regrade = True
+            done.append(f"camera log {prof or 'off'} on " + (f"{n} clips" if ed.get("segment") == "all" else f"slot {targets[0] + 1}"))
+        elif op == "keyframe":   # zoom and position over time inside one shot (motion.apply_keys)
+            i = _slot(plan, ed["segment"])
+            sg = segs[i]
+            if sg.get("panel"):
+                raise ReelError(f"slot {i + 1} is a split screen: keyframe its panels' shots instead")
+            keys = [dict(k) for k in sg.get("keys") or []]
+            if ed.get("clear"):
+                keys = []
+            else:
+                t = _frames(max(0.0, min(float(sg["dur"]), float(ed.get("t", 0.0)))), 0)
+                keys = [k for k in keys if abs(float(k["t"]) - t) > 0.5 / FPS]
+                if not ed.get("remove"):
+                    from .motion import EASES
+                    k = {"t": t, "zoom": round(max(1.0, min(4.0, float(ed.get("zoom", 1.0)))), 3),
+                         "x": round(max(0.0, min(1.0, float(ed.get("x", 0.5)))), 4),
+                         "y": round(max(0.0, min(1.0, float(ed.get("y", 0.5)))), 4)}
+                    if ed.get("ease") in EASES:
+                        k["ease"] = ed["ease"]
+                    keys.append(k)
+            keys.sort(key=lambda k: k["t"])
+            if keys:
+                sg["keys"] = keys
+            else:
+                sg.pop("keys", None)
+            done.append(f"slot {i + 1}: {len(keys)} keyframe(s)")
+        elif op == "pip_add":   # another shot on top, in a corner (render.Pips)
+            sh = shots.get(ed.get("shot_id"))
+            if not sh:
+                raise ReelError(f"unknown shot {ed.get('shot_id')} (see the plan's shot candidates)")
+            total = sum(float(x["dur"]) for x in segs)
+            start = _frames(max(0.0, min(float(ed.get("start", 0.0)), total - 0.5)), 0)
+            dur = _frames(max(0.5, min(float(ed.get("dur", 2.0)), total - start)), 4)
+            pip = {"shot_id": sh["id"], "kind": sh["kind"], "src": sh["src"], "start": start, "dur": dur,
+                   "x": round(float(ed.get("x", 0.72)), 4), "y": round(float(ed.get("y", 0.28)), 4),
+                   "scale": round(max(0.15, min(1.0, float(ed.get("scale", 0.4)))), 3),
+                   "src_w": sh.get("w"), "src_h": sh.get("h"), "thumb": sh.get("thumb")}
+            if sh["kind"] == "video":
+                from .planner import _best_window
+                pip.update({"in": round(_best_window(sh, dur), 3), "hdr": sh.get("hdr", False),
+                            "transfer": sh.get("transfer")})
+            else:
+                pip["still"] = sh.get("still") or sh["src"]
+            plan.setdefault("pips", []).append(pip)
+            done.append(f"picture in picture {len(plan['pips'])}: {sh['id']} at {start:.2f}s")
+        elif op in ("pip_edit", "pip_delete"):
+            pips = plan.get("pips") or []
+            k = int(ed.get("index", 0)) - 1
+            if not 0 <= k < len(pips):
+                raise ReelError(f"picture in picture {ed.get('index')} doesn't exist (1..{len(pips)})")
+            if op == "pip_delete":
+                pips.pop(k)
+                done.append(f"picture in picture {k + 1} removed")
+            else:
+                pp = pips[k]
+                total = sum(float(x["dur"]) for x in segs)
+                for key, lo, hi in (("x", 0.0, 1.0), ("y", 0.0, 1.0), ("scale", 0.15, 1.0), ("round", 0.0, 0.5)):
+                    if key in ed:
+                        pp[key] = round(max(lo, min(hi, float(ed[key]))), 4)
+                if "start" in ed:
+                    pp["start"] = _frames(max(0.0, min(float(ed["start"]), total - 0.5)), 0)
+                if "dur" in ed or "start" in ed:
+                    pp["dur"] = _frames(max(0.5, min(float(ed.get("dur", pp["dur"])), total - pp["start"])), 4)
+                done.append(f"picture in picture {k + 1} changed")
+            plan["pips"] = pips
+        elif op == "auto_effects":   # the effects director again (fxlib.direct): AI if there is one, else rules
+            from . import fxlib
+            from .ai import get_backend
+            try:
+                backend = get_backend(ed.get("backend"))
+            except Exception:
+                backend = None
+            for sg in segs:   # what it chose before goes; what you set by hand stays
+                if (sg.get("effect") or {}).get("auto"):
+                    sg.pop("effect", None)
+            st = {**style, "effects": {**(style.get("effects") or {}), "use": "auto" if backend else "rules",
+                                       **{k: ed[k] for k in ("transitions", "text", "shots") if k in ed}}}
+            rec = fxlib.direct(plan, shots, st, backend)
+            done.append(f"effects chosen by {rec.get('by', 'rules')}: " + (", ".join(rec.get("changes") or []) or "no change"))
         elif op == "delete":
             i = _slot(plan, ed["segment"])
             if len(segs) == 1:
@@ -793,6 +1006,7 @@ def candidates(plan_path: Path, top: int = 30) -> list[dict]:
     plan = read_json(plan_path)
     used = {s.get("shot_id") for s in plan["segments"]} | {c.get("shot_id") for s in plan["segments"]
                                                           for c in s.get("clips") or []}
+    from .insight import burned_in
     from .planner import _quality
     out = []
     for s in sorted(_shots(plan).values(), key=lambda s: -_quality(s)):
@@ -800,7 +1014,9 @@ def candidates(plan_path: Path, top: int = 30) -> list[dict]:
         out.append({"id": s["id"], "used": s["id"] in used, "kind": s["kind"], "score": round(_quality(s), 1),
                     "len_s": round(s["t1"] - s["t0"], 1) if s["kind"] == "video" else None,
                     "file": Path(s["src"]).name, "when": (s.get("created") or "")[:16], "note": a.get("note", ""),
-                    "tags": a.get("tags", [])[:5], "thumb": s.get("thumb")})
+                    "tags": a.get("tags", [])[:5], "thumb": s.get("thumb"), "caption": a.get("caption", ""),
+                    "vibes": list((a.get("vibes") or {}))[:2], "size": a.get("shot_size"), "angle": a.get("angle"),
+                    "words": burned_in(s) >= 0.5})
     return out[:top]
 
 

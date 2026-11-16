@@ -6,6 +6,7 @@
   import Icon from "../../lib/Icon.svelte";
   import Sheet from "../../lib/Sheet.svelte";
   import LayersPanel from "./LayersPanel.svelte";
+  import Section from "../../lib/Section.svelte";
   import { app, api, tc, startJob, toast } from "../../lib/store.svelte.js";
   import { ed, edit } from "./editor.svelte.js";
 
@@ -19,6 +20,8 @@
     ["highlights", "Highlights", -1, 1, 0.01, 0, (v) => `${Math.round(v * 100)}`],
   ];
   const lightName = { golden: "golden light", blue_hour: "blue hour", night: "night", mixed: "" };
+  const logName = { "": "Normal video", apple_log: "Apple Log", dlog: "DJI D-Log", slog3: "Sony S-Log3", vlog: "Panasonic V-Log",
+                    flog: "Fujifilm F-Log", flog2: "Fujifilm F-Log2", clog3: "Canon C-Log3" };
 
   let looks = $state([]);
   let packs = $state([]);
@@ -122,32 +125,29 @@
   const thumb = (name) => `${app.engine.url}/api/lookthumb?t=${app.engine.token}&plan=${encodeURIComponent(reel.plan)}&slot=${s.slot}&look=${encodeURIComponent(name)}&v=${g.strength}`;
 </script>
 
-<section class="panel">
-  <div class="row">
-    <h2>Look</h2>
-    {#if working}<span class="spin small-spin" aria-label="Applying the look"></span>{/if}
-    <div class="spacer"></div>
-    <button class="btn sm" title="Hold to see the shot as filmed (or hold Space on it)" aria-label="Hold to compare with the shot as filmed"
-            aria-pressed={ed.raw}
-            onpointerdown={() => ((ed.preview = true), (ed.raw = true))} onpointerup={() => (ed.raw = false)}
-            onpointerleave={() => (ed.raw = false)}
-            onkeydown={(e) => (e.key === " " || e.key === "Enter") && (e.preventDefault(), (ed.preview = true), (ed.raw = true))}
-            onkeyup={() => (ed.raw = false)} onblur={() => (ed.raw = false)}><Icon name="eye" size={14} /> Hold to compare</button>
-    <button class="btn sm" class:pressed={ed.split} aria-pressed={ed.split} title="As filmed and your edit side by side, with a divider to drag"
-            onclick={() => ((ed.split = !ed.split), (ed.preview = true))}><Icon name="split" size={14} /> Before and after</button>
-  </div>
+<div class="topbar">
+  <span class="meta" title={ed.sel?.kind === "clip" ? "The selected shot" : "The shot at the playhead"}>{s ? `Shot ${s.slot}` : ""}</span>
+  {#if working}<span class="spin small-spin" aria-label="Applying the look"></span>{/if}
+  <div class="spacer"></div>
+  <button class="btn sm ghost" title="Hold to see the shot as filmed (or hold Space on it)" aria-label="Hold to compare with the shot as filmed"
+          aria-pressed={ed.raw}
+          onpointerdown={() => ((ed.preview = true), (ed.raw = true))} onpointerup={() => (ed.raw = false)}
+          onpointerleave={() => (ed.raw = false)}
+          onkeydown={(e) => (e.key === " " || e.key === "Enter") && (e.preventDefault(), (ed.preview = true), (ed.raw = true))}
+          onkeyup={() => (ed.raw = false)} onblur={() => (ed.raw = false)}><Icon name="eye" size={14} /> Compare</button>
+  <button class="btn sm ghost" class:pressed={ed.split} aria-pressed={ed.split} title="As filmed and your edit side by side, with a divider to drag"
+          onclick={() => ((ed.split = !ed.split), (ed.preview = true))}><Icon name="split" size={14} /> Before | after</button>
+</div>
 
-  <div class="row filterbar">
-    <div class="seg chips-seg" role="radiogroup" aria-label="Show looks">
-      {#each filters as [id, name]}<button role="radio" aria-checked={filter === id} onclick={() => (filter = id)}>{name}</button>{/each}
-    </div>
-    <div class="spacer"></div>
-    <button class="btn sm ghost" onclick={() => (more = true)}><Icon name="plus" size={14} /> More looks</button>
+<Section id="colour-look" title="Look" open={true}
+         summary={off ? "None" : `${current ? label(current) : nice(g.look || "")} · ${Math.round((g.strength ?? 0.75) * 100)}%`}>
+  {#snippet actions()}<button class="btn sm ghost" onclick={() => (more = true)} title="Add LUT files or get a free pack"><Icon name="plus" size={14} /> More</button>{/snippet}
+  <div class="seg chips-seg" role="radiogroup" aria-label="Show looks">
+    {#each filters as [id, name]}<button role="radio" aria-checked={filter === id} onclick={() => (filter = id)}>{name}</button>{/each}
   </div>
   {#if looks.length > 24}
     <input type="search" class="find" placeholder="Find a look" bind:value={q} aria-label="Find a look" />
   {/if}
-
   <div class="looks" role="radiogroup" aria-label="Look">
     {#each [{ name: "none", description: "As filmed, with a light touch", builtin: true }, ...ordered] as l (l.name)}
       {@const on = l.name === "none" ? off : g.look === l.name}
@@ -159,7 +159,6 @@
   </div>
   <p class="quiet small">{off ? "No look: each shot as filmed" : `${current ? label(current) + ": " : ""}${current?.description || ""}`}{!off && current?.pack ? ` · ${packs.find((p) => p.id === current.pack)?.title || "added by you"}` : ""}</p>
   {#if g.why}<p class="quiet small">{g.why}</p>{/if}
-
   {#if !off}
     <div class="grid3">
       <div class="field">
@@ -173,41 +172,55 @@
     </div>
     <label class="check"><input type="checkbox" checked={!!g.vignette} onchange={(e) => grade({ vignette: e.currentTarget.checked })} /> Vignette <span class="hint">· darker corners</span></label>
   {/if}
+</Section>
 
-  {#if s}
-    <div class="shot">
-      <div class="row">
-        <h3>Shot {s.slot}</h3>
-        <span class="meta">{[tc(s.start), lightName[s.light] ?? s.light].filter(Boolean).join(" · ")}</span>
-        <div class="spacer"></div>
-        {#if !off}
-          <label class="check"><input type="checkbox" checked={!s.no_grade} onchange={(e) => adjust({ graded: e.currentTarget.checked })} /> In the look</label>
-        {/if}
-      </div>
-      <p class="quiet small">{ed.sel?.kind === "clip" ? "The selected shot" : "The shot at the playhead"}. Corrections go on top of the look</p>
-      <div class="sliders">
-        {#each sliders as [key, name, lo, hi, step, neutral, fmt]}
-          <div class="sl">
-            <label for={"a-" + key}>{name}</label>
-            <input id={"a-" + key} class="range" type="range" min={lo} max={hi} {step} bind:value={vals[key]}
-                   ondblclick={() => ((vals[key] = neutral), adjust({ [key]: null }))}
-                   onchange={() => adjust({ [key]: +vals[key] })} />
-            <span class="meta val">{fmt(vals[key])}</span>
-          </div>
-        {/each}
-      </div>
-      <div class="row foot">
-        <button class="btn sm ghost" disabled={!changed} onclick={() => adjust({ reset: true })}>Reset this shot</button>
-        <div class="spacer"></div>
-        <button class="btn sm" disabled={!Object.keys(s.adjust || {}).length}
-                onclick={() => edit({ op: "adjust", segment: "all", ...Object.fromEntries(sliders.map(([k, , , , , n]) => [k, s.adjust?.[k] ?? n])) })}
-                title="Give every shot these corrections">Use on every shot</button>
-      </div>
-      <p class="quiet small">Double-click a slider to reset it</p>
-      <LayersPanel shot={s} />
+{#if s}
+  <Section id="colour-shot" title={`Shot ${s.slot} corrections`} open={true}
+           summary={s.no_grade ? "as filmed" : Object.keys(s.adjust || {}).length ? `${Object.keys(s.adjust).length} changed` : "none"}>
+    <div class="row">
+      <span class="meta">{[tc(s.start), lightName[s.light] ?? s.light].filter(Boolean).join(" · ")}</span>
+      <div class="spacer"></div>
+      {#if !off}
+        <label class="check"><input type="checkbox" checked={!s.no_grade} onchange={(e) => adjust({ graded: e.currentTarget.checked })} /> In the look</label>
+      {/if}
     </div>
+    <div class="sliders">
+      {#each sliders as [key, name, lo, hi, step, neutral, fmt]}
+        <div class="sl">
+          <label for={"a-" + key}>{name}</label>
+          <input id={"a-" + key} class="range" type="range" min={lo} max={hi} {step} bind:value={vals[key]}
+                 ondblclick={() => ((vals[key] = neutral), adjust({ [key]: null }))}
+                 onchange={() => adjust({ [key]: +vals[key] })} />
+          <span class="meta val">{fmt(vals[key])}</span>
+        </div>
+      {/each}
+    </div>
+    <div class="row foot">
+      <button class="btn sm ghost" disabled={!changed} onclick={() => adjust({ reset: true })}>Reset</button>
+      <div class="spacer"></div>
+      <button class="btn sm" disabled={!Object.keys(s.adjust || {}).length}
+              onclick={() => edit({ op: "adjust", segment: "all", ...Object.fromEntries(sliders.map(([k, , , , , n]) => [k, s.adjust?.[k] ?? n])) })}
+              title="Give every shot these corrections">Use on every shot</button>
+    </div>
+    <p class="quiet small">Double-click a slider to reset it</p>
+  </Section>
+
+  {#if s.kind === "video" && !s.panel}
+    <Section id="colour-log" title="Filmed in" summary={logName[s.log || ""]}>
+      <p class="quiet small">Flat log footage (drones, Apple Log, cinema cameras) is made normal before anything else</p>
+      <div class="row">
+        <select id="clog" aria-label="Filmed in" value={s.log || ""} onchange={(e) => edit({ op: "log", segment: s.slot, profile: e.currentTarget.value || null })}>
+          {#each Object.entries(logName) as [id, name]}<option value={id}>{name}</option>{/each}
+        </select>
+        {#if s.log}<button class="btn sm ghost" onclick={() => edit({ op: "log", segment: "all", profile: s.log })} title="Every clip in this reel was filmed this way">All clips</button>{/if}
+      </div>
+    </Section>
   {/if}
-</section>
+
+  <Section id="colour-layers" title="Parts of the frame" summary={(s.layers || []).length ? `${s.layers.length} layer${s.layers.length > 1 ? "s" : ""}` : "none"}>
+    <LayersPanel shot={s} />
+  </Section>
+{/if}
 
 {#if more}
   <Sheet title="More looks" onclose={() => (more = false)}>
@@ -239,9 +252,9 @@
 {/if}
 
 <style>
-  .panel { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
-  .panel + .panel { border-top: 1px solid var(--line); }
-  .panel p { margin: 0; }
+  .topbar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 4px; padding: 8px 12px 8px 16px;
+            background: var(--card); border-bottom: 1px solid var(--line); }
+  p { margin: 0; }
   .spacer { flex: 1; }
   .small { font-size: 12px; line-height: 16px; }
   .small-spin { width: 12px; height: 12px; color: var(--accent); }
@@ -251,7 +264,7 @@
   .find { min-height: 32px; padding: 6px 10px; }
   .more { display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
   .pack { width: 100%; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-  .looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 12px 8px; max-height: 300px; overflow: auto; padding: 2px; }
+  .looks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 8px; max-height: 236px; overflow: auto; padding: 2px; }
   .look { display: flex; flex-direction: column; gap: 6px; padding: 0; border: 0; background: none; text-align: left; min-width: 0; }
   .pic {
     display: block; aspect-ratio: 1; border-radius: var(--r-ctl); overflow: hidden; background: var(--raised);
@@ -270,9 +283,8 @@
   .range { width: 100%; accent-color: var(--accent); margin: 0; }
   .check { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 400; font-size: 13px; }
   .check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
-  .shot { border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-direction: column; gap: 8px; }
   .sliders { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
-  .sl { display: grid; grid-template-columns: 84px 1fr 104px; gap: 12px; align-items: center; }
+  .sl { display: grid; grid-template-columns: 76px 1fr 88px; gap: 10px; align-items: center; }
   .sl label { margin: 0; font-weight: 400; color: var(--text-2); }
   .val { text-align: right; }
   .foot { padding-top: 4px; }

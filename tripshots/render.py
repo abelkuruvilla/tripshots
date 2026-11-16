@@ -93,6 +93,15 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
             pass
     pre = []
     pre += hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")})
+    if e.get("log"):  # flat log footage made normal before anything colours it (camlog.py)
+        from .camlog import chain as log_chain
+        pre += log_chain(e)
+    if e.get("freeze"):  # one frame held for the whole slot
+        speed, src_need = 1.0, 0.5
+        pre += ["trim=end_frame=1", f"tpad=stop_mode=clone:stop_duration={length + 1:.3f}"]
+    elif e.get("reverse"):  # exactly the window, played backwards (ffmpeg buffers it: slots are short)
+        src_need = length * speed + 1.0 / rate
+        pre.append("reverse")
     if abs(speed - 1.0) > 1e-3:
         pre.append(f"setpts=PTS/{speed:.4f}")
     blur = int(round(float(e.get("fps") or 30) * speed / rate * 0.7)) if speed >= 1.3 else 0
@@ -374,12 +383,13 @@ def render_retimed_seg(e: dict, length: float, color: dict, out: Path, lead: flo
 class _SegReader:
     """Streams one rendered segment's frames in order (one ffmpeg decode process)."""
 
-    def __init__(self, path: Path, n_frames: int):
+    def __init__(self, path: Path, n_frames: int, size: tuple[int, int] | None = None):
         self.path, self.n = path, n_frames
         self.proc = None
         self.pos = -1
         self.last = None
-        self.size = CANVAS.w * CANVAS.h * 3
+        self.w, self.h = size or CANVAS.size
+        self.size = self.w * self.h * 3
 
     def frame(self, k: int) -> np.ndarray:
         k = max(0, min(k, self.n - 1))
@@ -391,10 +401,10 @@ class _SegReader:
             if len(buf) < self.size:  # ran out (rounding): hold the last frame
                 self.pos = k
                 break
-            self.last = np.frombuffer(buf, np.uint8).reshape(CANVAS.h, CANVAS.w, 3)
+            self.last = np.frombuffer(buf, np.uint8).reshape(self.h, self.w, 3)
             self.pos += 1
         if self.last is None:
-            self.last = np.zeros((CANVAS.h, CANVAS.w, 3), np.uint8)
+            self.last = np.zeros((self.h, self.w, 3), np.uint8)
         return self.last
 
     def close(self):
@@ -692,6 +702,98 @@ def _wall_tiles(mo: dict, w: int, h: int, shot: np.ndarray | None = None) -> dic
     return out
 
 
+# ------------------------------------------------------------------ picture in picture
+def pip_box(p: dict) -> tuple[int, int, int, int]:
+    """(x, y, w, h) on the canvas of a picture-in-picture: `x`, `y` its centre (0..1), `scale` its width as a share
+    of the frame's, its height from the source's shape (kept inside the frame)."""
+    w = max(32, int(round(CANVAS.w * max(0.1, min(1.0, float(p.get("scale", 0.4))))) // 2 * 2))
+    ar = float(p.get("src_h") or 9) / float(p.get("src_w") or 16)
+    h = max(32, min(CANVAS.h, int(round(w * ar)) // 2 * 2))
+    x = int(round(float(p.get("x", 0.7)) * CANVAS.w - w / 2))
+    y = int(round(float(p.get("y", 0.3)) * CANVAS.h - h / 2))
+    return max(0, min(CANVAS.w - w, x)), max(0, min(CANVAS.h - h, y)), w, h
+
+
+def _pip_mask(w: int, h: int, radius: int) -> np.ndarray:
+    m = np.zeros((h, w), np.uint8)
+    r = max(0, min(radius, w // 2, h // 2))
+    cv2.rectangle(m, (r, 0), (w - r - 1, h - 1), 255, -1)
+    cv2.rectangle(m, (0, r), (w - 1, h - r - 1), 255, -1)
+    for cx, cy in ((r, r), (w - r - 1, r), (r, h - r - 1), (w - r - 1, h - r - 1)):
+        cv2.circle(m, (cx, cy), r, 255, -1, lineType=cv2.LINE_AA)
+    return cv2.GaussianBlur(m, (3, 3), 0).astype(np.float32)[..., None] / 255.0
+
+
+def paste_pip(frame: np.ndarray, pic: np.ndarray, p: dict, u: float = 1.0) -> np.ndarray:
+    """A picture-in-picture over the frame: rounded corners, a soft shadow, a quick fade and grow in/out (u 0..1)."""
+    x, y, w, h = pip_box(p)
+    if pic.shape[:2] != (h, w):
+        pic = cv2.resize(pic, (w, h), interpolation=cv2.INTER_AREA)
+    a = _pip_mask(w, h, int(float(p.get("round", 0.06)) * w)) * max(0.0, min(1.0, u))
+    out = frame if frame.flags.writeable else frame.copy()
+    sh = max(4, w // 40)   # the shadow, below and to the right
+    y0, y1, x0, x1 = y + sh, min(CANVAS.h, y + h + sh), x + sh, min(CANVAS.w, x + w + sh)
+    if y1 > y0 and x1 > x0:
+        region = out[y0:y1, x0:x1].astype(np.float32)
+        out[y0:y1, x0:x1] = (region * (1 - 0.35 * a[:y1 - y0, :x1 - x0])).astype(np.uint8)
+    roi = out[y:y + h, x:x + w].astype(np.float32)
+    out[y:y + h, x:x + w] = (roi * (1 - a) + pic.astype(np.float32) * a).astype(np.uint8)
+    return out
+
+
+def pip_file(p: dict, work: Path, color: dict) -> tuple[Path, int]:
+    """A picture-in-picture rendered at its size (cached by everything that changes its picture)."""
+    x, y, w, h = pip_box(p)
+    n = max(1, int(round(float(p["dur"]) * OUT_FPS)))
+    key = short_hash(repr(sorted((k, str(v)) for k, v in p.items() if k not in ("x", "y", "start", "id")))
+                     + f"{w}x{h}{n}" + repr(color) + RENDER_VERSION, 14)
+    f = work / "segments" / f"pip_{key}.mp4"
+    if not f.exists():
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_name(f.stem + ".part.mp4")
+        e = {**p, "layout": "fill", "speed": float(p.get("speed", 1.0))}
+        if p.get("kind") == "video":
+            render_video_seg(e, n / OUT_FPS, color, tmp, size=(w, h))
+        else:
+            render_photo_seg({**e, "layout": "kenburns", "kb": p.get("kb", "in")}, n / OUT_FPS, color, 1.06, tmp,
+                             size=(w, h))
+        tmp.replace(f)
+    return f, n
+
+
+class Pips:
+    """The plan's pictures-in-picture (plan `pips`), read frame by frame while the reel is composited."""
+
+    def __init__(self, plan: dict, work: Path):
+        self.items = []
+        color = {**(plan.get("color") or {}), "grade": plan.get("grade")}
+        for p in plan.get("pips") or []:
+            try:
+                f, n = pip_file(p, work, color)
+            except ReelError as e:
+                log(f"picture in picture left out ({str(e)[:80]})")
+                continue
+            s0 = int(round(float(p.get("start", 0)) * OUT_FPS))
+            _, _, pw, ph = pip_box(p)
+            self.items.append((p, s0, n, _SegReader(f, n, (pw, ph))))
+
+    def __bool__(self):
+        return bool(self.items)
+
+    def draw(self, frame: np.ndarray, n: int) -> np.ndarray:
+        fade = int(0.2 * OUT_FPS)
+        for p, s0, cnt, rd in self.items:
+            k = n - s0
+            if 0 <= k < cnt:
+                u = min(1.0, (k + 1) / fade, (cnt - k) / fade)
+                frame = paste_pip(frame, rd.frame(k), p, u)
+        return frame
+
+    def close(self):
+        for *_, rd in self.items:
+            rd.close()
+
+
 def segment_files(plan: dict, work: Path) -> list[tuple[dict, Path, int, int]]:
     """Per slot: (render fields, cached clip file, frames in it, frames of lead-in before the slot starts). The
     file is named by everything that changes its picture, so an unchanged shot is never rendered twice."""
@@ -729,8 +831,13 @@ def _source_frame(e: dict, local: float, color: dict, size: tuple[int, int]):
         return None
     vf = []
     if e.get("kind") == "video" and e.get("src_w") and e.get("src"):
+        if e.get("freeze"):
+            local = 0.0
+        elif e.get("reverse"):
+            local = max(0.0, float(e.get("dur", local)) - local)
         at = float(e.get("in", 0.0)) + local * float(e.get("speed", 1.0))
-        vf = hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")}) + _video_layout(e, 1.0, size)
+        from .camlog import chain as log_chain
+        vf = hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")}) + log_chain(e) + _video_layout(e, 1.0, size)
         inp = ["-ss", f"{max(0.0, at):.3f}", "-i", str(e["src"])]
     elif e.get("still") or e.get("src"):
         sx = float(e.get("subject_x", 0.5))
@@ -809,6 +916,13 @@ def still(plan: dict, t: float, out: Path, raw: bool = False, mask: str | None =
     if seg.get("layers") and not raw and not seg.get("panel"):   # the shot's colour layers, as the render has them
         from . import nodes
         frame = nodes.apply(np.ascontiguousarray(frame), seg["layers"], nodes.Masks(seg, CANVAS.size), still=True)
+    if seg.get("keys") and not raw:   # zoom and position keyframes
+        from .motion import apply_keys
+        frame = apply_keys(np.ascontiguousarray(frame), seg["keys"], t - seg["out_start"])
+    if seg.get("effect") and not raw and not seg.get("panel"):   # the shot's video effect, as the render has it
+        from . import vfx
+        frame = vfx.apply(np.ascontiguousarray(frame), seg["effect"], t - seg["out_start"],
+                          [float(b) - seg["out_start"] for b in plan.get("beats") or []])
     if mask:   # the editor's mask view: one region lit, the rest dimmed, no words
         from . import nodes
         Image.fromarray(nodes.mask_view(np.ascontiguousarray(frame), mask, seg)).save(out, quality=88)
@@ -817,6 +931,14 @@ def still(plan: dict, t: float, out: Path, raw: bool = False, mask: str | None =
         from .motion import grid_overlay
         frame = grid_overlay(np.ascontiguousarray(frame), int(plan["grid"].get("cols", 8)),
                              float(plan["grid"].get("alpha", 0.3)))
+    color = {**(plan.get("color") or {}), "grade": plan.get("grade")}
+    for p in plan.get("pips") or []:   # pictures in picture on screen now
+        local = t - float(p.get("start", 0))
+        if 0 <= local < float(p.get("dur", 0)) and not raw:
+            _, _, pw, ph = pip_box(p)
+            pic = _source_frame({**p, "layout": "fill"}, local, color, (pw, ph))
+            if pic is not None:
+                frame = paste_pip(np.ascontiguousarray(frame).copy(), pic, p)
     texts = TextTrack(plan, [float(b) for b in plan.get("beats") or []], fx=False)
     frame = texts.draw(np.ascontiguousarray(frame).copy(), t, seg)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -910,6 +1032,7 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
     with open(errlog, "w") as ef:
         enc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=ef)
         readers = [_SegReader(f, n) for f, n in files]
+        pips = Pips(plan, work)
         beats = [float(b) for b in plan.get("beats") or []]
         mcfg = plan.get("motion") or {}
         texts = TextTrack(plan, beats, native=native_text)
@@ -936,6 +1059,13 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
             if ci > 0:  # arrives in black and white (through the transition too), then its colour blooms
                 from .motion import colour_in, ease_in_out
                 fr = colour_in(fr, ease_in_out(max(0.0, min(1.0, (n / fps - segs[i]["out_start"] - 0.15) / ci))))
+            if segs[i].get("effect"):  # the shot's video effect (vfx.py, chosen by the effects director)
+                from . import vfx
+                t_in = n / fps - segs[i]["out_start"]
+                fr = vfx.apply(fr, segs[i]["effect"], t_in, [b - segs[i]["out_start"] for b in beats])
+            if segs[i].get("keys"):  # the editor's zoom and position keyframes
+                from .motion import apply_keys
+                fr = apply_keys(fr, segs[i]["keys"], n / fps - segs[i]["out_start"])
             sc, ang, tx, ty = shot_motion(n / fps, segs[i], beats, mcfg)
             fr = affine(fr, sc, ang, tx, ty)
             k = pulse_amount(n / fps, segs[i], beats, mcfg)
@@ -1008,6 +1138,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                         frame = frame.copy()
                     frame[:bar] = 0
                     frame[CANVAS.h - bar:] = 0
+                if pips:
+                    frame = pips.draw(frame, n)
                 if maps is not None:
                     frame = maps.draw(frame, n / fps)
                 frame = texts.draw(frame, n / fps, segs[i])
@@ -1022,6 +1154,7 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         finally:
             for r in readers:
                 r.close()
+            pips.close()
         enc.wait()
     if enc.returncode != 0:
         raise ReelError(f"final encode failed: {errlog.read_text()[-1200:]}")

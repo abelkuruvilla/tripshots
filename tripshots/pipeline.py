@@ -66,8 +66,27 @@ def prepare_shots(inputs: list[Path], backend_name: str | None, work: Path | Non
     changed = watch_mod.apply(shots, logs)
     if changed:
         log(f"watch: {changed} shots scored with what Gemini saw (best instant, shake, tilt, exposure)")
+    shot_details(shots, backend, work)
     write_json(work / "shots_scored.json", shots)
     return shots, backend, work
+
+
+def shot_details(shots: list[dict], backend, work: Path) -> None:
+    """The extra details a reel uses (insight.py on this computer, ai.enrich_shots from the AI) for the shots this
+    reel is likely to use; what `tripshots analyze` already found for the others is put on them as well. Never stops
+    a reel."""
+    from . import insight
+    from .planner import _quality
+    try:
+        insight.load(shots)
+        ai_mod.apply_enriched(shots)
+        likely = [s for s in sorted(shots, key=lambda s: -_quality(s)) if (s.get("ai") or {}).get("usable", True)]
+        n = int(os.environ.get("TRIPSHOTS_DETAILS") or 160)
+        insight.attach(likely[:n], deep={s["id"] for s in likely[:n]})
+        if backend and n:
+            ai_mod.enrich_shots(likely[:n], backend, work)
+    except Exception as e:
+        log(f"shot details skipped ({str(e)[:120]})")
 
 
 def resolve_music(music: str | Path | None, cookies: dict | None = None) -> tuple[Path | None, dict]:
@@ -485,6 +504,13 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
                 and str(st.get("match_cuts", True)).lower() not in ("false", "off", "0"):
             from . import matchcut
             matchcut.carry(plan, by_id)  # the critic's swaps: the movement across their cuts is looked at again
+    if ex.get("effects"):
+        style["effects"] = {**(style.get("effects") or {}), "use": str(ex["effects"])}
+    try:   # the effects director: transitions, text motion and looks, a shot effect, from the library (fxlib.py)
+        from . import fxlib
+        fxlib.direct(plan, by_id, style, backend)
+    except Exception as e:  # never costs the user the reel
+        log(f"effects director skipped ({str(e)[:120]})")
     from . import grade as grade_mod
     grade_img = None
     try:
@@ -562,8 +588,23 @@ def posting_note(plan: dict) -> str:
     return note
 
 
-def render_plan(plan_path: Path, out: Path | None, workers: int = 2, text_motion: str | None = None) -> Path:
+def draft_plan(plan: dict) -> dict:
+    """The plan as a quick preview: still text, no sound effects, no checks. The shots' clips are the ones the
+    full render uses (cached by content), so the real render after a preview only adds what the preview left out."""
+    plan.setdefault("text", {})["motion"] = "off"
+    plan["sound"] = {**(plan.get("sound") or {}), "sfx": "off", "ambience": "off"}
+    plan["qa"] = "off"
+    return plan
+
+
+def render_plan(plan_path: Path, out: Path | None, workers: int = 2, text_motion: str | None = None,
+                draft: bool = False) -> Path:
     plan, work = load_plan(plan_path)
+    if draft:   # the editor's motion preview: NAME.draft.mp4, nothing else is written or remembered
+        out = (out or plan_path.with_name(plan_path.name.replace(".plan.json", ".draft.mp4"))).resolve()
+        render(draft_plan(plan), out, work, workers=workers)
+        log(f"done: {out}")
+        return out
     if text_motion:
         plan.setdefault("text", {})["motion"] = text_motion
     out = (out or plan_path.with_name(plan_path.name.replace(".plan.json", ".mp4"))).resolve()

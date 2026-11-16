@@ -15,6 +15,9 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`carousel`](#carousel) | a carousel post from a reel: its best shots as numbered 1080x1350 slides coloured like the reel, a cover with the hook, and the route as the last slide (NAME.carousel/) |
 | [`revise`](#revise) | notes on a finished reel, each pinned to a time ("12.3: too dark here"), turned into edits by the AI (plain rules without one), then rendered again |
 | [`post`](#post) | post a finished reel (now or at a set time) through Upload-Post; a dry run unless --send (needs UPLOAD_POST_KEY and UPLOAD_POST_USER) |
+| [`reels`](#reels) | your reels as projects: list (pinned first), pin, favorite, file in a collection, rename (every file of the reel moves), duplicate, delete (to the Trash) |
+| [`split-trip`](#split-trip) | one trip in parts (a day each, or a place each), each saved as a selection; --make cuts a reel from every part, filed in the trip's collection |
+| [`effects`](#effects) | the effects library: transitions, text motions and looks, shot effects, each with its energy, mood and what it suits (make --effects lets the AI pick from it) |
 | [`skills`](#skills) | agent skills that work next to TripShots (HyperFrames, Remotion, one-take, Lemo-Opuscar, Instagram agent): what they add, whether installed, how to install |
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
@@ -58,13 +61,14 @@ usage: tripshots make [-h] [-m MUSIC]
                       [--parallax {auto,on,off}] [--recipe auto|off|N]
                       [--orientation {auto,vertical,horizontal,4:3,4:5,1:1,sideways}]
                       [--stabilize {auto,on,off}] [--light {golden,sunset,blue,day,night,any}]
-                      [--fresh {on,off}] [--loop | --no-loop] [--min-score N] [--look LOOK]
-                      [--grade-strength 0-1] [--variants N] [--route-map {intro,tracker,both,off}]
-                      [--allow-similar] [--music-start SEC] [--upload-copy | --no-upload-copy]
-                      [--cookies-from-browser BROWSER] [--cookies FILE] [--sfx {on,off}]
-                      [--ambience {on,off}] [--clip-sound {auto,on,off}] [--sfx-level DB]
-                      [--sfx-licenses LIST] [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND]
-                      [--hook HOOK] [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
+                      [--effects {auto,ai,rules,off}] [--fresh {on,off}] [--loop | --no-loop]
+                      [--min-score N] [--look LOOK] [--grade-strength 0-1] [--variants N]
+                      [--route-map {intro,tracker,both,off}] [--allow-similar] [--music-start SEC]
+                      [--upload-copy | --no-upload-copy] [--cookies-from-browser BROWSER]
+                      [--cookies FILE] [--sfx {on,off}] [--ambience {on,off}]
+                      [--clip-sound {auto,on,off}] [--sfx-level DB] [--sfx-licenses LIST]
+                      [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND] [--hook HOOK]
+                      [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
                       [--exclude GLOB] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--no-recursive]
                       [--include-live-photos] [--watch {auto,gemini,off}] [--rescore]
                       [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
@@ -131,6 +135,11 @@ options:
                         only shots in this light (golden: golden hour, sunset and sunrise; blue:
                         blue hour and night; day: morning to afternoon), the photo wall too; when
                         too few are, they are preferred instead
+  --effects {auto,ai,rules,off}
+                        the effects director (fxlib.py): auto (default) lets the AI pick
+                        transitions, text motion and looks and a shot effect or two from the
+                        effects library; rules picks by the music's energy without an AI; off
+                        keeps the style's own choices
   --fresh {on,off}      on (default): shots your earlier reels of this footage showed are marked
                         down, and this reel opens and ends on something else; off: the best shots,
                         whatever was posted before
@@ -283,7 +292,7 @@ sources (folders are searched recursively, any number of them):
 ```text
 usage: tripshots render [-h] [-o OUT] [-j WORKERS]
                         [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}]
-                        [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
+                        [--draft] [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
                         plan
 
 positional arguments:
@@ -295,6 +304,8 @@ options:
   -j, --workers WORKERS
   --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}
                         override how the words animate
+  --draft               a quick preview of the edits: still text, no sound effects or checks ->
+                        NAME.draft.mp4
   --encoder {auto,hardware,software,videotoolbox,nvenc,qsv}
                         video encoder: auto (default: the Mac's / GPU's hardware encoder when it
                         works, else libx264), hardware, software (libx264, slowest, smallest
@@ -331,6 +342,7 @@ options:
 
 ```text
 usage: tripshots carousel [-h] [-n SLIDES] [--title TITLE] [--handle HANDLE] [--no-route] [-o OUT]
+                          [--edit OPS]
                           plan
 
 positional arguments:
@@ -343,6 +355,10 @@ options:
   --handle HANDLE      your handle, small on every slide
   --no-route           no last slide listing the places
   -o, --out OUT        output folder (default: NAME.carousel next to the plan)
+  --edit OPS           change the carousel made before: JSON ops (or a file of them), e.g.
+                       '[{"op": "move", "from": 3, "to": 1}, {"op": "layout", "slide": 2,
+                       "layout": "duo"}]' (ops: move, remove, add, swap, layout single|duo|trio,
+                       crop, title, handle, route)
 ```
 
 ## revise
@@ -386,6 +402,66 @@ options:
   --send                really post it (without: show what would be posted)
   --force               post even though its quality checks didn't all pass
   --again               post it again, though it was posted already
+```
+
+## reels
+
+```text
+usage: tripshots reels [-h] [--collection COLLECTION] [--json]
+                       {list,collections,pin,unpin,favorite,unfavorite,collection,rename,duplicate,delete}
+                       [plan] [value]
+
+positional arguments:
+  {list,collections,pin,unpin,favorite,unfavorite,collection,rename,duplicate,delete}
+  plan                  the reel's NAME.plan.json
+  value                 collection: its name (none to take it out); rename / duplicate: the new
+                        name
+
+options:
+  -h, --help            show this help message and exit
+  --collection COLLECTION
+                        list: only this collection
+  --json
+```
+
+## split-trip
+
+```text
+usage: tripshots split-trip [-h] [--folders FOLDERS [FOLDERS ...]] [--by {day,place}]
+                            [--min-files MIN_FILES] [--make] [--plan-only] [-s STYLE] [-m MUSIC]
+                            [--effects {auto,ai,rules,off}]
+                            [trip]
+
+positional arguments:
+  trip                  a trip id from `tripshots trips` (trip-YYYY-MM-DD); omit to use all of
+                        --folders
+
+options:
+  -h, --help            show this help message and exit
+  --folders FOLDERS [FOLDERS ...]
+                        footage folders (default: your footage folders)
+  --by {day,place}
+  --min-files MIN_FILES
+                        a smaller part joins its neighbour (default 8)
+  --make                make a reel from each part
+  --plan-only           with --make: plans and storyboards only (fast)
+  -s, --style STYLE
+  -m, --music MUSIC
+  --effects {auto,ai,rules,off}
+```
+
+## effects
+
+```text
+usage: tripshots effects [-h] [--json] [{transitions,text,shot}]
+
+positional arguments:
+  {transitions,text,shot}
+                        only one part of it
+
+options:
+  -h, --help            show this help message and exit
+  --json
 ```
 
 ## skills
@@ -782,8 +858,9 @@ options:
 ```text
 usage: tripshots analyze [-h] [-o OUT] [-b {auto,claude-cli,api,minimax,none}] [--no-ai]
                          [--no-faces] [--no-places] [--cached] [--print] [--rescore]
-                         [--watch {auto,gemini,off}] [--exclude GLOB] [--since YYYY-MM-DD]
-                         [--until YYYY-MM-DD] [--no-recursive] [--include-live-photos]
+                         [--no-details] [--watch {auto,gemini,off}] [--exclude GLOB]
+                         [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--no-recursive]
+                         [--include-live-photos]
                          [inputs ...]
 
 positional arguments:
@@ -801,6 +878,10 @@ options:
                         files decoded)
   --print               also print every record
   --rescore             ask the AI again about every shot
+  --no-details          skip the extra details: on this computer (text on the picture, room for
+                        titles, crops, faces, movement at the start, loops, sound, camera) and
+                        from the AI (vibe, shot size, angle, faces, best moment). They are
+                        measured once per shot and kept; only new shots cost anything
   --watch {auto,gemini,off}
   --exclude GLOB
   --since YYYY-MM-DD

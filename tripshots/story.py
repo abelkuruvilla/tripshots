@@ -639,6 +639,8 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
     pool = list(chosen)
     order: list[dict | None] = [None] * len(segs)
     st = style.get("story") or {}
+    style.pop("_grammar", None)
+    grammar_on = bool(st.get("grammar", True))
     ctx = {"people_weight": 1.6 if st.get("people_first", True) else 0.5, "tease": tease, "looks": {}}
     from .planner import colourless, taste_scores
     taste = taste_scores(chosen, style)  # a learned style's light, colour and people
@@ -798,6 +800,9 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
                 for o in (prev, nxt):  # the same place on both sides of a cut reads as one shot that stutters
                     if o is not None and where and where.get(s["id"], s["id"]) == where.get(o["id"], o["id"]):
                         pen -= 2.5
+                if grammar_on and prev is not None and size(s) == size(prev):
+                    # shot sizes alternate (a run of wide views reads as one long establishing shot)
+                    pen -= 0.8 if i > 1 and order[i - 2] is not None and size(order[i - 2]) == size(s) else 0.4
                 return (pen + seen(s, 0.8) + again(s, 0.7)
                         + (_rand("mix", variant, s["id"], i) - 0.5) * (1.2 if variant else 0.3))
             ranked = sorted(pool, key=lambda s: role_score(s, role, ctx) + 0.5 * taste.get(s["id"], 0.0) + adj(s)
@@ -807,6 +812,8 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
             pool.remove(ranked[0])
         _long_slots_first(order, rest, segs)
         _part_places(order, rest, where)
+        if st.get("grammar", True):
+            style["_grammar"] = grammar(order, rest, segs, where)
     # footage thinner than the slots: repeat the best (planner merged most of these away)
     best = sorted(chosen, key=_q, reverse=True)
     for i in range(len(order)):
@@ -876,6 +883,104 @@ def _part_places(order: list, free: list[int], where: dict | None) -> None:
             return
         _, i, j = best
         order[i], order[j] = order[j], order[i]
+
+
+# ------------------------------------------------------------- story grammar
+# How neighbouring shots should differ, after editors' rules of thumb: a cut changes something the eye can see
+# (size, light, colour, subject), shot sizes alternate rather than repeat, each new place opens wide before its
+# details, and the camera doesn't make the same move three shots running (three pushes in a row read as a slideshow).
+def size(s: dict) -> str:
+    """wide | medium | close: how big the subject is in the frame."""
+    from .framing import person_box
+    if _ai(s).get("scene") in DETAIL_SCENES and _ai(s).get("scene") != "portrait":
+        return "close"
+    pb = person_box(s)
+    if pb:
+        area = (pb["x1"] - pb["x0"]) * (pb["y1"] - pb["y0"])
+        return "close" if area >= 0.22 else "medium" if area >= 0.05 else "wide"
+    return "medium" if has_people(s) else "wide"
+
+
+def move(s: dict) -> str | None:
+    """The camera's own move in a clip (push, pan, tilt, drone, walk), None when it holds still or it's a photo."""
+    if s.get("kind") != "video":
+        return None
+    m = str((_ai(s).get("watch") or {}).get("motion") or _ai(s).get("motion") or "").lower()
+    return m if m in ("push", "pan", "tilt", "drone", "walk") else None
+
+
+def _pair_cost(a: dict, b: dict, looks: dict) -> float:
+    if a is None or b is None or a["id"] == b["id"]:
+        return 0.0
+    v = 0.0
+    same = size(a) == size(b)
+    v += 0.6 * same
+    la, lb = looks.get(a["id"]), looks.get(b["id"])
+    if same and shot_kind(a) == shot_kind(b) and la is not None and lb is not None:
+        from .diversity import look_similarity
+        if look_similarity(la, lb) > 0.82:
+            v += 1.5  # nothing changes at the cut: the same size, subject, light and colour
+    return v
+
+
+def grammar_cost(order: list, where: dict | None, looks: dict) -> float:
+    v = 0.0
+    for i in range(1, len(order)):
+        v += _pair_cost(order[i - 1], order[i], looks)
+    for i in range(2, len(order)):  # the same camera move three times running
+        m = [move(o) if o is not None else None for o in order[i - 2:i + 1]]
+        if m[0] and m[0] == m[1] == m[2]:
+            v += 1.2
+    if where:  # a new place opens on a wide view when the place has one in the reel
+        for i in range(1, len(order)):
+            o, p = order[i], order[i - 1]
+            if o is None or p is None or where.get(o["id"], o["id"]) == where.get(p["id"], p["id"]):
+                continue
+            k = where.get(o["id"], o["id"])
+            if size(o) == "close" and any(x is not None and where.get(x["id"], x["id"]) == k and size(x) == "wide"
+                                          for x in order[i + 1:]):
+                v += 0.8
+    return v
+
+
+def grammar(order: list, free: list[int], segs: list[dict], where: dict | None = None) -> dict:
+    """Swap middle shots (never the opening, the payoff or the ending; only between slots of the same part and
+    about the same length, and never into a place repeat) until neighbouring shots read as a sequence: sizes
+    alternate, every cut changes something, new places open wide, no camera move three times running.
+    Returns {before, after, swaps} (grammar_cost of the order)."""
+    from .diversity import thumb_look
+    free = [i for i in free if order[i] is not None and not segs[i].get("hold")]
+    looks = {o["id"]: thumb_look(o.get("thumb")) for o in order if o is not None}
+
+    def place_clashes():
+        if not where:
+            return 0
+        k = [where.get(o["id"], o["id"]) if o is not None else None for o in order]
+        return sum(1 for i in range(1, len(k)) if k[i] is not None and k[i] == k[i - 1])
+
+    def same_slot(i, j):
+        di, dj = float(segs[i]["dur"]), float(segs[j]["dur"])
+        return segs[i].get("role") == segs[j].get("role") and max(di, dj) <= 1.35 * min(di, dj)
+    before = now = grammar_cost(order, where, looks)
+    clash = place_clashes()
+    swaps = 0
+    for _ in range(2 * len(free)):
+        best = None
+        for x, i in enumerate(free):
+            for j in free[x + 1:]:
+                if not same_slot(i, j):
+                    continue
+                order[i], order[j] = order[j], order[i]
+                c, pc = grammar_cost(order, where, looks), place_clashes()
+                order[i], order[j] = order[j], order[i]
+                if pc <= clash and c < now - 0.05 and (best is None or c < best[0]):
+                    best = (c, pc, i, j)
+        if best is None:
+            break
+        now, clash, i, j = best
+        order[i], order[j] = order[j], order[i]
+        swaps += 1
+    return {"before": round(before, 2), "after": round(now, 2), "swaps": swaps}
 
 
 def restrain_transitions(segs: list[dict]) -> int:

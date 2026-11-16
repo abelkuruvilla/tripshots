@@ -85,6 +85,7 @@ DEFAULT_STYLE: dict = {
         "place_variety": 1.0,           # 0 = any place as often as it scores; 1 = spread the reel over the trip's places
         "fresh": 1.0,                   # 0 = off; 1 = shots your earlier reels showed are marked down (history.py)
         "slowmo": True,                 # play high-fps calm shots at half speed
+        "stabilize": "auto",            # auto (shaky clips in calm or held shots) | on (every shaky clip) | off
     },
     "layout": {
         "landscape": "auto",            # auto | crop | pan | blur_fill
@@ -115,7 +116,10 @@ DEFAULT_STYLE: dict = {
                "video_push": 0.06,
                # hype effects: freeze-frame (flash + push-in) on the biggest drop, and a colour-split
                # glitch on this share of hard cuts (0-1)
-               "freeze": False, "rgb_split": 0.0},
+               "freeze": False, "rgb_split": 0.0,
+               # blackout: a few black frames before the payoff lands, after the song's held breath
+               # (auto: when the breath is long and the payoff is intense | on | off)
+               "blackout": "auto"},
     "color": {
         "saturation": 1.08, "contrast": 1.05, "brightness": 0.0, "gamma": 1.0,
         "warmth": 0.0, "vignette": False, "sharpen": 0.3, "lut": None,
@@ -189,7 +193,9 @@ DEFAULT_STYLE: dict = {
     "direction": "",
     "story": {"arc": "on", "format": "auto", "hook_text": "on", "hook_punch": True, "people_first": True,
               "loop": True, "captions": "auto", "parallax": "auto", "match_cuts": True, "critic": "auto",
-              "recipe": "auto"},
+              "recipe": "auto", "grammar": True},
+    # (grammar: neighbouring shots alternate sizes, every cut changes something, a new place opens wide, no
+    # camera move three times running: story.grammar)
     # photo in a frame with the subject stepping out of it (needs rembg for the cut-out)
     "popout": {"use": 0.0, "bg": "paper", "variant": "auto"},
     "caption": {"tone": "warm, concise, first-person travel storyteller", "hashtags": 12},

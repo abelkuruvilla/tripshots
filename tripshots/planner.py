@@ -528,6 +528,7 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         e["drop"] = any(abs(e["out_start"] - d) < 0.12 for d in grid["drops"]) or e.get("role") == "peak"
         out.append(e)
     apply_speed(out, {s["id"]: s for s in shots}, grid, style)
+    mark_stabilize(out, {s["id"]: s for s in shots}, style)
     style["_tempo"] = grid["tempo"]
     choose_transitions(out, style)
     if (style.get("motion") or {}).get("mosaic"):
@@ -549,7 +550,8 @@ def build_plan(shots: list[dict], music: dict | None, style: dict, target: float
         "beats": grid["beats"], "drops": grid["drops"],
         "motion": {**style.get("motion", {}), **({"hook_punch": True} if arc and st.get("hook_punch", True) else {})},
         "loop": bool(style.get("loop", False)) or (arc and bool(st.get("loop", True))),
-        **({"story": {"format": fmt, "arc": [s.get("role") for s in out]}} if arc else {}),
+        **({"story": {"format": fmt, "arc": [s.get("role") for s in out],
+                      **({"grammar": style["_grammar"]} if style.get("_grammar") else {})}} if arc else {}),
         **({"grid": {"cols": int(g.get("cols", 8)), "alpha": float(g.get("alpha", 0.3))}}
            if isinstance(g := (style.get("motion") or {}).get("grid"), dict) else {}),
         **({"frame": {"aspect": picture_aspect(fcfg), "ar": round(ar, 4),
@@ -942,6 +944,8 @@ def _open_on_face(segs: list[dict], shots: list[dict], style: dict, every: float
 
     def big(s):
         b = (s.get("ai") or {}).get("subject_box") or subject_for(s)
+        if isinstance(b, (list, tuple)) and len(b) == 4:  # the AI's box comes as [x0, y0, x1, y1]
+            b = dict(zip(("x0", "y0", "x1", "y1"), b))
         try:
             return (float(b["x1"]) - float(b["x0"])) * (float(b["y1"]) - float(b["y0"]))
         except (KeyError, TypeError, ValueError):
@@ -950,6 +954,7 @@ def _open_on_face(segs: list[dict], shots: list[dict], style: dict, every: float
     pool = [s for s in shots if s.get("kind") == "video" and has_people(s) and s["id"] not in used
             and s["t1"] - s["t0"] >= float(s0["dur"]) * 0.8 and (s.get("ai") or {}).get("usable", True)
             and (float(s.get("w") or 1) >= float(s.get("h") or 1)) == CANVAS.horizontal]  # (the head stays in frame)
+    pool = [s for s in pool if big(s) >= 0.05]  # the person big enough in frame for the swap to read
     pool = sorted(pool, key=lambda s: -(_quality(s) + 1.5 * min(big(s), 0.3) * 10))[:40]
     scored = [(facing_camera(s), s) for s in pool]
     best = max(scored, key=lambda x: (x[0], _quality(x[1]) + 1.5 * min(big(x[1]), 0.3) * 10), default=(0, None))
@@ -995,6 +1000,32 @@ def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: f
             segs[i]["backdrop"] = {"mode": mode, "items": items, "every": round(every, 4)}
             done.append(i)
     return done
+
+
+def mark_stabilize(segs: list[dict], by_id: dict, style: dict) -> int:
+    """Which shots are stabilised (stabilize.py, style `shots.stabilize`): in `auto`, a shaky or handheld clip in a
+    calm or held moment (an opening hold, a beatless stretch, a calm section, the breath before the payoff, a shot
+    held 2.5 s or more), where a wobble reads as a mistake; `on`, every shaky or handheld clip; `off`, none. Never
+    a shot given an added camera shake (the shake is the point there)."""
+    from . import stabilize
+    mode = str((style.get("shots") or {}).get("stabilize", "auto")).lower()
+    n = 0
+    for e in segs:
+        e.pop("stabilize", None)
+        sh = by_id.get(e.get("shot_id")) or {}
+        if mode == "off" or e.get("panel") or e.get("kind") != "video" or e.get("shake") or e.get("ref_shake"):
+            continue
+        need = stabilize.needs_it(sh)
+        if need < 1.0:
+            continue
+        calm = (e.get("hold") or e.get("beatless") or e.get("breath") or e.get("level") == "calm"
+                or float(e.get("dur", 0)) >= 2.5 or float(e.get("speed", 1) or 1) < 0.9)
+        if mode == "on" or calm:
+            e["stabilize"] = True
+            n += 1
+    if n:
+        log(f"stabilise: {n} shaky shot(s) ({stabilize.method()})")
+    return n
 
 
 def plan_mosaic(segs: list[dict], shots: list[dict], style: dict) -> int | None:
@@ -1127,6 +1158,13 @@ def choose_transitions(segs: list[dict], style: dict) -> None:
             # the held breath before the climax: a clean cut on the hit (or a flash, if this style flashes)
             if nxt.get("drop") and "flash" in [normalize(x) for x in palette.get(nxt["level"], [])]:
                 e["trans_out"], e["trans_dur"] = "flash", round(max(2, int(round(NATURAL["flash"] * speed * OUT_FPS / 2)) * 2) / OUT_FPS, 4)
+            else:
+                # micro-black: two to four black frames just before the payoff (the trailer editor's pre-hit
+                # black), so the hit lands out of nothing. auto: after a real held breath into an intense payoff
+                bo = str((style.get("motion") or {}).get("blackout", "auto")).lower()
+                if bo in ("on", "true", "1") or (bo == "auto" and float(e["breath"]) >= 0.4
+                                                 and nxt.get("level") == "intense" and e["dur"] >= 0.8):
+                    e["black_tail"] = 4 if float(e["breath"]) >= 0.6 else 3
             continue
         changed = nxt["level"] != e["level"]
         want = (force_sections and (changed or nxt.get("drop"))) or \

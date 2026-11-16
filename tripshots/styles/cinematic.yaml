@@ -7,7 +7,7 @@ cuts:
   hook_beats: 4
   min_shot_sec: 1.6
   max_shot_sec: 5.0
-shots: {min_score: 7, ordering: energy, max_per_source: 2, slowmo: true}
+shots: {min_score: 7, ordering: energy, max_per_source: 2, slowmo: true, stabilize: on}
 layout: {landscape: pan, photo_motion: kenburns, photo_zoom: 1.14}
 transitions:
   palette:

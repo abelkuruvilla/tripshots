@@ -44,7 +44,7 @@ def cmd_make(a):
                        "speed_up": a.speed_up, "drop_speed": a.drop_speed, "smooth": a.slowmo_smooth,
                        "format": a.format, "arc": a.arc, "captions": a.captions, "critic": a.critic,
                        "parallax": a.parallax, "recipe": a.recipe, "orientation": a.orientation, "fresh": a.fresh,
-                       "light": a.light, "text_motion": a.text_motion, "name": a._label},
+                       "light": a.light, "stabilize": a.stabilize, "text_motion": a.text_motion, "name": a._label},
                look=a.look, grade_strength=a.grade_strength, route_map=a.route_map, sound=sound_args(a))
     print(json.dumps(res, indent=2))
 
@@ -454,6 +454,11 @@ def cmd_doctor(a):
     hdr = ("zscale + tonemap" if util.has_filter("zscale") and util.has_filter("tonemap")
            else "built-in tables (lut3d; same result)" if util.has_filter("lut3d") else "MISSING: HDR clips will look flat")
     print(f"{'HDR':<10} {hdr}")
+    from .stabilize import have_vidstab
+    print(f"{'vidstab':<10} {'ok (two-pass stabilisation)' if have_vidstab() else 'not in this ffmpeg: shaky clips use the built-in stabiliser'}")
+    from PIL import features
+    shaping = features.check("raqm")
+    print(f"{'shaping':<10} {'ok (Malayalam, Hindi, Arabic text joined correctly)' if shaping else 'MISSING: complex scripts render with split letters'}")
     cl = util.which("claude")
     if cl:
         from .ai import ClaudeCLI
@@ -563,7 +568,7 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--text-preset", choices=["bold", "editorial", "minimal", "handwritten", "typewriter"],
                    help="text look (overrides the style)")
     m.add_argument("--behind", choices=["auto", "on", "off"], help="location title behind the skyline")
-    m.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema"],
+    m.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema", "decode", "stamp"],
                    help="how the words animate (HyperFrames; auto picks one per text preset, off = classic)")
     m.add_argument("--split-screens", choices=["lots", "some", "off"], help="split-screen / grid moments")
     m.add_argument("--speed-ramps", metavar="on|off|KINDS",
@@ -597,6 +602,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "vertical: always upright (a wide picture sits in a band); horizontal: always 1920x1080; "
                         "4:3 (1440x1080), 4:5 (1080x1350), 1:1 (1080x1080): the picture fills that shape; "
                         "sideways: a widescreen edit turned on its side in an upright file (\"turn your phone\")")
+    m.add_argument("--stabilize", choices=["auto", "on", "off"],
+                   help="take the shake out of handheld clips: auto (default: shaky clips in calm or held shots), "
+                        "on (every shaky clip), off. Uses ffmpeg's vidstab when it has it, else its own stabiliser")
     m.add_argument("--light", choices=["golden", "sunset", "blue", "day", "night", "any"],
                    help="only shots in this light (golden: golden hour, sunset and sunrise; blue: blue hour and night; "
                         "day: morning to afternoon), the photo wall too; when too few are, they are preferred instead")
@@ -650,7 +658,7 @@ def build_parser() -> argparse.ArgumentParser:
     cl.add_argument("--text-preset", choices=["bold", "editorial", "minimal", "handwritten", "typewriter"])
     cl.add_argument("--no-location", action="store_true",
                     help="no place names on screen (drops the reference's place titles instead of rewriting them)")
-    cl.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema"], help="how the words animate (see make)")
+    cl.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema", "decode", "stamp"], help="how the words animate (see make)")
     cl.add_argument("--upload-copy", action=argparse.BooleanOptionalAction, default=None,
                     help="also write an upload copy without the music (default: on for links)")
     cl.add_argument("-s", "--style", help="style for motion/text look (default beat-montage)")
@@ -668,7 +676,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("plan")
     r.add_argument("-o", "--out")
     r.add_argument("-j", "--workers", type=int, default=2)
-    r.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema"], help="override how the words animate")
+    r.add_argument("--text-motion", choices=["auto", "off", "rise", "focus", "tracking", "typewriter", "slam", "write", "cinema", "decode", "stamp"], help="override how the words animate")
     add_encoder_arg(r)
     r.set_defaults(fn=cmd_render)
 

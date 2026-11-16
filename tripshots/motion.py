@@ -548,7 +548,74 @@ def colour_in(frame: np.ndarray, k: float) -> np.ndarray:
     return cv2.blendLinear(frame, g, w, 1.0 - w)
 
 
+# ---------------------------------------------------- travel transitions
+def t_mirror(a, b, p, y: float = 0.5, **_):
+    """The next shot arrives as its own reflection: a band opens out from the horizon line in which the lower
+    half mirrors the upper (a still lake, rippling a little), and the reflection settles into the real picture
+    as the band fills the frame. Best between wide views with a horizon (lakes, coasts, salt flats)."""
+    h, w = a.shape[:2]
+    hy = int(min(h - 2, max(2, round(float(y) * h))))
+
+    def make():
+        xx, yy = _xy(h, w)
+        src = np.where(yy >= hy, 2 * hy - 1 - yy, yy)  # rows below the line read the rows above, flipped
+        return xx, np.clip(src, 0, h - 1).astype(np.float32), np.abs(yy - hy)
+    xx, src_y, off = _geo(("mirror", h, w, hy), make)
+    k = ease_in_out(min(1.0, max(0.0, (p - 0.5) / 0.45)))  # how far the reflection has become the real thing
+    if k < 0.999:
+        lower = (np.arange(h, dtype=np.float32)[:, None] >= hy)
+        calm = np.clip(off * (1 / (0.04 * h)), 0, 1)  # still water right at the line, ripples further out
+        wave = np.sin(xx * (2 * np.pi / (0.11 * w)) + off * 0.09 - p * 9.0) * (0.004 * h) * (1 - k) * lower * calm
+        mir = cv2.remap(b, xx + wave * 0.6, src_y + wave, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+        mir[hy:] = (mir[hy:].astype(np.float32) * 0.86).astype(np.uint8)  # water is a shade darker than the sky
+        bb = cv2.blendLinear(b, mir, np.full((h, w), k, np.float32), np.full((h, w), 1 - k, np.float32))
+    else:
+        bb = b
+    reach = (0.55 * p + 0.45 * ease_in_out(p)) * (max(hy, h - hy) + 6)
+    return _reveal(a, bb, reach - off, 0.7 if 0.0 < p < 0.999 else 0.0)
+
+
+def t_polaroid(a, b, p, tilt: float = -4.0, **_):
+    """The next shot drops in as a print (white border, deeper at the bottom) that lands at a slight angle with a
+    shadow, then opens out until its picture is the whole frame: a photo from the trip becoming the place."""
+    h, w = a.shape[:2]
+    land = 0.42
+    if p < land:
+        e = ease_out(p / land)
+        g, ang, cy = 0.58, tilt + 16.0 * (1 - e), 0.46 * h - (1 - e) * 1.0 * h
+    else:
+        e = ease_in_out((p - land) / (1 - land))
+        g, ang, cy = 0.58 + 0.42 * e, tilt * (1 - e), (0.46 + 0.04 * e) * h
+    cx = w / 2
+    M = cv2.getRotationMatrix2D((w / 2, h / 2), ang, g)
+    M[0, 2] += cx - w / 2
+    M[1, 2] += cy - h / 2
+    Mi = cv2.invertAffineTransform(M).astype(np.float32)
+    xx, yy = _xy(h, w)
+    bx = Mi[0, 0] * xx + Mi[0, 1] * yy + Mi[0, 2]  # each output pixel's place on the print (b's pixels)
+    by = Mi[1, 0] * xx + Mi[1, 1] * yy + Mi[1, 2]
+    side, top, bottom = 0.05 * w, 0.05 * w, 0.17 * w
+    # soft-edged insides (distance to the nearest edge, in output pixels)
+    grow = 0.0 if p < land else 3.0 * ease_in_out((p - land) / (1 - land))  # no paper line left round the frame
+    pic = np.clip(np.minimum(np.minimum(bx, w - 1 - bx), np.minimum(by, h - 1 - by)) * g + 0.5 + grow, 0, 1)
+    card = np.clip(np.minimum(np.minimum(bx + side, w - 1 + side - bx), np.minimum(by + top, h - 1 + bottom - by))
+                   * g + 0.5, 0, 1).astype(np.float32)
+    pic = pic.astype(np.float32)
+    out = a
+    if float(card.max()) > 0:
+        sm = cv2.GaussianBlur(cv2.resize(card, (max(1, w // 8), max(1, h // 8))), (0, 0), 3)
+        sh = np.roll(np.roll(cv2.resize(sm, (w, h)), int(0.012 * h), axis=0), int(0.008 * w), axis=1)
+        out = (a.astype(np.float32) * (1 - 0.45 * sh[..., None] * (1 - card[..., None]))).astype(np.uint8)
+        out = cv2.blendLinear(np.full_like(a, 248), out, card, 1 - card)
+    if float(pic.max()) > 0:
+        warped = cv2.remap(b, bx, by, cv2.INTER_LINEAR,
+                           borderMode=cv2.BORDER_REPLICATE)
+        out = cv2.blendLinear(warped, out, pic, 1 - pic)
+    return out
+
+
 TRANSITIONS = {
+    "mirror": t_mirror, "polaroid": t_polaroid,
     "slats": t_slats, "stripes": t_stripes, "diamond": t_diamond, "frame": t_frame, "cells": t_cells,
     "split": t_split, "vsplit": t_vsplit, "iris": t_iris,
     "leak": t_leak,
@@ -566,7 +633,8 @@ LEGACY = {"fadeblack": "dip", "fadewhite": "flash", "slideleft": "whip", "slider
 # how long each transition likes to be (seconds); scaled by the style's duration setting
 NATURAL = {"cut": 0.0, "dissolve": 0.5, "fade": 0.5, "dip": 0.5, "blur": 0.45, "whip": 0.3,
            "zoom_in": 0.36, "zoom_out": 0.4, "spin": 0.42, "flash": 0.24, "glitch": 0.2, "leak": 0.7,
-           "split": 0.9, "vsplit": 0.9, "iris": 0.8, "slats": 0.8, "stripes": 0.8, "diamond": 0.8, "frame": 1.0, "cells": 1.0}
+           "split": 0.9, "vsplit": 0.9, "iris": 0.8, "slats": 0.8, "stripes": 0.8, "diamond": 0.8, "frame": 1.0, "cells": 1.0,
+           "mirror": 0.9, "polaroid": 1.1}
 
 
 def normalize(name: str | None) -> str | None:

@@ -157,7 +157,7 @@ no_location: true = no place names on screen at all (no title, none in the hook,
 look: colour look or "auto". route_map: intro | tracker | both | off.
 speed_ramps: on | off | which ramps, e.g. "velocity,slam" (velocity, slam, bullet, rush, surge).
 speed_up: on | off (fast-forward moving clips in busy sections). drop_speed: rush | impact | both | off.
-text_motion: auto | off | rise | focus | tracking | typewriter | slam | write | cinema: how the words animate
+text_motion: auto | off | rise | focus | tracking | typewriter | slam | write | cinema | decode | stamp: how the words animate
   (HyperFrames; auto picks one per text preset when the runtime is installed).
 format: auto | montage | pov | list (numbered places) | series ("Day N of") | reveal. Every reel is planned as a
   story (hook, build, payoff, looping end) and checked by the critic; the result's "score" and "critic" file
@@ -172,6 +172,7 @@ fresh: on | off. on (default): a series from the same footage doesn't repeat its
   reels showed are marked down and their openings and endings aren't reused. off when the user wants the very
   best shots again (e.g. another version of the same reel under a new name).
 light: golden | sunset | blue | day | night: only shots in that light (preferred, when too few are).
+stabilize: auto | on | off: take the shake out of handheld clips (auto: in calm or held shots).
 upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
   same sound inside Instagram: do this when the music is a commercial song.
 Returns the plan path and the storyboard image to review (or a job id to poll).
@@ -202,6 +203,7 @@ Returns the plan path and the storyboard image to review (or a job id to poll).
 | `orientation` | string/null | null |
 | `fresh` | string/null | null |
 | `light` | string/null | null |
+| `stabilize` | string/null | null |
 
 ## reel_results
 

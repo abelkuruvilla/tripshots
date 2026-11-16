@@ -9,6 +9,7 @@ Every reel is composited frame by frame, so movement is tied to the music:
 * **Transitions at the cut:** `whip` (fast swipe with motion blur), `zoom_in`/`zoom_out` (punch through with radial blur), `spin`, `flash`, `glitch` (RGB split), `blur`, `dissolve`, `dip` and `leak` (warm film light washing across the frame while the shots dissolve under it; used between calm shots). Each is centred on the beat. Which ones are used depends on the song's energy at that moment. Energy changes and drops always get one. Other cuts get one at the style's `density`; the rest are hard cuts on the beat, which is what keeps it punchy.
 * **Masked reveals, keyframed on the beat:** the next shot comes in through a shape, the way CapCut masking tutorials teach. `split`: a line swings round a corner of the frame, 45° on each beat (the four corners in turn). `vsplit`: a V opens from the middle of the bottom (or top) edge. Both snap on every beat inside the transition and hold in between, with a thin white edge along the mask. `iris`: a circle grows from the middle to the whole frame with a soft rim, a ripple running round it and a glow as it opens. They last whole beats (`transitions.beats`, default 2; `trans_params.steps` = the beats), and a reveal may take its shots whole, so one runs into the next. The `mask-reveal` style puts one on every cut: line reveals, then V reveals, then circles (`transitions.order`).
 * **Paper shapes:** the next shot is built from pieces, each a plain cream block first and then the picture through it, with thin seams while it builds: `slats` (upright slats, left to right), `stripes` (stripes down the frame), `diamond` (a diamond from the middle, then the four corners round it). `frame`: the next shot as a window in the middle first, then panels round it (left, bottom, top, right); thin gaps between them keep showing the old shot like lines framing the window, until it snaps into the whole picture. With `motion.colour_in` (seconds) every shot arrives in black and white and its colour blooms in (segment `colour_in`). With `motion.silhouette`, the people in a shot (an upright figure the cut-out finds) flash paper-white for two frames as it lands (segment `silhouette`). The widescreen `shape-cut` style uses all of these.
+* **Travel transitions:** `polaroid`: the next shot drops in as a print with a white border (deeper at the bottom), lands at a slight angle with a shadow, then opens out until its picture is the whole frame. `mirror`: the next shot opens out from the horizon line as its own reflection, a still lake below the line with a slight ripple, and the reflection settles into the real picture; best between wide views with water or a horizon. The `travel-diary` style uses both between places, with a passport-stamp title on each new place.
 * **The grid:** plan `grid` {cols, alpha} (style `motion.grid`) lays a fine grid of light lines over the whole reel. `cells`: the next shot fills in cell by cell, spreading from one spot (a third of the cells show a soft block of their colour first). With `motion.mosaic`, one held shot of a person near the middle becomes a photo wall: the cells round them fill one by one with pictures of other moments of the trip, hold, and clear again (segment `mosaic`; the cells the person stands in, found with the cut-out, stay clear). The `grid-mosaic` style is this trend.
 * **Strip collages:** split-screen kinds `rows2`…`rows9` and `cols2`…`cols9` (style `panels.kinds`): the frame in bands across or down it, each a different clip, thin black seams between them; they fill in on the beat and collapse into one shot. They work in upright and wide reels alike.
 * **The person stays, the world changes** (style `motion.backdrop`: `places`, `colour` or `both`; segment `backdrop` {items, every}): on a held shot of a person who fills enough of the frame, on each beat the background becomes another place of the trip (one picture per landmark) or a flat colour from the shot's own palette, while the person (an upright figure the cut-out finds in every other frame, smoothed over time) stays; the last beat shows the real place again. No person found: the shot plays as it is. With `motion.backdrop_first`, the reel opens on it: the best clip of a person facing the camera (a selfie, walking toward the camera, posing, or a face the detector finds), big in frame and in the reel's own orientation, takes the first slot. By hand: the Shot tab's **Behind the person** (expert), or plan edit `backdrop` {segment, mode places|colour|off}.
@@ -102,6 +103,29 @@ The storyboard shows each shot's speed or ramp; a whoosh lands where a ramp slam
 * **Colour-split glitch**: a short RGB split on some hard cuts (`motion: {rgb_split: 0.3}` = 30% of them).
 * **Beat check**: after every render, TripShots finds each hard cut in the finished video and reports how many land within one frame of the plan and on a beat ("beat check: 12/12 measurable cuts within 1 frame").
 
+## Steady shots
+
+Handheld clips wobble, and in a calm, held shot the wobble reads as a mistake. TripShots measures how much each
+clip shakes (its own motion analysis, the AI's "shaky" note, and Gemini's steadiness rating when Gemini is set up).
+In the shots that need it, the part of the clip the reel uses is stabilised before rendering:
+
+- with ffmpeg's **vidstab** (two passes: measure the camera's path, then follow a smoothed version of it, zoomed just
+  enough to hide the edges), when the ffmpeg in use has it (`tripshots doctor` says so);
+- otherwise with TripShots' own stabiliser: corners tracked from frame to frame, the camera's path smoothed over about
+  a second, and each frame moved back onto it, zoomed in at most 12% so no edge shows.
+
+A deliberate pan or push stays; only the shake is taken out. Each clip is stabilised once and cached
+(`~/.tripshots/cache/stab/`), so editing the plan never redoes it.
+
+```yaml
+shots:
+  stabilize: auto   # auto: shaky clips in calm or held shots (never one with an added camera shake) | on: every shaky clip | off
+```
+
+`cinematic`, `slow-scenic`, `grid-mosaic`, `mask-reveal` and `shape-cut` use `on`. For one reel use
+`make --stabilize on|off`; for one shot, **Stabilise this clip** in the app's Shot tab (expert) or plan edit
+`stabilize` {segment, on}.
+
 ## Framing the subject
 
 * When the AI judges a shot, it also returns a **subject box** (the peak, waterfall, person, car…). Shots judged before this feature fall back to on-device saliency detection. Run `--rescore` once to get AI boxes for them.
@@ -139,6 +163,8 @@ and `render`, or `"motion"` on one overlay in the plan:
 | `slam` | words drop in from large and land with a three-frame shake, on the beat | bold hooks and labels |
 | `write` | written on from left to right with a soft pen edge | handwritten |
 | `cinema` | the title fades up and drifts, the line under it tracks in | editorial locations |
+| `decode` | letters resolve left to right out of flickering random letters and digits | (pick it) place names, coordinates |
+| `stamp` | the title slams down as a passport stamp: red letters in a bordered cream box, at an angle, with a landing shake | the `travel-diary` style |
 
 `off` keeps the classic animation. Without the runtime, `auto` quietly keeps it too. Each title is rendered once
 (about 10 s) and cached in `~/.tripshots/cache/text/`. The animations follow text primitives from the

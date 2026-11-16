@@ -70,6 +70,7 @@ Instead of folders you can pass a search result: `tripshots find --place Lisbon`
 | `turn-phone` | A widescreen edit turned on its side ("turn your phone"): strip collages, you against flat colours, white silhouette flashes, paper slats and stripes |
 | `grid-mosaic` | 4:3. A fine grid over the reel, shots filling in cell by cell, and a photo wall of the trip round you mid-reel |
 | `shape-cut` | Widescreen and editorial: each shot built from cream paper pieces (slats, a diamond, stripes), arriving in black and white before its colour blooms in |
+| `travel-diary` | A scrapbook of the trip: each place opens wide and lands with a passport stamp, prints drop in and open into the next place, lakes arrive as their own reflection, and the payoff comes out of a beat of black |
 
 Make your own with `tripshots learn` (below) or by copying one: see [Styles](styles.md).
 

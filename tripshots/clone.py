@@ -636,6 +636,8 @@ def build_clone_plan(ref: dict, slots: list[dict], match: dict, texts: dict, sho
             overlays.append({"type": role, "text": txt, "start": round(st, 3),
                              "duration": round(rshots[j]["t1"] - st - 0.08, 3), "clone_of": t})
         k = j + 1
+    from .planner import mark_stabilize
+    mark_stabilize(segs, {s["id"]: s for s in shots}, style)
     return {
         "version": 1, "style": style["name"], "duration": round(total, 4), "tempo": round(tempo, 1),
         "music": {"path": ref.get("audio"), "start": 0.0, "fade_out": 0.3},

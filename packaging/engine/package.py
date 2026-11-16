@@ -29,6 +29,10 @@ def smoke(exe: Path, version: str) -> None:
     out = subprocess.run([str(exe), "--help"], capture_output=True, text=True, timeout=180)
     if out.returncode != 0 or "serve" not in out.stdout:
         sys.exit(f"engine --help failed:\n{out.stdout}\n{out.stderr}")
+    # complex scripts (Malayalam) must shape: the frozen engine has to find its own fribidi (entry._text_shaping)
+    doc = subprocess.run([str(exe), "doctor"], capture_output=True, text=True, timeout=180, cwd=str(Path.home()))
+    if "shaping    ok" not in doc.stdout:
+        sys.exit(f"engine can't shape complex scripts (Malayalam would render with split letters):\n{doc.stdout[-800:]}")
     env = {**os.environ, "TRIPSHOTS_API_TOKEN": "smoke", "TRIPSHOTS_HOME": str(Path.cwd() / ".smoke-home")}
     p = subprocess.Popen([str(exe), "serve"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, text=True)
     try:

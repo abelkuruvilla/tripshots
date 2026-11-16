@@ -295,6 +295,7 @@ class TextElement:
     sprites: list = field(default_factory=list)
     box: tuple = (0, 0, 0, 0)       # x0, y0, x1, y1 of the laid-out block (for scrim + placement)
     scrim: float = 0.0
+    fill_lum: float = 1.0    # how light the letters are (0..1): light letters get shade when what's behind brightens
     exit: float = 0.28
     beats: list = field(default_factory=list)
     masker: object = None    # callable(frame) -> foreground mask, for sprites drawn behind
@@ -348,8 +349,11 @@ class TextElement:
         if t < 0 or t > self.duration:
             return frame
         out = frame
-        if self.scrim > 0:
-            out = _scrim(out, self.box, self.scrim * min(1.0, t / 0.3, (self.duration - t) / 0.3))
+        # what is behind the words now (a line held across shots, a pan onto a bright sky): light letters on a
+        # light picture get a shade under them, measured on this frame
+        shade = max(self.scrim, shade_needed(frame, self.box, self.fill_lum))
+        if shade > 0:
+            out = _scrim(out, self.box, shade * min(1.0, t / 0.3, (self.duration - t) / 0.3))
         cx_block = (self.box[0] + self.box[2]) / 2
         behind = [s for s in self.sprites if s.behind]
         if behind and self.masker is not None:
@@ -470,6 +474,36 @@ def choose_band(frame: np.ndarray | None, preferred: str, subject: dict | None =
     return min(scores, key=scores.get)
 
 
+def shade_needed(frame: np.ndarray | None, box, fill_lum: float) -> float:
+    """How much shade light letters need on this frame: none on a dark picture, up to 0.55 on a bright one
+    (pale sky, sunlit aspens, white rock). Dark letters bring their own contrast (0)."""
+    if frame is None or fill_lum < 0.6:
+        return 0.0
+    x0, y0, x1, y1 = [int(v) for v in box]
+    y0, y1 = max(0, y0), min(frame.shape[0], max(y0 + 1, y1))
+    x0, x1 = max(0, x0), min(frame.shape[1], max(x0 + 1, x1))
+    patch = frame[y0:y1:4, x0:x1:4]
+    if patch.size == 0:
+        return 0.0
+    lum = patch.reshape(-1, 3).astype(np.float32) @ np.float32([0.299, 0.587, 0.114]) / 255.0
+    bg = 0.5 * float(lum.mean()) + 0.5 * float(np.percentile(lum, 75))   # the bright parts count most
+    gap = fill_lum - bg                                                  # how much lighter the letters are
+    return float(np.clip((0.55 - gap) * 1.1, 0.0, 0.55))
+
+
+def face_rows(frame: np.ndarray | None) -> list[tuple[float, float]]:
+    """(top, bottom) in pixels of the faces in a frame (a little head room above, chin below), when the face
+    model is there."""
+    if frame is None:
+        return []
+    import cv2
+    from .nodes import _faces
+    h, w = frame.shape[:2]
+    k = 480 / max(h, w)
+    small = cv2.cvtColor(cv2.resize(frame, (int(w * k), int(h * k))), cv2.COLOR_RGB2BGR)
+    return [((fy - 0.35 * fh) * h, (fy + 1.15 * fh) * h) for fx, fy, fw, fh in _faces(small) if fw * fh > 0.0015]
+
+
 def band_brightness(frame: np.ndarray | None, box) -> float:
     if frame is None:
         return 0.5
@@ -573,10 +607,12 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
         if k > 1.0 or wide > max_w and len(text.split()) <= 2:  # a short name grows; one or two words shrink to a line
             size = max(48, int(size * max(0.55, k)))
             fnt = font(cfg.get("font"), size)
+    room = 0.45 * (SAFE["bottom"] - SAFE["top"])  # a title takes at most about half of the free screen
     while True:
         space = fnt.getlength(" ")
         lines = _wrap(text.split(), fnt, max_w, space)
-        if len(lines) <= 3 or size < 48:
+        tall = len(lines) * sum(fnt.getmetrics()) * float(cfg.get("line_gap", 1.05))
+        if (len(lines) <= 3 and tall <= room) or size < 48:
             break
         size = int(size * 0.88)
         fnt = font(cfg.get("font"), size)
@@ -599,17 +635,22 @@ def build_hook(text: str, start: float, duration: float, cfg: dict, frame: np.nd
         top = max(SAFE["top"], min(top, SAFE["bottom"] - block_h))
     else:
         top = by0 + max(0, (by1 - by0 - block_h) // 2)
+        top = max(SAFE["top"], min(top, SAFE["bottom"] - block_h))  # (a tall block in a short band stays on screen)
     if cfg.get("y") is not None:  # the plan chose the height (a line held across shots: recipes.free_row)
         top = max(SAFE["top"], min(int(float(cfg["y"]) * CANVAS.h - block_h / 2), SAFE["bottom"] - block_h))
         avoid = None
+    ink0, ink1 = (asc * 0.22, asc * 1.02) if text.upper() == text else (asc * 0.2, asc + desc * 0.8)
     if avoid and not cfg.get("fixed"):
         # the letters, not the line box, must clear the subject (capitals leave the descender row empty)
-        ink0, ink1 = (asc * 0.22, asc * 1.02) if text.upper() == text else (asc * 0.2, asc + desc * 0.8)
         top = int(round(clear_rows(top + ink0, block_h - lh + ink1 - ink0, avoid) - ink0))
+    for f0, f1 in face_rows(frame):  # never across a face, wherever the line was meant to sit
+        top = int(round(clear_rows(top + ink0, block_h - lh + ink1 - ink0,
+                                   (f0, f1, SAFE["top"] - 18, SAFE["bottom"] + 18)) - ink0))
     el = TextElement(start, duration, anim, beats=beats)
     if cfg.get("exit") is not None:
         el.exit = max(0.01, float(cfg["exit"]))
     fill = tuple(int(c) for c in cfg["color"][:3]) if cfg.get("color") else (255, 255, 255)
+    el.fill_lum = 0.0 if cfg.get("fill") == "picture" else (0.299 * fill[0] + 0.587 * fill[1] + 0.114 * fill[2]) / 255.0
     palette = cfg.get("colors") if isinstance(cfg.get("colors"), list) and cfg.get("colors") else None
     inked = 0  # letters drawn so far: the colours run on through the lines
     items = []  # (text, x, y, line)
@@ -746,9 +787,17 @@ def build_location(main: str, sub: str | None, coords: str | None, start: float,
         lines.append((main_u, big, 0.0))
         names = [(cfg.get("font", "bebas"), size)]
         if sub:
-            sf = font(cfg.get("sub_font", "montserrat"), int(cfg.get("sub_size", 30)))
-            lines.append((sub.upper(), sf, int(cfg.get("sub_size", 30)) * 0.35))
-            names.append((cfg.get("sub_font", "montserrat"), int(cfg.get("sub_size", 30))))
+            # the spaced-out line under it fits the safe width too ("GLEN CANYON NATIONAL RECREATION AREA"):
+            # smaller, then dropped rather than run off the screen
+            ss = int(cfg.get("sub_size", 30))
+            room = SAFE["right"] - SAFE["left"] - 20
+            sf = font(cfg.get("sub_font", "montserrat"), ss)
+            while sf.getlength(sub.upper()) + ss * 0.35 * (len(sub) - 1) > room and ss > 20:
+                ss = int(ss * 0.9)
+                sf = font(cfg.get("sub_font", "montserrat"), ss)
+            if sf.getlength(sub.upper()) + ss * 0.35 * (len(sub) - 1) <= room:
+                lines.append((sub.upper(), sf, ss * 0.35))
+                names.append((cfg.get("sub_font", "montserrat"), ss))
         if coords:
             mf = font(cfg.get("mono_font", "spacemono"), int(cfg.get("mono_size", 24)))
             lines.append((coords, mf, 2.0))

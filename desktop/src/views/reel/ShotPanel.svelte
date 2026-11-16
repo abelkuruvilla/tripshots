@@ -9,7 +9,7 @@
   const transitions = [[null, "Hard cut"], ["whip", "Whip"], ["zoom_in", "Zoom in"], ["zoom_out", "Zoom out"], ["spin", "Spin"],
                        ["flash", "Flash"], ["glitch", "Glitch"], ["blur", "Blur"], ["dissolve", "Dissolve"], ["dip", "Dip to black"], ["leak", "Light leak"],
                        ["split", "Line reveal"], ["vsplit", "V reveal"], ["iris", "Circle reveal"],
-                       ["slats", "Paper slats"], ["stripes", "Paper stripes"], ["diamond", "Paper diamond"], ["frame", "Framed window"], ["cells", "Grid cells"]];
+                       ["slats", "Paper slats"], ["stripes", "Paper stripes"], ["diamond", "Paper diamond"], ["frame", "Framed window"], ["cells", "Grid cells"], ["polaroid", "Polaroid print"], ["mirror", "Reflection"]];
   const ramps = [[null, "None"], ["velocity", "Velocity"], ["slam", "Slam"], ["bullet", "Bullet"], ["rush", "Rush"], ["impact", "Impact"], ["surge", "Surge"]];
   const layouts = [["crop", "Crop to the subject"], ["pan", "Pan across"], ["blur_fill", "Whole frame, blurred behind"], ["fill", "Fill (already upright)"]];
   const roles = { hook: "Opening", setup: "Setup", build: "Build", peak: "Peak", release: "Release", ending: "Ending" };
@@ -131,6 +131,12 @@
         <label for="isx">Looks at <span class="hint">· {sx < 0.4 ? "left" : sx > 0.6 ? "right" : "middle"}</span></label>
         <input id="isx" type="range" min="0" max="1" step="0.01" bind:value={sx} onchange={() => op({ op: "frame", subject_x: +sx })} />
       </div>
+    </section>
+    <section class="panel">
+      <h3>Steadiness</h3>
+      <label class="check"><input type="checkbox" checked={s.stabilize} onchange={(e) => op({ op: "stabilize", on: e.currentTarget.checked })} />
+        Stabilise this clip</label>
+      <p class="quiet small help">Takes the shake out of a handheld clip (a deliberate pan stays); the picture is zoomed in a little to hide the moving edges</p>
     </section>
     <section class="panel">
       <h3>Behind the person</h3>

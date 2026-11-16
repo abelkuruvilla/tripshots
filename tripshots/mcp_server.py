@@ -155,6 +155,31 @@ async def set_folders(reels_folder: str | None = None, music_folders: list[str] 
 
 
 @mcp.tool()
+async def manage_reel(plan: str, action: str, value: str | None = None) -> str:
+    """A reel as a project: action pin | unpin | favorite | unfavorite | collection (value: a name, or null to take it
+    out) | rename (value: new name; every file of the reel moves, undo history too) | duplicate (value: optional
+    name; a copy of the plan to try something else) | delete (moves its files to the Trash; ask the user first)."""
+    from .projects import manage
+    return _txt(await asyncio.to_thread(manage, Path(plan).expanduser(), action, value))
+
+
+@mcp.tool()
+async def split_trip(trip: str | None = None, by: str = "day", make: bool = False, plan_only: bool = True,
+                     style: str | None = None, music: str | None = None) -> list:
+    """One trip in parts (a day each, or a place each: by "day" | "place"), each a saved selection. trip: an id from
+    list_trips (none = all footage folders). make: cut a reel from every part (plan_only: storyboards first), filed
+    in the trip's collection. Returns the parts with their selection ids (and plans when made)."""
+    args = ["split-trip"] + ([trip] if trip else []) + ["--by", by]
+    if make:
+        args.append("--make")
+        if plan_only:
+            args.append("--plan-only")
+        args += (["-s", style] if style else []) + (["-m", music] if music else [])
+    st = await _run_job(args, "split", f"split {trip or 'trip'}")
+    return _finished(st)
+
+
+@mcp.tool()
 async def list_effects() -> str:
     """The effects library: transitions (for edit_plan transition), text motions (edit_text motion) and text looks
     (edit_text style look), and shot effects (edit_plan effect), each with its energy, mood and what it suits.

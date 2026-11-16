@@ -51,6 +51,33 @@ Where finished reels are written, and where the user keeps music for reels.
 | `reels_folder` | string/null | null |
 | `music_folders` | array/null | null |
 
+## manage_reel
+
+A reel as a project: action pin | unpin | favorite | unfavorite | collection (value: a name, or null to take it
+out) | rename (value: new name; every file of the reel moves, undo history too) | duplicate (value: optional
+name; a copy of the plan to try something else) | delete (moves its files to the Trash; ask the user first).
+
+| Parameter | Type | Default |
+|---|---|---|
+| `plan` | string | **required** |
+| `action` | string | **required** |
+| `value` | string/null | null |
+
+## split_trip
+
+One trip in parts (a day each, or a place each: by "day" | "place"), each a saved selection. trip: an id from
+list_trips (none = all footage folders). make: cut a reel from every part (plan_only: storyboards first), filed
+in the trip's collection. Returns the parts with their selection ids (and plans when made).
+
+| Parameter | Type | Default |
+|---|---|---|
+| `trip` | string/null | null |
+| `by` | string | "day" |
+| `make` | boolean | false |
+| `plan_only` | boolean | true |
+| `style` | string/null | null |
+| `music` | string/null | null |
+
 ## list_effects
 
 The effects library: transitions (for edit_plan transition), text motions (edit_text motion) and text looks

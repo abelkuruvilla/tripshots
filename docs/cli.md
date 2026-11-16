@@ -15,6 +15,8 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`carousel`](#carousel) | a carousel post from a reel: its best shots as numbered 1080x1350 slides coloured like the reel, a cover with the hook, and the route as the last slide (NAME.carousel/) |
 | [`revise`](#revise) | notes on a finished reel, each pinned to a time ("12.3: too dark here"), turned into edits by the AI (plain rules without one), then rendered again |
 | [`post`](#post) | post a finished reel (now or at a set time) through Upload-Post; a dry run unless --send (needs UPLOAD_POST_KEY and UPLOAD_POST_USER) |
+| [`reels`](#reels) | your reels as projects: list (pinned first), pin, favorite, file in a collection, rename (every file of the reel moves), duplicate, delete (to the Trash) |
+| [`split-trip`](#split-trip) | one trip in parts (a day each, or a place each), each saved as a selection; --make cuts a reel from every part, filed in the trip's collection |
 | [`effects`](#effects) | the effects library: transitions, text motions and looks, shot effects, each with its energy, mood and what it suits (make --effects lets the AI pick from it) |
 | [`skills`](#skills) | agent skills that work next to TripShots (HyperFrames, Remotion, one-take, Lemo-Opuscar, Instagram agent): what they add, whether installed, how to install |
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
@@ -395,6 +397,52 @@ options:
   --send                really post it (without: show what would be posted)
   --force               post even though its quality checks didn't all pass
   --again               post it again, though it was posted already
+```
+
+## reels
+
+```text
+usage: tripshots reels [-h] [--collection COLLECTION] [--json]
+                       {list,collections,pin,unpin,favorite,unfavorite,collection,rename,duplicate,delete}
+                       [plan] [value]
+
+positional arguments:
+  {list,collections,pin,unpin,favorite,unfavorite,collection,rename,duplicate,delete}
+  plan                  the reel's NAME.plan.json
+  value                 collection: its name (none to take it out); rename / duplicate: the new
+                        name
+
+options:
+  -h, --help            show this help message and exit
+  --collection COLLECTION
+                        list: only this collection
+  --json
+```
+
+## split-trip
+
+```text
+usage: tripshots split-trip [-h] [--folders FOLDERS [FOLDERS ...]] [--by {day,place}]
+                            [--min-files MIN_FILES] [--make] [--plan-only] [-s STYLE] [-m MUSIC]
+                            [--effects {auto,ai,rules,off}]
+                            [trip]
+
+positional arguments:
+  trip                  a trip id from `tripshots trips` (trip-YYYY-MM-DD); omit to use all of
+                        --folders
+
+options:
+  -h, --help            show this help message and exit
+  --folders FOLDERS [FOLDERS ...]
+                        footage folders (default: your footage folders)
+  --by {day,place}
+  --min-files MIN_FILES
+                        a smaller part joins its neighbour (default 8)
+  --make                make a reel from each part
+  --plan-only           with --make: plans and storyboards only (fast)
+  -s, --style STYLE
+  -m, --music MUSIC
+  --effects {auto,ai,rules,off}
 ```
 
 ## effects

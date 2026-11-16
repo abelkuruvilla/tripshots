@@ -29,6 +29,24 @@ overnight. For each trip you get the dates, the number of days, photo and video 
 GPS), the main folders, and the places of each day. Use it to find out what "last summer" or "the Iceland trip"
 refers to.
 
+### One trip, many reels
+
+```bash
+tripshots split-trip trip-2026-10-04 --by day            # a selection per day
+tripshots split-trip trip-2026-10-04 --by place --make   # a reel per place, made one after another
+```
+
+`split-trip` divides a trip into parts:
+- `--by day`: one part per day. A day with fewer than `--min-files` files (default 8) joins the day before.
+- `--by place`: one part per stretch of footage at one place.
+
+Each part is saved as a selection, so `make sel:<id>` works on it. With `--make`, a reel is cut from every part:
+- `--plan-only` makes plans and storyboards first;
+- `-s` and `-m` set the style and sound for every part.
+
+The reels are filed in a collection named after the trip, and are named by date, day and place
+(`2026-10-04-day05-Teton`). In the desktop app, use **Make → From a trip**. Agents use MCP `split_trip`.
+
 ## Search options
 
 | Option | Meaning |

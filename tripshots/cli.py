@@ -292,6 +292,56 @@ def cmd_post(a):
     print(json.dumps({k: v for k, v in res.items() if k != "key"}, indent=2, ensure_ascii=False))
 
 
+def cmd_reels(a):
+    from . import projects
+    if a.action == "list":
+        from .server import list_reels
+        rows = projects.annotate(list_reels())
+        if a.collection:
+            rows = [r for r in rows if r.get("collection") == a.collection]
+        if a.json:
+            return print(json.dumps(rows, indent=2))
+        for r in rows:
+            mark = ("*" if r["pinned"] else " ") + ("♥" if r["favorite"] else " ")
+            print(f"{mark} {r['name']:<40} {r.get('collection') or '':<24} {r['plan']}")
+        return
+    if a.action == "collections":
+        return print(json.dumps(projects.collections(), indent=2))
+    if not a.plan:
+        raise ReelError(f"reels {a.action} needs a plan (NAME.plan.json)")
+    print(json.dumps(projects.manage(Path(a.plan), a.action, a.value), indent=2))
+
+
+def cmd_split_trip(a):
+    """One trip -> a selection per day (or place); with --make, a reel from each, filed in the trip's collection."""
+    import subprocess
+    import sys
+    from . import catalog, projects
+    from .commands import default_out, make_args
+    res = catalog.split_trip(a.trip, a.folders or None, by=a.by, min_files=a.min_files)
+    if not a.make:
+        return print(json.dumps(res, indent=2))
+    default_out()
+    for part in res["parts"]:
+        util.log(f"part {part['part']}/{len(res['parts'])}: {part['label']} ({part['files']} files)")
+        args = make_args([f"sel:{part['selection']}"], dry_run=a.plan_only, name=part["label"],
+                         style=a.style, music=a.music, effects=a.effects)
+        proc = subprocess.run([sys.executable, "-m", "tripshots", *args], capture_output=True, text=True)
+        out = proc.stdout.strip()
+        try:
+            made = json.loads(out[out.index("{"):]) if "{" in out else {}
+        except ValueError:
+            made = {}
+        if proc.returncode != 0 or not made.get("plan"):
+            part["error"] = (proc.stderr.strip().splitlines() or ["make failed"])[-1][:300]
+            util.log(f"  failed: {part['error']}")
+            continue
+        part["plan"] = made["plan"]
+        part["video"] = made.get("video")
+        projects.manage(Path(made["plan"]), "collection", res["collection"])
+    print(json.dumps(res, indent=2))
+
+
 def cmd_effects(a):
     from . import fxlib
     lib = fxlib.catalog()
@@ -759,6 +809,29 @@ def build_parser() -> argparse.ArgumentParser:
     po.add_argument("--force", action="store_true", help="post even though its quality checks didn't all pass")
     po.add_argument("--again", action="store_true", help="post it again, though it was posted already")
     po.set_defaults(fn=cmd_post)
+
+    rl = sub.add_parser("reels", help="your reels as projects: list (pinned first), pin, favorite, file in a "
+                                      "collection, rename (every file of the reel moves), duplicate, delete (to the Trash)")
+    rl.add_argument("action", choices=["list", "collections", "pin", "unpin", "favorite", "unfavorite", "collection",
+                                       "rename", "duplicate", "delete"])
+    rl.add_argument("plan", nargs="?", help="the reel's NAME.plan.json")
+    rl.add_argument("value", nargs="?", help="collection: its name (none to take it out); rename / duplicate: the new name")
+    rl.add_argument("--collection", help="list: only this collection")
+    rl.add_argument("--json", action="store_true")
+    rl.set_defaults(fn=cmd_reels)
+
+    st = sub.add_parser("split-trip", help="one trip in parts (a day each, or a place each), each saved as a "
+                                           "selection; --make cuts a reel from every part, filed in the trip's collection")
+    st.add_argument("trip", nargs="?", help="a trip id from `tripshots trips` (trip-YYYY-MM-DD); omit to use all of --folders")
+    st.add_argument("--folders", nargs="+", help="footage folders (default: your footage folders)")
+    st.add_argument("--by", choices=["day", "place"], default="day")
+    st.add_argument("--min-files", type=int, default=8, help="a smaller part joins its neighbour (default 8)")
+    st.add_argument("--make", action="store_true", help="make a reel from each part")
+    st.add_argument("--plan-only", action="store_true", help="with --make: plans and storyboards only (fast)")
+    st.add_argument("-s", "--style")
+    st.add_argument("-m", "--music")
+    st.add_argument("--effects", choices=["auto", "ai", "rules", "off"])
+    st.set_defaults(fn=cmd_split_trip)
 
     fx = sub.add_parser("effects", help="the effects library: transitions, text motions and looks, shot effects, "
                                         "each with its energy, mood and what it suits (make --effects lets the AI "

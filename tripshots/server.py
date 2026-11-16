@@ -420,6 +420,16 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
         return find_args(**{k: b[k] for k in keys if b.get(k) not in (None, "", [])}), s("label") or s("place")
     if kind == "trips":
         return ["trips", "--", *items("folders")], "trips"
+    if kind == "split":   # one trip in parts, a reel from each (projects in the trip's collection)
+        args = ["split-trip"] + ([s("trip")] if b.get("trip") else []) + ["--by", "place" if b.get("by") == "place" else "day", "--make"]
+        if b.get("plan_only"):
+            args.append("--plan-only")
+        for k, flag in (("style", "-s"), ("music", "-m")):
+            if b.get(k):
+                args += [flag, s(k)]
+        if items("folders"):
+            args += ["--folders", *items("folders")]
+        return args, f"Split {s('trip') or 'trip'}"
     if kind == "music":
         return ["music", s("url")], s("url")
     if kind == "looks":   # the look library: fetch a free pack, add LUT files, remove a pack or a look
@@ -547,7 +557,11 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/status":
                     return self._json(status())
                 if path == "/api/reels":
-                    return self._json(list_reels())
+                    from .projects import annotate
+                    return self._json(annotate(list_reels()))
+                if path == "/api/collections":
+                    from .projects import collections
+                    return self._json(collections())
                 if path == "/api/reel":
                     return self._json(reel_detail(_plan(arg("plan"))))
                 if path == "/api/still":
@@ -608,6 +622,9 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/edit":
                     from .planedit import apply
                     return self._json(apply(_plan(str(b.get("plan"))), list(b.get("edits") or [])))
+                if path == "/api/reel/manage":   # pin, favorite, collection, rename, duplicate, delete (projects.py)
+                    from .projects import manage
+                    return self._json(manage(_plan(str(b.get("plan"))), str(b.get("action")), b.get("value")))
                 if path in ("/api/undo", "/api/redo"):
                     from .planedit import step
                     return self._json(step(_plan(str(b.get("plan"))), back=path == "/api/undo"))

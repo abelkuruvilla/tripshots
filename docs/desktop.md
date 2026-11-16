@@ -22,9 +22,18 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
 
 ## What's where
 
-- **Reels**: every reel in your reels folder and `~/.tripshots/reels`, newest first, grouped by folder. Show all,
-  upright, wide, plans not rendered yet, or reels edited since their render.
-- **Make** (⌘2): **Describe it** ("a reel with all my drone footage"): TripShots finds the footage, picks one of your
+- **Reels**: every reel in your reels folder and `~/.tripshots/reels`, newest first. Pinned reels come first,
+  then collections, then folders. Show all, upright, wide, plans not rendered yet, reels edited since their render,
+  favourites, or one collection. Each reel's **⋯** menu can:
+  - pin it or make it a favourite;
+  - put it in a collection (a trip, a series);
+  - rename it (every file of the reel moves with it, its undo history too);
+  - duplicate its plan to try something else;
+  - move it to the Trash.
+
+  `tripshots reels` and MCP `manage_reel` do the same.
+- **Make** (⌘2): **From a trip** lists your trips; pick one, then one reel per day or per place
+  (`tripshots split-trip`), filed in the trip's collection. **Describe it** ("a reel with all my drone footage"): TripShots finds the footage, picks one of your
   styles and a sound, and makes it; or **Choose it yourself**: footage, sound (a reel link, so its cut and sound
   are used, or an audio file), style, shape, up to four versions, an opening line. **Plan first** gives the
   storyboard in about a minute. The job shows here step by step (reading the request, finding footage, choosing

@@ -34,6 +34,7 @@
     sliders: "M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6",
     eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
     pause: "M7 4h3v16H7z M14 4h3v16h-3z",
+    pin: "M9 3h6l-1 6 3 3v2H7v-2l3-3z M12 14v7",
     check: "M5 12.5l4.5 4.5L19 7.5",
     split: "M4 5h16v14H4z M12 3v18",
     chevron: "M6 9l6 6 6-6",

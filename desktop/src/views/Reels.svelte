@@ -1,24 +1,50 @@
 <script>
-  import { app, media, openReel, refreshReels, tc, ago } from "../lib/store.svelte.js";
+  import { app, api, media, openReel, refreshReels, tc, ago, toast } from "../lib/store.svelte.js";
   import Icon from "../lib/Icon.svelte";
+
+  // a reel as a project: pin, favourite, collection, rename, duplicate, delete (projects.py)
+  let menu = $state(null); // the reel whose menu is open
+  let ask = $state(null); // { kind: "rename" | "collection" | "delete", reel, value }
+  async function act(r, action, value = null) {
+    menu = null;
+    try {
+      const res = await api("/api/reel/manage", { plan: r.plan, action, value });
+      await refreshReels();
+      if (action === "delete") toast(`${r.name} moved to the Trash`, "info");
+      if (action === "duplicate") toast(`Copied as ${res.plan.split(/[\\/]/).pop().replace(".plan.json", "")}: render it to see it`, "info");
+    } catch (e) {
+      toast(String(e.message || e), "error");
+    }
+  }
+  function confirmAsk() {
+    const a = ask;
+    ask = null;
+    if (a.kind === "rename" && a.value.trim()) act(a.reel, "rename", a.value.trim());
+    if (a.kind === "collection") act(a.reel, "collection", a.value.trim() || null);
+    if (a.kind === "delete") act(a.reel, "delete");
+  }
+  let collections = $derived([...new Set(app.reels.map((r) => r.collection).filter(Boolean))].sort());
 
   let q = $state("");
   let filter = $state("all");
   const filters = [["all", "All"], ["upright", "Upright"], ["wide", "Wide"], ["plans", "Plans"], ["edited", "Edited"]];
   const fits = (r) => filter === "all" || (filter === "upright" && r.height >= r.width) || (filter === "wide" && r.width > r.height)
-    || (filter === "plans" && !r.rendered) || (filter === "edited" && r.stale);
+    || (filter === "plans" && !r.rendered) || (filter === "edited" && r.stale) || (filter === "favorites" && r.favorite)
+    || (filter.startsWith("c:") && r.collection === filter.slice(2));
   let shown = $derived(
     app.reels.filter((r) => fits(r) && (!q || `${r.name} ${r.folder} ${r.sound || ""} ${r.style || ""}`.toLowerCase().includes(q.toLowerCase()))),
   );
-  // grouped by folder; reels arrive newest first, so the newest folder leads
+  // pinned first, then by collection, then by folder; reels arrive newest first, so the newest group leads
   let groups = $derived.by(() => {
     const m = new Map();
     for (const r of shown) {
-      if (!m.has(r.folder)) m.set(r.folder, []);
-      m.get(r.folder).push(r);
+      const g = r.pinned ? "\u0000Pinned" : r.collection ? `\u0001${r.collection}` : r.folder;
+      if (!m.has(g)) m.set(g, []);
+      m.get(g).push(r);
     }
     return [...m.entries()];
   });
+  const groupName = (g) => (g.startsWith("\u0000") || g.startsWith("\u0001") ? g.slice(1) : null);
   const short = (f) => f.split(/[\\/]/).slice(-2).join("/");
 </script>
 
@@ -37,6 +63,8 @@
   {#if app.reels.length}
     <div class="seg filters" role="radiogroup" aria-label="Show">
       {#each filters as [id, label]}<button role="radio" aria-checked={filter === id} onclick={() => (filter = id)}>{label}</button>{/each}
+      <button role="radio" aria-checked={filter === "favorites"} onclick={() => (filter = "favorites")}>Favourites</button>
+      {#each collections as c}<button role="radio" aria-checked={filter === "c:" + c} onclick={() => (filter = "c:" + c)}>{c}</button>{/each}
     </div>
   {/if}
 
@@ -62,28 +90,80 @@
 
   {#each groups as [folder, reels]}
     <section>
-      <h2 class="folder" title={folder}><Icon name="folder" size={14} /> <span>{short(folder)}</span><span class="meta">{reels.length}</span></h2>
+      <h2 class="folder" title={folder}><Icon name={groupName(folder) === "Pinned" ? "pin" : "folder"} size={14} /> <span>{groupName(folder) ?? short(folder)}</span><span class="meta">{reels.length}</span></h2>
       <div class="grid">
         {#each reels as r (r.plan)}
-          <button class="tile" class:wide={r.width > r.height} onclick={() => openReel(r.plan)} aria-label={`Open ${r.name}`}>
+          <div class="tilewrap" class:wide={r.width > r.height}>
+          <button class="tile" onclick={() => openReel(r.plan)} aria-label={`Open ${r.name}`}>
             <div class="thumb">
               {#if r.cover || r.storyboard}<img loading="lazy" src={media(r.cover || r.storyboard, r.modified)} alt="" />{/if}
               <span class="play" aria-hidden="true"><Icon name="play" size={18} /></span>
               {#if !r.rendered}<span class="tag">Plan</span>{:else if r.stale}<span class="tag">Edited</span>{/if}
               <span class="tcbox tc">{tc(r.duration)}</span>
             </div>
-            <div class="name ellipsis">{r.name}</div>
+            <div class="name ellipsis">{#if r.favorite}<span class="fav" aria-label="Favourite">♥</span> {/if}{r.name}</div>
             <div class="meta ellipsis">
               {[r.width > r.height ? "16:9" : "9:16", r.qa?.total && r.qa.passed < r.qa.total ? `QA ${r.qa.passed}/${r.qa.total}` : "", ago(r.modified)].filter(Boolean).join(" · ")}
             </div>
           </button>
+          <button class="more" onclick={() => (menu = menu === r.plan ? null : r.plan)} aria-label={`More for ${r.name}`} aria-expanded={menu === r.plan}>⋯</button>
+          {#if menu === r.plan}
+            <div class="menu surface" role="menu">
+              <button role="menuitem" onclick={() => act(r, r.pinned ? "unpin" : "pin")}>{r.pinned ? "Unpin" : "Pin to the top"}</button>
+              <button role="menuitem" onclick={() => act(r, r.favorite ? "unfavorite" : "favorite")}>{r.favorite ? "Not a favourite" : "Favourite"}</button>
+              <button role="menuitem" onclick={() => ((menu = null), (ask = { kind: "collection", reel: r, value: r.collection || "" }))}>Collection…</button>
+              <button role="menuitem" onclick={() => ((menu = null), (ask = { kind: "rename", reel: r, value: r.name }))}>Rename…</button>
+              <button role="menuitem" onclick={() => act(r, "duplicate")}>Duplicate</button>
+              <button role="menuitem" class="danger" onclick={() => ((menu = null), (ask = { kind: "delete", reel: r }))}>Move to the Trash…</button>
+            </div>
+          {/if}
+          </div>
         {/each}
       </div>
     </section>
   {/each}
 </div>
 
+{#if ask}
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (Escape and Cancel close it) -->
+  <div class="scrim" onclick={(e) => e.target === e.currentTarget && (ask = null)}>
+    <div class="dialog surface" role="dialog" aria-modal="true" aria-label={ask.kind} tabindex="-1"
+         onkeydown={(e) => (e.key === "Escape" && (ask = null), e.key === "Enter" && confirmAsk())}>
+      {#if ask.kind === "delete"}
+        <h2>Move {ask.reel.name} to the Trash?</h2>
+        <p class="muted">Its video, plan and every file made with it go to the Trash, where you can put them back</p>
+      {:else}
+        <h2>{ask.kind === "rename" ? "Rename" : "Collection"}</h2>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input type="text" bind:value={ask.value} autofocus list="cols" placeholder={ask.kind === "collection" ? "e.g. Iceland 2026 (empty: none)" : ""} />
+        {#if ask.kind === "collection"}<datalist id="cols">{#each collections as c}<option value={c}></option>{/each}</datalist>{/if}
+      {/if}
+      <div class="row foot">
+        <div class="spacer"></div>
+        <button class="btn ghost" onclick={() => (ask = null)}>Cancel</button>
+        <button class={ask.kind === "delete" ? "btn danger" : "btn primary"} onclick={confirmAsk}>{ask.kind === "delete" ? "Move to the Trash" : "Save"}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
+  .tilewrap { position: relative; }
+  .tilewrap.wide { grid-column: span 2; }
+  .tilewrap .tile { width: 100%; }
+  .more {
+    position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; border: 0; border-radius: var(--r-sm);
+    background: rgba(15, 15, 16, 0.72); color: #ededed; cursor: pointer; opacity: 0; transition: opacity var(--fast) var(--ease);
+  }
+  .tilewrap:hover .more, .more:focus-visible, .more[aria-expanded="true"] { opacity: 1; }
+  .menu { position: absolute; right: 8px; top: 40px; z-index: 20; display: flex; flex-direction: column; min-width: 190px; padding: 4px; box-shadow: var(--float); }
+  .menu button { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: var(--r-sm); color: var(--text); cursor: pointer; font-size: 13px; }
+  .menu button:hover { background: var(--raised); }
+  .menu .danger { color: var(--danger, #d64545); }
+  .fav { color: var(--accent); }
+  .scrim { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 50; }
+  .dialog { width: min(440px, 92vw); padding: 24px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--float); }
+  .dialog .foot { gap: 8px; }
   .search {
     display: flex; align-items: center; gap: 8px; width: 240px; height: 36px; margin: 0; padding: 0 12px;
     background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); color: var(--text-3); font-weight: 400;
@@ -107,7 +187,6 @@
   .folder { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; margin-bottom: 12px; }
   /* fixed columns so an upright reel is one column and a wide one two, at the same height */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, 160px); grid-auto-flow: dense; gap: 24px 16px; }
-  .tile.wide { grid-column: span 2; }
   .tile { border: 0; padding: 0; background: none; text-align: left; cursor: pointer; color: inherit; border-radius: var(--r-card); }
   .thumb {
     position: relative; height: 284px; border-radius: var(--r-card); overflow: hidden; background: var(--raised);

@@ -406,6 +406,7 @@ async def edit_plan(plan: str, edits: list[dict]) -> list:
       {"op":"freeze","segment":3,"at":0.8,"dur":1.0}  (hold that frame, cut in there)  {"op":"reverse","segment":3,"on":true}
     Effects (list_effects): {"op":"effect","segment":3,"id":"glow","amount":0.5} (id null removes)
       {"op":"auto_effects"}  the effects director picks transitions, text motion/looks and shot effects again
+      {"op":"log","segment":3|"all","profile":"apple_log"|"dlog"|"slog3"|"vlog"|"flog"|"flog2"|"clog3"|"auto"|null}  flat log footage made normal
       {"op":"insert","after":2,"shot_id":"S040","dur":1.2}  {"op":"music","start":12.0,"gain_db":-3,"fade_out":1.2}
     Colour: {"op":"grade","look":"teal-orange"|"none"|<list_looks name>,"strength":0.8,"grain":4,"vignette":true}
       {"op":"adjust","segment":3|"all","exposure":0.3,"contrast":1.1,"saturation":1.2,"warmth":0.2,"tint":0,

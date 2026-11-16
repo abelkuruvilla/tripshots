@@ -93,6 +93,9 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
             pass
     pre = []
     pre += hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")})
+    if e.get("log"):  # flat log footage made normal before anything colours it (camlog.py)
+        from .camlog import chain as log_chain
+        pre += log_chain(e)
     if e.get("freeze"):  # one frame held for the whole slot
         speed, src_need = 1.0, 0.5
         pre += ["trim=end_frame=1", f"tpad=stop_mode=clone:stop_duration={length + 1:.3f}"]
@@ -740,7 +743,8 @@ def _source_frame(e: dict, local: float, color: dict, size: tuple[int, int]):
         elif e.get("reverse"):
             local = max(0.0, float(e.get("dur", local)) - local)
         at = float(e.get("in", 0.0)) + local * float(e.get("speed", 1.0))
-        vf = hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")}) + _video_layout(e, 1.0, size)
+        from .camlog import chain as log_chain
+        vf = hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")}) + log_chain(e) + _video_layout(e, 1.0, size)
         inp = ["-ss", f"{max(0.0, at):.3f}", "-i", str(e["src"])]
     elif e.get("still") or e.get("src"):
         sx = float(e.get("subject_x", 0.5))

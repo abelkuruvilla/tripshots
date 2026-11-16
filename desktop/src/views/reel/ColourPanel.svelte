@@ -185,6 +185,18 @@
         {/if}
       </div>
       <p class="quiet small">{ed.sel?.kind === "clip" ? "The selected shot" : "The shot at the playhead"}. Corrections go on top of the look</p>
+      {#if s.kind === "video" && !s.panel}
+        <div class="field logf">
+          <label for="clog">Filmed in <span class="hint">· flat log footage made normal first</span></label>
+          <div class="row">
+            <select id="clog" value={s.log || ""} onchange={(e) => edit({ op: "log", segment: s.slot, profile: e.currentTarget.value || null })}>
+              {#each [["", "Normal video"], ["apple_log", "Apple Log"], ["dlog", "DJI D-Log"], ["slog3", "Sony S-Log3"], ["vlog", "Panasonic V-Log"],
+                      ["flog", "Fujifilm F-Log"], ["flog2", "Fujifilm F-Log2"], ["clog3", "Canon C-Log3"]] as [id, name]}<option value={id}>{name}</option>{/each}
+            </select>
+            {#if s.log}<button class="btn sm ghost" onclick={() => edit({ op: "log", segment: "all", profile: s.log })} title="Every clip in this reel was filmed this way">All clips</button>{/if}
+          </div>
+        </div>
+      {/if}
       <div class="sliders">
         {#each sliders as [key, name, lo, hi, step, neutral, fmt]}
           <div class="sl">

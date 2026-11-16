@@ -7,6 +7,27 @@ Every reel is colour graded shot by shot, like a colourist would, not with one f
 3. **A look is applied**: tone curve and contrast, black lift and highlight roll-off, split-tone tints in shadows / mid-tones / highlights, saturation, and hue moves (e.g. greens toward teal, skin toward orange), plus grain and vignette for film looks. Skies are protected so they never turn purple, and whites stay clean.
 4. It's all baked into one small 3D LUT per shot that ffmpeg applies while rendering, so it costs no extra time. Shots from your phone, a drone and a camera end up matching.
 
+## Flat log footage
+
+Some cameras can film a flat "log" picture, which keeps more of the highlights and shadows: Apple Log on iPhone,
+D-Log on DJI drones, S-Log3, V-Log, F-Log or C-Log3. TripShots turns such a clip into normal-looking video before
+it does anything else with its colour (`camlog.py`). It decodes the maker's published log curve to scene light,
+converts the colours to Rec.709 and rolls off the highlights the way film does. Grading then measures the
+converted picture.
+
+This happens automatically only when the file's camera can film log and the clip looks flat. A flat clip from an
+unknown camera is never guessed at. To choose by hand:
+- **Colour tab → Filmed in**, with **All clips** to apply it to the whole reel;
+- the plan edit `{"op": "log", "segment": 3, "profile": "dlog"}`, where `"auto"` detects again, `null` means
+  as filmed, and `"segment": "all"` changes every clip.
+
+The conversions are written once as `.cube` files in `~/.tripshots/luts/camlog/`. They work with any editor
+that reads LUTs.
+
+D-Log M, Canon C-Gamut and DJI D-Gamut are not covered exactly:
+- **D-Log M:** use D-Log, the nearest published curve.
+- **C-Gamut and D-Gamut:** converted through Rec.2020, the nearest wide colour space.
+
 ## Layers: grading parts of the frame
 
 After the primary grade (balance and look, one LUT per shot), each shot can have **layers**: corrections on parts

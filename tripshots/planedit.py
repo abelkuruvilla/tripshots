@@ -35,6 +35,7 @@ The timeline (expert mode; times snap to whole frames, later text moves with the
   {"op": "duplicate", "segment": 3}
   {"op": "effect", "segment": 3, "id": "glow", "amount": 0.5}   a video effect on a shot (vfx.py; id null removes)
   {"op": "auto_effects"}                                     let the effects director choose again (fxlib.py)
+  {"op": "log", "segment": 3, "profile": "dlog"}             flat log footage made normal (camlog.py; auto, or null = as filmed)
   {"op": "insert", "after": 2, "shot_id": "S040", "dur": 1.2}    a new slot (after 0 = at the start)
   {"op": "music", "start": 12.0, "gain_db": -3, "fade_out": 1.2}  where the song starts, its level
 
@@ -690,6 +691,22 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
                     segs[i].pop("effect", None)
             done.append((f"{fid} on " if fid else "no effect on ") +
                         ("every shot" if ed.get("segment") == "all" else f"slot {targets[0] + 1}"))
+        elif op == "log":   # flat log footage: which camera's curve makes it normal (camlog.py); null = as filmed
+            from .camlog import PROFILES, detect
+            prof = ed.get("profile")
+            targets = range(len(segs)) if ed.get("segment") == "all" else [_slot(plan, ed["segment"])]
+            if prof not in PROFILES and prof not in (None, "auto"):
+                raise ReelError(f"camera log is one of {', '.join(PROFILES)}, auto, or null")
+            n = 0
+            for i in targets:
+                for c in (segs[i].get("clips") or [segs[i]]):
+                    if c.get("kind") != "video":
+                        continue
+                    sh = shots.get(c.get("shot_id")) or {}
+                    c["log"] = (detect(sh) if sh else None) if prof == "auto" else prof
+                    n += 1
+            regrade = True
+            done.append(f"camera log {prof or 'off'} on " + (f"{n} clips" if ed.get("segment") == "all" else f"slot {targets[0] + 1}"))
         elif op == "auto_effects":   # the effects director again (fxlib.direct): AI if there is one, else rules
             from . import fxlib
             from .ai import get_backend

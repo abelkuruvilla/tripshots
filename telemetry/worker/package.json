@@ -1,0 +1,10 @@
+{
+  "name": "tripshots-telemetry",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "deploy": "wrangler deploy",
+    "schema": "wrangler d1 execute tripshots --remote --file schema.sql"
+  }
+}

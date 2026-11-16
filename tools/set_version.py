@@ -6,6 +6,8 @@ committed in the repository are only what local builds call themselves.
 
     python tools/set_version.py 0.2.0
     python tools/set_version.py --check 0.2.0   # fail when anything disagrees
+    python tools/set_version.py 0.2.0 --telemetry https://collector.example   # also where crash reports go
+                                       # (empty = none: the build sends nothing; docs/telemetry.md)
 """
 from __future__ import annotations
 
@@ -35,6 +37,14 @@ def current() -> dict[str, str]:
 
 def main(argv: list[str]) -> int:
     check = "--check" in argv
+    telemetry = None
+    if "--telemetry" in argv:
+        i = argv.index("--telemetry")
+        telemetry = argv[i + 1] if i + 1 < len(argv) else ""
+        argv = argv[:i] + argv[i + 2:]
+        if telemetry and not re.fullmatch(r"https://[\w.-]+(:\d+)?(/[\w./-]*)?", telemetry):
+            print(f"--telemetry needs an https address, got {telemetry!r}")
+            return 2
     args = [a for a in argv if a != "--check"]
     if len(args) != 1 or not re.fullmatch(r"\d+\.\d+\.\d+", args[0].lstrip("v")):
         print(__doc__)
@@ -52,6 +62,10 @@ def main(argv: list[str]) -> int:
         p = ROOT / f
         text = p.read_text()
         p.write_text(re.sub(r'("version"\s*:\s*)"[^"]+"', rf'\g<1>"{v}"', text, count=1))
+    if telemetry is not None:
+        p = ROOT / "tripshots/telemetry.py"
+        p.write_text(re.sub(r'(?m)^ENDPOINT = "[^"]*"', f'ENDPOINT = "{telemetry.rstrip("/")}"', p.read_text(), count=1))
+        print(f"telemetry: {telemetry or 'none'}")
     print(f"version {v}: " + ", ".join(current()))
     return 0
 

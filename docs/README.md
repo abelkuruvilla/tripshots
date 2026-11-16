@@ -29,6 +29,7 @@
 - [Styles](styles.md): style YAML keys
 - [Configuration](configuration.md): settings, environment variables, where things are stored
 - [Privacy](privacy.md): what stays on your computer and what doesn't
+- [Usage numbers and crash reports](telemetry.md): the collector, its dashboard and how to set it up
 - [Architecture](architecture.md): how the pipeline works, module by module
 - [Troubleshooting](troubleshooting.md)
 

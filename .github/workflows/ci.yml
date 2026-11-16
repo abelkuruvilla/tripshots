@@ -53,3 +53,14 @@ jobs:
         working-directory: desktop/src-tauri
         run: cargo test --locked
 
+
+  collector:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: the telemetry collector's tests (node:sqlite stands in for D1)
+        working-directory: telemetry/worker
+        run: node --test test/*.test.js

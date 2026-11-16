@@ -120,6 +120,19 @@ jobs:
           cp ffmpeg/*/bin/ffmpeg* ffmpeg/*/bin/ffprobe* ffbin/
           cp ffmpeg/*/LICENSE.txt ffbin/
           ls -la ffbin
+      # libfribidi: Pillow opens it at run time to join complex scripts (Malayalam, Hindi, Arabic); its wheels don't
+      # include it on any system, so the spec bundles the build machine's copy (LGPL, loaded as a library).
+      # Windows: MSYS2's build (MSYS2 is preinstalled on GitHub's Windows runners)
+      - name: fribidi
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            macOS) brew install fribidi ;;
+            Linux) sudo apt-get update -qq && sudo apt-get install -y -qq libfribidi0 ;;
+            Windows) /c/msys64/usr/bin/pacman.exe -S --noconfirm --needed mingw-w64-x86_64-fribidi
+                     ls -la /c/msys64/mingw64/bin/libfribidi-0.dll ;;
+          esac
       - name: freeze
         run: pyinstaller packaging/engine/tripshots.spec --noconfirm --clean
       - name: package and smoke-test

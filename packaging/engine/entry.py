@@ -28,10 +28,23 @@ def _text_shaping() -> None:
     looks for a bare name in the folders it was told about when the process started, so Pillow fell back to plain
     layout and split the letters. On a Mac the engine starts itself once more with a folder that holds nothing but
     a link to its own libfribidi on the library path (so nothing else it loads changes), then takes the setting out
-    of its environment, so ffmpeg and the other programs it runs never see it."""
-    if not getattr(sys, "frozen", False) or sys.platform != "darwin":
+    of its environment, so ffmpeg and the other programs it runs never see it. On Windows and Linux it loads its
+    copy up front instead."""
+    if not getattr(sys, "frozen", False):
         return
     base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    if sys.platform != "darwin":
+        # Windows and Linux: load the bundled copy now; Pillow's later LoadLibrary("libfribidi-0.dll") /
+        # dlopen("libfribidi.so.0") by bare name then gets the library already in the process
+        import ctypes
+        for name in ("libfribidi-0.dll", "fribidi-0.dll", "libfribidi.so.0"):
+            if (base / name).is_file():
+                try:
+                    ctypes.CDLL(str(base / name), mode=getattr(ctypes, "RTLD_GLOBAL", 0))
+                except OSError:
+                    pass  # plain layout, as before
+                return
+        return
     lib = base / "libfribidi.0.dylib"
     if os.environ.get("TRIPSHOTS_SHAPING"):
         os.environ.pop("TRIPSHOTS_SHAPING", None)
@@ -48,9 +61,10 @@ def _text_shaping() -> None:
     d = home / "cache" / "shaping" / hashlib.sha1(str(lib).encode()).hexdigest()[:12]
     try:
         d.mkdir(parents=True, exist_ok=True)
-        link = d / lib.name
-        if not link.exists():
-            link.symlink_to(lib)
+        for name in ("libfribidi.dylib", lib.name):  # Pillow asks for libfribidi.dylib (no version)
+            link = d / name
+            if not link.exists():
+                link.symlink_to(lib)
     except OSError:
         return  # can't make the folder: plain layout, as before
     env = dict(os.environ)

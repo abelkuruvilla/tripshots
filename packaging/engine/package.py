@@ -33,7 +33,10 @@ def smoke(exe: Path, version: str) -> None:
     # complex scripts (Malayalam) must shape: the frozen engine has to find its own fribidi (entry._text_shaping)
     doc = subprocess.run([str(exe), "doctor"], capture_output=True, text=True, timeout=180, cwd=str(Path.home()))
     if "shaping    ok" not in doc.stdout:
-        sys.exit(f"engine can't shape complex scripts (Malayalam would render with split letters):\n{doc.stdout[-800:]}")
+        line = next((s for s in doc.stdout.splitlines() if s.startswith("shaping")), "(no shaping line)")
+        bundled = sorted(p.name for p in exe.parent.rglob("*fribidi*"))
+        sys.exit(f"engine can't shape complex scripts (Malayalam would render with split letters):\n{line}\n"
+                 f"bundled fribidi: {bundled or 'none'}\n{doc.stdout}\n{doc.stderr[-2000:]}")
     env = {**os.environ, "TRIPSHOTS_API_TOKEN": "smoke", "TRIPSHOTS_HOME": str(Path.cwd() / ".smoke-home")}
     p = subprocess.Popen([str(exe), "serve"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, text=True)
     try:

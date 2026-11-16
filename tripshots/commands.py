@@ -11,7 +11,7 @@ MAKE_FLAGS = (("music", "-m"), ("style", "-s"), ("duration", "-d"), ("hook", "--
               ("speed_ramps", "--speed-ramps"), ("speed_up", "--speed-up"), ("drop_speed", "--drop-speed"),
               ("format", "--format"), ("text_motion", "--text-motion"), ("captions", "--captions"),
               ("recipe", "--recipe"), ("orientation", "--orientation"), ("fresh", "--fresh"),
-              ("light", "--light"))
+              ("light", "--light"), ("stabilize", "--stabilize"))
 
 
 def default_out() -> None:

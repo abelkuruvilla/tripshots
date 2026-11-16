@@ -16,6 +16,8 @@ Motions (style text.motion: auto | off | one of these; per overlay "motion"):
   slam        words drop in from large with a three-frame landing shake (bold hooks, labels)
   write       written on left to right with a soft pen edge (handwritten)
   cinema      title fades up and drifts, the line under it tracks in (cinematic location titles)
+  decode      letters resolve left to right out of random glyphs (place names, coordinates)
+  stamp       the title slams down as a passport stamp: ink letters in a bordered box at an angle
 The ideas come from the HyperFrames registry's text primitives (per-word-rise, focus-blur-resolve,
 tracking-in, typewriter, headline-slam, hw-write-title, titlecard-calm; Apache-2.0); the pages here are
 written for TripShots so the words land exactly where typo.py put them.
@@ -33,7 +35,7 @@ from .util import ReelError, log
 
 CACHE = HOME / "cache" / "text"
 VERSION = "t1"
-MOTIONS = ("rise", "focus", "tracking", "typewriter", "slam", "write", "cinema")
+MOTIONS = ("rise", "focus", "tracking", "typewriter", "slam", "write", "cinema", "decode", "stamp")
 # what "auto" means for each text preset and kind of text
 PRESET_MOTION = {
     "bold": {"hook": "slam", "location": "rise", "cta": "rise", "label": "slam"},
@@ -107,6 +109,7 @@ def _cues(el, n_units: int, motion: str, kind: str) -> list[float]:
 
 def text_page(el, motion: str, kind: str) -> tuple[str, list[str]]:
     """HyperFrames page that animates a laid-out typo.TextElement. Returns (html, font files)."""
+    from .typo import font
     D = round(float(el.duration), 3)
     lines = el.lines
     font_css, files = _font_css(lines)
@@ -118,7 +121,7 @@ def text_page(el, motion: str, kind: str) -> tuple[str, list[str]]:
         a, d = _metrics(name, size)
         from .typo import font
         w = font(name, size).getlength(ln["text"]) + float(ln.get("tracking") or 0) * max(0, len(ln["text"]) - 1)
-        if motion in ("typewriter", "tracking"):
+        if motion in ("typewriter", "tracking", "decode"):
             parts = [f'<span class="u">{html.escape(c) if c != " " else "&nbsp;"}</span>' for c in ln["text"]]
             units += len(ln["text"])
         else:
@@ -135,6 +138,32 @@ def text_page(el, motion: str, kind: str) -> tuple[str, list[str]]:
         divs.append(f'<div class="ln f-{name} r-{role}" id="l{li}" data-track="{float(ln.get("tracking") or 0):.2f}" '
                     f'style="{style}">{"".join(parts)}</div>')
     cues = _cues(el, units, motion, kind)
+    group = "".join(divs)
+    fit = (1.0, 0.0, 0.0)  # the stamp's resting scale and shift, so all of it sits inside the safe area
+    if motion == "stamp":  # the words and a box round them, tilted together like a stamp in a passport
+        from .typo import SAFE
+
+        def width(l):
+            f = font(str(l.get("font") or "montserrat").lower(), int(l["size"]))
+            return f.getlength(l["text"]) + float(l.get("tracking") or 0) * max(0, len(l["text"]) - 1)
+        x0 = min(float(l["x"]) for l in lines) - 46
+        x1 = max(float(l["x"]) + width(l) for l in lines) + 46
+        y0 = min(float(l["y"]) for l in lines) - 28
+        y1 = max(float(l["y"]) + sum(_metrics(str(l.get("font") or "montserrat").lower(), int(l["size"])))
+                 for l in lines) + 28
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        # the turned box reaches a little further than the straight one
+        bw, bh = (x1 - x0) * 0.995 + (y1 - y0) * 0.105, (y1 - y0) * 0.995 + (x1 - x0) * 0.105
+        sl, sr = SAFE.get("left", 0), SAFE.get("right", CANVAS.w)
+        st, sb = SAFE.get("top", 0), SAFE.get("bottom", CANVAS.h)
+        k = min(1.0, (sr - sl) / bw, (sb - st) / bh)
+        dx = min(max(cx, sl + bw * k / 2), sr - bw * k / 2) - cx
+        dy = min(max(cy, st + bh * k / 2), sb - bh * k / 2) - cy
+        fit = (round(k, 3), round(dx, 1), round(dy, 1))
+        group = (f'<div id="grp" style="position:absolute;left:0;top:0;width:{CANVAS.w}px;height:{CANVAS.h}px;'
+                 f'transform-origin:{cx:.0f}px {cy:.0f}px">'
+                 f'<div class="box" style="left:{x0:.0f}px;top:{y0:.0f}px;width:{x1 - x0:.0f}px;'
+                 f'height:{y1 - y0:.0f}px"></div>{group}</div>')
     page = f"""<!doctype html>
 <html><head><meta charset="utf-8">
 <style>{font_css}
@@ -146,11 +175,17 @@ html,body{{margin:0;padding:0;background:transparent;width:{CANVAS.w}px;height:{
 .u{{position:relative}}
 .cur::after{{content:"";position:absolute;left:100%;top:0.12em;width:0.08em;height:0.9em;margin-left:0.04em;background:#fff}}
 .blink .cur::after{{opacity:0}}
+.dc{{color:transparent!important;text-shadow:none!important}}
+.dc::after{{content:attr(data-g);position:absolute;left:0;right:0;top:0;text-align:center;color:#fff;
+  text-shadow:0 3px 16px rgba(0,0,0,0.55)}}
+#grp .ln{{color:#c8372d;text-shadow:none}}
+.box{{position:absolute;border:7px solid #c8372d;border-radius:22px;background:rgba(246,241,229,0.9);
+  box-shadow:0 0 0 3px rgba(246,241,229,0.9) inset}}
 </style>
 <script src="assets/gsap.min.js"></script>
 </head><body>
 <div id="root" data-composition-id="root" data-start="0" data-duration="{D}" data-width="{CANVAS.w}" data-height="{CANVAS.h}">
-{"".join(divs)}
+{group}
 <script>
 const D = {D}, CUES = {json.dumps([round(c, 3) for c in cues])}, MOTION = "{motion}";
 const tl = gsap.timeline({{paused: true}});
@@ -184,6 +219,25 @@ if (MOTION === "rise") {{
     l.style.setProperty("--p", "-6");
     l.style.webkitMaskImage = l.style.maskImage = "linear-gradient(90deg, #000 calc(var(--p) * 1%), transparent calc(var(--p) * 1% + 6%))";
     tl.fromTo(l, {{"--p": -6}}, {{"--p": 100, duration: d, ease: "sine.inOut", immediateRender: true}}, lineCue(l) + 0.12 * j); }});
+}} else if (MOTION === "decode") {{
+  // each letter flickers through random glyphs, then resolves, left to right (the real letter keeps its
+  // place, invisible, so nothing shifts while the glyphs change)
+  // glyphs of the same kind (digits for digits, letters for letters; punctuation stays), so they fit the slot
+  const pool = c => /[0-9]/.test(c) ? "0123456789" : /[A-Z]/.test(c) ? "ABCDEFGHJKLNPRSTUVXYZ" :
+    /[a-z]/.test(c) ? "abcdeghknopqrsuvxyz" : c;
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const n = units.length, step = Math.min(0.06, 0.9 / Math.max(1, n));
+  units.forEach((u, i) => {{ if (!u.textContent.trim()) return;
+    const done = Math.min(0.3 + i * step, Math.max(0.2, D - 0.7)), from = Math.max(0, done - 0.5);
+    gsap.set(u, {{opacity: 0}}); tl.set(u, {{opacity: 1, className: "u dc"}}, from);
+    const G = pool(u.textContent);
+    for (let t = from; t < done; t += 1 / 15) tl.set(u, {{attr: {{"data-g": G[Math.floor(rnd() * G.length)]}}}}, t);
+    tl.set(u, {{className: "u"}}, done); }});
+}} else if (MOTION === "stamp") {{
+  const g = document.getElementById("grp");
+  const K = {fit[0]}, DX = {fit[1]}, DY = {fit[2]};
+  tl.fromTo(g, {{opacity: 0, scale: 1.9 * K, rotation: -15, x: DX, y: DY}}, {{opacity: 1, scale: K, rotation: -6, duration: 0.2, ease: "power4.in", immediateRender: true}}, 0.05);
+  [[9, -6], [-6, 4], [3, -2], [0, 0]].forEach((q, k) => tl.set(g, {{x: DX + q[0], y: DY + q[1]}}, 0.25 + k / {OUT_FPS}));
 }} else if (MOTION === "cinema") {{
   lines.forEach((l, j) => {{ if (j === 0 || l.classList.contains("r-main")) {{
       tl.fromTo(l, {{opacity: 0, y: 26, filter: "blur(8px)"}}, {{opacity: 1, y: 0, filter: "blur(0px)", duration: 1.1, ease: "power2.out", immediateRender: true}}, 0);
@@ -192,7 +246,7 @@ if (MOTION === "rise") {{
       tl.fromTo(l, {{opacity: 0, letterSpacing: (tr + 0.5 * fs) + "px"}}, {{opacity: 1, letterSpacing: tr + "px", duration: 1.2, ease: "expo.out", immediateRender: true}}, 0.35 + 0.15 * j); }} }});
 }}
 const OUT = Math.min(0.32, D * 0.2);
-tl.to(lines, {{opacity: 0, filter: "blur(8px)", y: "-=10", duration: OUT, ease: "power2.in"}}, D - OUT);
+tl.to(MOTION === "stamp" ? "#grp" : lines, {{opacity: 0, filter: "blur(8px)", y: "-=10", duration: OUT, ease: "power2.in"}}, D - OUT);
 tl.set({{}}, {{}}, D);
 window.__timelines = window.__timelines || {{}}; window.__timelines["root"] = tl;
 </script>

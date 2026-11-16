@@ -48,7 +48,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 usage: tripshots make [-h] [-m MUSIC]
                       [--text-preset {bold,editorial,minimal,handwritten,typewriter}]
                       [--behind {auto,on,off}]
-                      [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}]
+                      [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}]
                       [--split-screens {lots,some,off}] [--speed-ramps on|off|KINDS]
                       [--speed-up {on,off}] [--drop-speed {rush,impact,both,off}]
                       [--slowmo-smooth {flow,blend,off}] [--labels {ai,off}]
@@ -56,10 +56,10 @@ usage: tripshots make [-h] [-m MUSIC]
                       [--captions auto|off|original|LANGUAGE] [--critic {auto,rules,off}]
                       [--parallax {auto,on,off}] [--recipe auto|off|N]
                       [--orientation {auto,vertical,horizontal,4:3,4:5,1:1,sideways}]
-                      [--light {golden,sunset,blue,day,night,any}] [--fresh {on,off}]
-                      [--loop | --no-loop] [--min-score N] [--look LOOK] [--grade-strength 0-1]
-                      [--variants N] [--route-map {intro,tracker,both,off}] [--allow-similar]
-                      [--music-start SEC] [--upload-copy | --no-upload-copy]
+                      [--stabilize {auto,on,off}] [--light {golden,sunset,blue,day,night,any}]
+                      [--fresh {on,off}] [--loop | --no-loop] [--min-score N] [--look LOOK]
+                      [--grade-strength 0-1] [--variants N] [--route-map {intro,tracker,both,off}]
+                      [--allow-similar] [--music-start SEC] [--upload-copy | --no-upload-copy]
                       [--cookies-from-browser BROWSER] [--cookies FILE] [--sfx {on,off}]
                       [--ambience {on,off}] [--clip-sound {auto,on,off}] [--sfx-level DB]
                       [--sfx-licenses LIST] [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND]
@@ -81,7 +81,7 @@ options:
                         text look (overrides the style)
   --behind {auto,on,off}
                         location title behind the skyline
-  --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}
+  --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}
                         how the words animate (HyperFrames; auto picks one per text preset, off =
                         classic)
   --split-screens {lots,some,off}
@@ -122,6 +122,10 @@ options:
                         band); horizontal: always 1920x1080; 4:3 (1440x1080), 4:5 (1080x1350), 1:1
                         (1080x1080): the picture fills that shape; sideways: a widescreen edit
                         turned on its side in an upright file ("turn your phone")
+  --stabilize {auto,on,off}
+                        take the shake out of handheld clips: auto (default: shaky clips in calm
+                        or held shots), on (every shaky clip), off. Uses ffmpeg's vidstab when it
+                        has it, else its own stabiliser
   --light {golden,sunset,blue,day,night,any}
                         only shots in this light (golden: golden hour, sunset and sunrise; blue:
                         blue hour and night; day: morning to afternoon), the photo wall too; when
@@ -203,7 +207,7 @@ sources (folders are searched recursively, any number of them):
 usage: tripshots clone [-h] [--variants N] [--look LOOK] [--grade-strength 0-1] [--keep-text]
                        [--hype] [--text-preset {bold,editorial,minimal,handwritten,typewriter}]
                        [--no-location]
-                       [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}]
+                       [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}]
                        [--upload-copy | --no-upload-copy] [-s STYLE] [-o OUT] [-b BACKEND]
                        [--dry-run] [-j WORKERS] [--cookies-from-browser BROWSER] [--cookies FILE]
                        [--sfx {on,off}] [--ambience {on,off}] [--clip-sound {auto,on,off}]
@@ -227,7 +231,7 @@ options:
   --text-preset {bold,editorial,minimal,handwritten,typewriter}
   --no-location         no place names on screen (drops the reference's place titles instead of
                         rewriting them)
-  --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}
+  --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}
                         how the words animate (see make)
   --upload-copy, --no-upload-copy
                         also write an upload copy without the music (default: on for links)
@@ -277,7 +281,7 @@ sources (folders are searched recursively, any number of them):
 
 ```text
 usage: tripshots render [-h] [-o OUT] [-j WORKERS]
-                        [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}]
+                        [--text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}]
                         [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
                         plan
 
@@ -288,7 +292,7 @@ options:
   -h, --help            show this help message and exit
   -o, --out OUT
   -j, --workers WORKERS
-  --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema}
+  --text-motion {auto,off,rise,focus,tracking,typewriter,slam,write,cinema,decode,stamp}
                         override how the words animate
   --encoder {auto,hardware,software,videotoolbox,nvenc,qsv}
                         video encoder: auto (default: the Mac's / GPU's hardware encoder when it

@@ -2,18 +2,32 @@
 
 How a TripShots reel should be directed. The critic's AI review reads these (with the style's own `direction`), so
 keep them short and checkable. The pattern (shared notes for the craft, plus a short note per style) comes from the
-Lemo-Opuscar skill's DIRECTOR.md (lemomo-ai/lemo-opuscar, MIT).
+Lemo-Opuscar skill's DIRECTOR.md (lemomo-ai/lemo-opuscar, MIT). The story and shot grammar notes distil editing
+skills catalogued as safe in awesome-claude-video-skills (see docs/craft-sources.md); ideas only, no code.
 
 ## Story
 - The first second decides. Open on the strongest picture with movement or a person, never an establishing shot.
 - One idea per reel: a place, a day, a feeling. Every shot should belong to it.
 - Build, then pay off: shots get shorter into the drop, the best shot lands on it and is held.
 - End on a calm, wide, open shot that can loop back to the first.
+- Start near the high point, not before it: no shot that only explains. Keep the setup to the first quarter.
+- Turn about two thirds of the way in, and don't stack two rises: a lift, a breath, then the payoff.
+- Pay off what you set up: a motif in the first third (a person, the road, water) comes back near the end.
+- Each place is a small scene: a wide view to say where, then closer (a person, a detail), then move on.
+
+## Shot grammar
+- Every cut changes something you can see: size, light, colour or subject. Two near-identical shots side by
+  side read as a stutter.
+- Alternate shot sizes (wide, medium, close); never the same size three times running.
+- Don't make the same camera move three shots in a row (push, push, push reads as a slideshow).
+- End a clip once its action has read, before the camera starts searching.
 
 ## Rhythm
 - Cut on the beat, but vary the lengths. A metronome is boring; long-short-short-long breathes.
 - Hold a shot as long as it keeps giving: slow scenic shots 2-4 s, action 0.5-1 s.
 - Most cuts are plain cuts. A transition marks a moment (a change of place, the drop). Two in a row is noise.
+- Uneven is alive: vary the cut spacing (a change every 2-4 s at most), don't tick like a metronome.
+- The biggest hit gets the best shot. A beat of silence or black just before it makes it land harder.
 
 ## Camera
 - Every move has a reason: push in on a person or a detail, pan along a horizon in the direction it leads.
@@ -42,3 +56,4 @@ Lemo-Opuscar skill's DIRECTOR.md (lemomo-ai/lemo-opuscar, MIT).
 - Does the payoff land on the drop and get held?
 - Can every line of text be read before it goes?
 - Does the last shot flow back into the first?
+- Does every cut change size, light, colour or subject? Does each new place open wide?

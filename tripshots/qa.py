@@ -154,7 +154,7 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
 FLASH = 0.3 * 255     # brighter than the second around it by this much: a flash
 CUT_JUMP = 0.36 * 255  # brightness change across a hard cut that jars
 INTENDED = ("flash", "leak", "glitch", "dip", "fade", "dissolve", "split", "vsplit", "iris", "slats", "stripes",
-            "diamond", "frame", "cells")  # (the paper shapes flash cream blocks on purpose)
+            "diamond", "frame", "cells", "polaroid")  # (the paper shapes flash cream blocks on purpose)
 
 
 def picture_checks(video: Path, plan: dict) -> list[tuple]:
@@ -188,8 +188,8 @@ def picture_checks(video: Path, plan: dict) -> list[tuple]:
     jumps = []
     for i in range(1, len(segs)):
         a = segs[i - 1]
-        if a.get("trans_out") or a.get("incam_out"):
-            continue
+        if a.get("trans_out") or a.get("incam_out") or a.get("black_tail"):
+            continue  # (a pre-hit black is dark on purpose)
         f = int(round(float(segs[i]["out_start"]) * fps))
         if 3 <= f < n - 3:
             d = float(np.mean(mean[f:f + 3]) - np.mean(mean[f - 3:f]))

@@ -274,7 +274,8 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
                     drop_speed: str | None = None, format: str | None = None,
                     text_motion: str | None = None, no_location: bool = False,
                     captions: str | None = None, recipe: str | None = None,
-                    orientation: str | None = None, fresh: str | None = None, light: str | None = None) -> list:
+                    orientation: str | None = None, fresh: str | None = None, light: str | None = None,
+                    stabilize: str | None = None) -> list:
     """Plan (dry_run=true, default) or plan+render a reel.
 
     sources: selection ids from find_footage ("sel:xxxx") and/or folders/files.
@@ -287,7 +288,7 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
     look: colour look or "auto". route_map: intro | tracker | both | off.
     speed_ramps: on | off | which ramps, e.g. "velocity,slam" (velocity, slam, bullet, rush, surge).
     speed_up: on | off (fast-forward moving clips in busy sections). drop_speed: rush | impact | both | off.
-    text_motion: auto | off | rise | focus | tracking | typewriter | slam | write | cinema: how the words animate
+    text_motion: auto | off | rise | focus | tracking | typewriter | slam | write | cinema | decode | stamp: how the words animate
       (HyperFrames; auto picks one per text preset when the runtime is installed).
     format: auto | montage | pov | list (numbered places) | series ("Day N of") | reveal. Every reel is planned as a
       story (hook, build, payoff, looping end) and checked by the critic; the result's "score" and "critic" file
@@ -302,6 +303,7 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
       reels showed are marked down and their openings and endings aren't reused. off when the user wants the very
       best shots again (e.g. another version of the same reel under a new name).
     light: golden | sunset | blue | day | night: only shots in that light (preferred, when too few are).
+    stabilize: auto | on | off: take the shake out of handheld clips (auto: in calm or held shots).
     upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
       same sound inside Instagram: do this when the music is a commercial song.
     Returns the plan path and the storyboard image to review (or a job id to poll)."""
@@ -310,7 +312,8 @@ async def make_reel(sources: list[str], music: str | None = None, style: str | N
                      name=name, music=music, style=style, duration=duration, hook=hook, location=location, look=look,
                      text_preset=text_preset, route_map=route_map, speed_ramps=speed_ramps, speed_up=speed_up,
                      drop_speed=drop_speed, format=format, text_motion=text_motion, captions=captions,
-                     recipe=recipe, orientation=orientation, fresh=fresh, light=light)
+                     recipe=recipe, orientation=orientation, fresh=fresh, light=light,
+                     stabilize=stabilize)
     st = await _run_job(args, "make", name or " ".join(sources))
     return _finished(st)
 

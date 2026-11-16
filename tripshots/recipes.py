@@ -705,6 +705,7 @@ def text_overlays(plan: dict, recipe: dict, words_rel: dict | None, copy: dict |
         if not line:
             return out
         a, b = span(next((ln for ln in ref if ln.get("role") == "title"), None)) or (0.1, total - 0.1)
+        b = min(total - 0.1, max(b, a + len(line.split()) / 3.5 + 0.5))   # long enough to read every word
         out.append({"type": "hook", "text": line, "start": round(a, 3), "duration": round(b - a, 3),
                     "style": held_position(plan, a, b, st), "recipe": "title"})
         return out

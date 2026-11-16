@@ -39,9 +39,11 @@ Ways to get a new style:
 | `motion.shake_on_drop` / `shake_px` | true / 22 | Allow a camera shake on drops in intense sections (never in mostly calm reels, slow motion or a freeze) |
 | `motion.video_push` | 0.06 | Slow push-in on static clips |
 | `motion.freeze` / `rgb_split` | false / 0 | Freeze-frame on the biggest drop; share of hard cuts with a colour split |
+| `motion.blackout` | `auto` | Three or four black frames just before the payoff, after the song's held breath: `auto` (a long breath into an intense payoff), `on`, `off` |
+| `story.grammar` | true | Swap middle shots so sizes alternate, every cut changes something, a new place opens wide, and no camera move runs three times ([Shot grammar](storytelling.md#shot-grammar)) |
 | `motion.pulse` | | Bulge on intense beats (e.g. 0.1) |
 | `grade.look` / `strength` / `ai` / `match` | `auto` / 0.75 / true / gentle | Colour look (`auto`, `none`, a preset, or your look), strength, AI colourist; `match: full` takes every shot fully into the look (learned styles, clones) |
-| `text.motion` | `auto` | How the words animate: `auto` (HyperFrames motion picked per preset when installed), `off`, `rise`, `focus`, `tracking`, `typewriter`, `slam`, `write`, `cinema` ([Motion text](look-and-motion.md#motion-text-hyperframes)) |
+| `text.motion` | `auto` | How the words animate: `auto` (HyperFrames motion picked per preset when installed), `off`, `rise`, `focus`, `tracking`, `typewriter`, `slam`, `write`, `cinema`, `decode`, `stamp` ([Motion text](look-and-motion.md#motion-text-hyperframes)) |
 | `attention` | {} | Written by `learn`: how the references hold attention. `curve` (relative shot length in each eighth of the reel; the rhythm follows it), `shot_sec`, `shot_mean`, `open` {hold, shot}, `peak_at`, `variety`, `mix` {wide, people, detail}, `speed`, `reveal`, `loop`. Empty = the built-in story rhythm |
 | `direction` | "" | A few sentences on how the style is directed; the critic's AI review reads it with `tripshots/DIRECTOR.md`. `learn` writes one |
 | `frame.aspect` | `9:16` | The references' picture shape: `9:16` upright, `16:9` or `2.39:1` wide, `1:1`, `4:5` |

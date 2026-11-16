@@ -428,3 +428,150 @@ def test_the_swap_opening_faces_the_camera_and_can_be_set_by_hand(tmp_path, monk
         planedit.apply(p, [{"op": "backdrop", "segment": 2, "mode": "places"}])   # a photo: no person to keep
     planedit.apply(p, [{"op": "backdrop", "segment": 1, "mode": "off"}])
     assert "backdrop" not in json.loads(p.read_text())["segments"][0]
+
+
+def test_light_words_get_shade_on_a_bright_picture_and_titles_stay_on_screen():
+    from tripshots import framing, typo
+    bright = np.full((1920, 1080, 3), 235, np.uint8)
+    dark = np.full((1920, 1080, 3), 30, np.uint8)
+    box = (200, 800, 880, 1000)
+    assert typo.shade_needed(bright, box, 1.0) > 0.4 and typo.shade_needed(dark, box, 1.0) == 0.0
+    assert typo.shade_needed(bright, box, 0.1) == 0.0                         # dark letters bring their own contrast
+    el = typo.build_hook("we'll be countin' stars", 0.0, 2.0, {"size": 40, "anim": "fade", "y": 0.49}, bright, [])
+    shaded = el.draw(bright.copy(), 1.0)
+    assert shaded[900, 100].mean() < 220                                   # the picture under the words darkened
+    framing.set_canvas(True)
+    el = typo.build_hook("California Utah Wyoming Oregon Exploring The West", 0.1, 1.4,
+                         {"size": 182, "position": "lower", "font": "montserrat-bold"}, None, [])
+    assert el.box[3] <= typo.SAFE["bottom"] + 1 and el.box[1] >= typo.SAFE["top"] - 1
+    framing.set_canvas(False)
+
+
+def test_a_line_moves_off_a_face(monkeypatch):
+    from tripshots import typo
+    frame = np.full((1920, 1080, 3), 120, np.uint8)
+    monkeypatch.setattr(typo, "face_rows", lambda f: [(850.0, 1150.0)])
+    el = typo.build_hook("The pull of the West.", 0.0, 2.0, {"size": 100, "anim": "fade", "y": 0.52}, frame, [])
+    assert el.box[3] <= 850 + 40 or el.box[1] >= 1150 - 40     # (the box starts above the letters themselves)
+    assert not 850 < (el.box[1] + el.box[3]) / 2 < 1150
+
+
+def test_the_swap_opening_needs_a_person_big_in_frame():
+    from tripshots import framing
+    framing.set_canvas(True)
+    far = {"id": "F", "kind": "video", "w": 1920, "h": 1080, "t0": 0, "t1": 9, "src": "/x/f.mp4",
+           "ai": {"score": 9, "people": {"count": 1, "activity": "posing for the camera"},
+                  "subject_box": [0.5, 0.6, 0.6, 0.75]}, "metrics": {}}
+    near = {**far, "id": "N", "src": "/x/n.mp4", "ai": {**far["ai"], "score": 7, "subject_box": [0.3, 0.1, 0.65, 1.0]}}
+    segs = [{"dur": 2.2, "out_start": 0.0, "level": "medium", "shot_id": "X"},
+            {"dur": 1.0, "out_start": 2.2, "level": "medium", "shot_id": "Y"}]
+    assert planner._open_on_face(segs, [far, near], load_style("swap-strips"), 0.33)
+    assert segs[0]["shot_id"] == "N"
+    framing.set_canvas(False)
+
+
+# ------------------------------------------------------------------ stabilising shaky clips
+@needs_ffmpeg
+def test_a_shaky_clip_is_stabilised_and_the_planner_picks_calm_shaky_shots(tmp_path, monkeypatch):
+    from tripshots import stabilize
+    monkeypatch.setattr(stabilize, "CACHE", tmp_path / "stab")
+    monkeypatch.setattr(stabilize, "_vidstab", False)      # the built-in stabiliser (vidstab isn't everywhere)
+    big = tmp_path / "big.png"
+    ff("-f", "lavfi", "-i", "testsrc2=s=960x720", "-frames:v", "1", big)
+    rng = np.random.default_rng(3)
+    xs, ys = (40 + rng.normal(0, 9, 60)).clip(0, 80), (40 + rng.normal(0, 9, 60)).clip(0, 80)
+    expr_x = "+".join(f"{x:.1f}*eq(n\\,{i})" for i, x in enumerate(xs))
+    expr_y = "+".join(f"{y:.1f}*eq(n\\,{i})" for i, y in enumerate(ys))
+    shaky = tmp_path / "shaky.mp4"
+    ff("-loop", "1", "-i", big, "-vf", f"crop=880:640:x='{expr_x}':y='{expr_y}',fps=30", "-t", "2",
+       "-pix_fmt", "yuv420p", shaky)
+    out = stabilize.window(str(shaky), 0.0, 2.0)
+    assert out is not None and out.exists()
+
+    def wobble(p):
+        path = stabilize.camera_path(list(stabilize._frames(str(p), 0.0, 2.0, [], 320)))
+        return float(np.abs(np.diff(path[:, :2], axis=0)).mean())
+    assert wobble(out) < 0.5 * wobble(shaky)
+    assert stabilize.window(str(shaky), 0.0, 2.0) == out                 # cached: never stabilised twice
+    seg = {"kind": "video", "src": str(shaky), "in": 0.5, "stabilize": True}
+    got = stabilize.apply(seg, 1.0)
+    assert got["src"] != str(shaky) and got["_stabilized"] and abs(got["in"] - stabilize.PAD) < 1e-6
+    # which shots: shaky clips in calm or held moments (auto), never one given an added camera shake
+    sh = {"id": "S", "kind": "video", "metrics": {"shake": 0.01}, "ai": {}}
+    steady = {"id": "T", "kind": "video", "metrics": {"shake": 0.0005}, "ai": {}}
+    segs = [{"shot_id": "S", "kind": "video", "level": "calm", "dur": 1.0},
+            {"shot_id": "S", "kind": "video", "level": "intense", "dur": 1.0},
+            {"shot_id": "S", "kind": "video", "level": "calm", "dur": 1.0, "shake": True},
+            {"shot_id": "T", "kind": "video", "level": "calm", "dur": 3.0}]
+    planner.mark_stabilize(segs, {"S": sh, "T": steady}, {"shots": {"stabilize": "auto"}})
+    assert [bool(s.get("stabilize")) for s in segs] == [True, False, False, False]
+    planner.mark_stabilize(segs, {"S": sh, "T": steady}, {"shots": {"stabilize": "on"}})
+    assert [bool(s.get("stabilize")) for s in segs] == [True, True, False, False]
+    assert stabilize.needs_it({"kind": "video", "metrics": {"shake": 0.01}, "ai": {"watch": {"stability": "steady"}}}) == 2.0
+
+
+# ------------------------------------------------------------------ story grammar, pre-hit black, travel effects
+def _gshot(i, scene="landscape", box=None, move="static", kind="video"):
+    ai = {"scene": scene, "score": 7.0, "motion": move, "tags": [f"t{i}"]}
+    if box:
+        ai["subjects"] = [{"label": "person", "box": box}]
+    return {"id": f"g{i}", "kind": kind, "src": f"/x/{i}.mp4", "t0": 0, "t1": 4, "ai": ai}
+
+
+def test_story_grammar_alternates_sizes_and_breaks_runs_of_one_camera_move():
+    wide = [_gshot(i, move="push") for i in range(4)]
+    close = [_gshot(10 + i, scene="detail") for i in range(3)]
+    order = [wide[0]] + wide[1:] + close  # three pushes running, then three close-ups side by side
+    segs = [{"role": "hook" if i == 0 else "build", "dur": 1.0} for i in range(len(order))]
+    assert [story.size(s) for s in (wide[0], close[0])] == ["wide", "close"]
+    assert story.size(_gshot(20, box=[0.3, 0.2, 0.8, 0.9])) == "close"
+    before = story.grammar_cost(order, None, {})
+    rep = story.grammar(order, list(range(1, len(order))), segs)
+    assert order[0]["id"] == "g0"  # the opening is never moved
+    assert rep["swaps"] >= 1 and rep["after"] < before
+    sizes = [story.size(s) for s in order]
+    assert sum(sizes[i] == sizes[i - 1] for i in range(1, len(sizes))) < 5
+    # a slot twice as long as another never trades shots with it (the better shot stays where it is seen longer)
+    order2 = [wide[0], wide[1], close[0], close[1]]
+    segs2 = [{"role": "build", "dur": d} for d in (1.0, 1.0, 2.5, 2.5)]
+    assert story.grammar(order2, [1, 2, 3], segs2)["swaps"] == 0
+
+
+def test_the_payoff_lands_out_of_a_beat_of_black():
+    style = load_style("travel-diary")
+    segs = [{"shot_id": "a", "dur": 2.0, "out_start": 0.0, "level": "calm", "breath": 0.6, "kind": "video"},
+            {"shot_id": "b", "dur": 2.0, "out_start": 2.0, "level": "intense", "drop": True, "kind": "video"}]
+    planner.choose_transitions(segs, style)
+    assert segs[0].get("black_tail") == 4 and not segs[0].get("trans_out")
+    style["motion"]["blackout"] = "off"
+    segs[0].pop("black_tail")
+    planner.choose_transitions(segs, style)
+    assert "black_tail" not in segs[0]
+
+
+def test_mirror_and_polaroid_transitions_run_from_one_shot_to_the_next():
+    h, w = 320, 180
+    a = np.full((h, w, 3), 30, np.uint8)
+    b = np.zeros((h, w, 3), np.uint8)
+    b[:h // 2] = (120, 180, 240)
+    b[h // 2:] = (40, 90, 50)
+    for name in ("mirror", "polaroid"):
+        assert np.abs(motion.apply_transition(name, a, b, 0.0).astype(int) - a).mean() < 1
+        assert np.abs(motion.apply_transition(name, a, b, 1.0).astype(int) - b).mean() < 1
+        mid = motion.apply_transition(name, a, b, 0.5)
+        assert mid.shape == a.shape and 3 < np.abs(mid.astype(int) - a).mean()
+    half = motion.apply_transition("mirror", a, b, 0.45)  # below the line, the sky's reflection, not the grass
+    assert half[int(h * 0.55), w // 2, 2] > 150
+    paper = motion.apply_transition("polaroid", a, b, 0.42)  # the print's white border shows
+    assert (paper.min(axis=2) > 235).sum() > 200
+
+
+def test_decode_and_stamp_text_pages():
+    from types import SimpleNamespace as N
+    from tripshots import hfx
+    el = N(duration=2.4, sprites=[], lines=[{"text": "Big Sur", "x": 300, "y": 800, "size": 80}])
+    page, _ = hfx.text_page(el, "decode", "location")
+    assert page.count('class="u"') == len("Big Sur") and 'MOTION = "decode"' in page
+    page, _ = hfx.text_page(el, "stamp", "location")
+    assert 'id="grp"' in page and 'class="box"' in page
+    assert {"decode", "stamp"} <= set(hfx.MOTIONS)

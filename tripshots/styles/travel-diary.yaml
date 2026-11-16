@@ -1,0 +1,37 @@
+name: travel-diary
+description: A trip told like a scrapbook. Each place opens wide and lands with a passport stamp; prints drop in and open into the next place; lakes and coasts arrive as their own reflection. Shots alternate wide and close, and the payoff comes out of a beat of black.
+direction: "Tell the trip in order, one place after another. Open each place on its widest view, then go closer (a person, a detail), then move on. Neighbouring shots should differ in size or light. Use the print and reflection transitions only between places, never inside one. The payoff is the best view of the trip and lands on the song's biggest hit, after a breath. End calm, on a view that echoes the first shot."
+duration: {target: 20, min: 12, max: 30}
+cuts:
+  beats_per_cut: {calm: 4, medium: 4, intense: 2}
+  hook_beats: 4
+  min_shot_sec: 1.2
+  max_shot_sec: 3.5
+shots: {min_score: 6, ordering: energy, max_per_source: 2, slowmo: true, stabilize: auto, place_variety: 1.0}
+layout: {landscape: auto, photo_motion: kenburns, photo_zoom: 1.12}
+story: {arc: "on", format: montage, captions: "off", grammar: true}
+transitions:
+  palette:
+    calm: [polaroid, mirror, dissolve]
+    medium: [polaroid, mirror]
+    intense: [whip, zoom_in]
+  density: 0.45
+  speed: 1.0
+  at: sections
+color: {saturation: 1.06, contrast: 1.04, brightness: 0.0, gamma: 1.0, warmth: 0.03, vignette: true, sharpen: 0.3}
+text:
+  preset: editorial
+  motion: stamp
+  hook: {mode: "off"}
+  location: {mode: each, duration: 3.2, coords: false, behind: "off"}
+  cta: {mode: "off"}
+caption: {tone: 'warm, first person, like a diary entry', hashtags: 10}
+motion:
+  beat_punch: 0.0
+  punch_on: []
+  shake_on_drop: false
+  video_push: 0.04
+  blackout: auto
+panels: {use: 0.0}
+velocity: {use: 0.0}
+speed: {ramps: [], fast: 0.0, drop: "off", smooth: flow}

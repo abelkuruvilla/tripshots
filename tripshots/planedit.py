@@ -43,6 +43,9 @@ Colour:
      "remove": true drops it; "segment": "all" for every shot
   {"op": "layers_auto", "segment": 3}            a shot's layers back to automatic ("all" for every shot)
 
+Steadiness (a video shot):
+  {"op": "stabilize", "segment": 3, "on": true}      take the shake out of a handheld clip ("segment": "all")
+
 The person stays, the world changes (a video shot with a person in it):
   {"op": "backdrop", "segment": 1, "mode": "places"}   on each beat another place of the trip behind them
                                                         ("colour": flat colours from the shot; "off": none)
@@ -57,7 +60,7 @@ from .util import ReelError, read_json, write_json
 SLOT_KEYS = {"dur", "out_start", "idx", "level", "drop", "trans_out", "trans_dur", "trans_params", "incam_out",
              "incam_in", "hero", "role", "hold"}   # a slot's place in the story stays when its shot changes
 TRANSITIONS = {None, "whip", "zoom_in", "zoom_out", "spin", "flash", "glitch", "blur", "dissolve", "dip", "leak",
-               "split", "vsplit", "iris", "slats", "stripes", "diamond", "frame", "cells"}
+               "split", "vsplit", "iris", "slats", "stripes", "diamond", "frame", "cells", "mirror", "polaroid"}
 
 
 def _content(seg: dict) -> dict:
@@ -723,6 +726,22 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
                 note, _ = ai_notes([sh], {sh["id"]: shot_stats(sh)}, None, Path(plan.get("work") or "."), False)
                 set_layers(sg, sh, note.get(sh["id"]) or {}, look)   # the colourist's remembered verdict, or the rules
             done.append("layers back to automatic")
+        elif op == "stabilize":  # take the shake out of a clip (stabilize.py), or leave it as filmed
+            on = bool(ed.get("on", True))
+            idx = range(len(segs)) if ed.get("segment") == "all" else [_slot(plan, ed["segment"])]
+            n = 0
+            for i in idx:
+                if segs[i].get("kind") != "video" or segs[i].get("panel"):
+                    if ed.get("segment") != "all":
+                        raise ReelError(f"slot {i + 1} isn't a single video clip: only clips can be stabilised")
+                    continue
+                if on:
+                    segs[i]["stabilize"] = True
+                else:
+                    segs[i].pop("stabilize", None)
+                n += 1
+            done.append(("stabilised " if on else "as filmed: ") + (f"{n} shots" if ed.get("segment") == "all"
+                                                                    else f"slot {idx[0] + 1}"))
         elif op == "backdrop":   # the person stays while the background changes on the beat (render.Backdrops)
             i = _slot(plan, ed["segment"])
             mode = str(ed.get("mode") or "places")

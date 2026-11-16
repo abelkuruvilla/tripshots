@@ -29,6 +29,26 @@ the photo and clip of one view count once.
 
 **Turn it off** with `make --arc off` (the older even cut grid) or `story: {arc: off}` in a style.
 
+### Shot grammar
+
+After casting, TripShots checks how neighbouring shots read one after another and swaps middle shots to fix what
+editors would fix. It never moves the opening, the payoff or the ending, only swaps slots that play the same part and
+last about as long, and never puts one place on both sides of a cut:
+
+- **Every cut changes something you can see.** Two shots of the same size, subject, light and colour side by side read
+  as a stutter.
+- **Shot sizes alternate:** wide, medium (someone in the view) and close (a detail, or someone big in frame).
+- **A new place opens wide** before its close-ups, when the reel has a wide view of it.
+- **The same camera move never runs three times** (push, push, push reads as a slideshow).
+
+The plan records the result as `story.grammar` {`before`, `after`, `swaps`}. Turn it off with `story: {grammar: false}`.
+
+**A beat of black before the payoff.** When the song holds its breath before the climax (see below) and the payoff
+is intense, the last three or four frames before the hit go black, so the payoff lands out of nothing (segment
+`black_tail`; style `motion.blackout` `auto`, `on` or `off`).
+
+These rules come from editing skills reviewed for this release; see [Where the craft comes from](craft-sources.md).
+
 ### Listening to the song first
 
 A reel is cut to its song, and songs aren't metronomes. Before anything is laid out, the music is read for two

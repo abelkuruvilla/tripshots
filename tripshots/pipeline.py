@@ -207,6 +207,10 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         if o not in ("auto", "vertical", "horizontal", "4:3", "4:5", "1:1", "sideways"):
             raise ReelError(f"--orientation {o}: use auto, vertical, horizontal, 4:3, 4:5, 1:1 or sideways")
         style["frame"] = {**(style.get("frame") or {}), "output": o}
+    if ex.get("stabilize"):
+        if str(ex["stabilize"]).lower() not in ("auto", "on", "off"):
+            raise ReelError(f"--stabilize {ex['stabilize']}: use auto, on or off")
+        style["shots"]["stabilize"] = str(ex["stabilize"]).lower()
     if ex.get("light") and str(ex["light"]).lower() != "any":
         from .shots import LIGHTS
         if str(ex["light"]).lower() not in LIGHTS:

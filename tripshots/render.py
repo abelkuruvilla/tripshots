@@ -76,6 +76,9 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
     `rate` other than 30 renders at that frame rate (the retimer's real-time pass)."""
     speed = float(e.get("speed", 1.0))
     src_need = length * speed + 0.5
+    if e.get("stabilize") and not e.get("_stabilized"):  # a shaky clip: from its stabilised window (stabilize.py)
+        from . import stabilize
+        e = stabilize.apply(e, src_need)
     pad = []
     size = size or CANVAS.size
     if e.get("_band") and size == CANVAS.size:  # cinematic letterbox: the picture in a band, black bars
@@ -980,6 +983,9 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                     frame = freeze_frame(frozen, n - fz0, fzn)
                 if segs[i].get("rgb") and i > 0 and 0 <= n - start_f[i] < 4:
                     frame = rgb_split(frame, n - start_f[i])
+                bt = int(segs[i].get("black_tail") or 0)
+                if bt and i < len(segs) - 1 and start_f[i + 1] - bt <= n < start_f[i + 1]:
+                    frame = np.zeros_like(frame)  # the pre-hit black: the payoff lands out of nothing
                 if plan.get("loop"):  # dissolve the last moments into the first frame: seamless replay
                     if n == 0:
                         first_frame = frame.copy()

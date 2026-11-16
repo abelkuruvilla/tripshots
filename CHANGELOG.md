@@ -6,6 +6,16 @@ versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Story grammar, from editors' rules.** After casting, middle shots are swapped so that every cut changes something you can see (size, light, colour or subject), shot sizes alternate, each new place opens on a wide view, and no camera move runs three times in a row. The opening, payoff and ending never move. The plan records `story.grammar`; turn it off with `story: {grammar: false}`.
+- **A beat of black before the payoff.** After the song's held breath into an intense payoff, the last three or four frames before the hit go black (`motion.blackout`: `auto`, `on`, `off`).
+- **Travel transitions and titles.** `polaroid`: the next shot drops in as a print and opens into the scene. `mirror`: the next shot opens from the horizon as its own reflection. Text motions `decode` (letters resolve out of random glyphs) and `stamp` (a passport stamp slams down). Both transitions are in the Shot tab.
+- **New style `travel-diary`:** places in order, a stamp on each new place, prints and reflections between places, the payoff out of a beat of black.
+- The critic's director notes gain story and shot-grammar rules. [Where the craft comes from](docs/craft-sources.md) lists the editing skills (graded safe in awesome-claude-video-skills) these ideas were read from; no code was taken.
+- **Stabilising shaky clips.**
+  - Handheld and shaky clips can be stabilised before they are rendered. TripShots uses ffmpeg's two-pass vidstab when the ffmpeg in use has it, and otherwise its own stabiliser, which tracks corners, smooths the camera's path over about a second and zooms in at most 12% to hide the moving edges.
+  - A deliberate pan stays; only the shake goes. Each clip is stabilised once and cached in `~/.tripshots/cache/stab/`.
+  - Style `shots.stabilize`: `auto` (the default) stabilises shaky clips in calm or held moments and never a shot given an added camera shake; `on` stabilises every shaky clip; `off` none. `cinematic`, `slow-scenic`, `grid-mosaic`, `mask-reveal` and `shape-cut` use `on`.
+  - `make --stabilize`, MCP `make_reel stabilize`, plan edit `stabilize` and **Stabilise this clip** in the app's Shot tab. `tripshots doctor` says whether vidstab is available.
 - **Strip collages, backdrop swaps and sideways reels.**
   - Split screens can be strip collages: `rows2`–`rows9` / `cols2`–`cols9`, filling in on the beat, in upright and wide reels.
   - `motion.backdrop` keeps a person still while the background swaps to other places of the trip, or to flat colours from the shot, on each beat. It is used only on an upright figure the cut-out finds.
@@ -133,6 +143,11 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **Loudness:** a peaky song that the limiter held down is lifted into its remaining headroom, so the master lands at -14 LUFS instead of around -16.
 
 ### Fixed
+- **Malayalam and other complex scripts in the app's engine.** The packaged engine couldn't find its own text-shaping library, so vowel signs came apart from their letters ("ഓരോ" drawn as "ഓരേ ാ"). It now finds it at start-up (only that library, and never passed on to ffmpeg); `tripshots doctor` reports `shaping`, and a release can't be packaged without it.
+- **Words that disappeared on bright pictures.** Light lettering is now shaded on every frame where what is behind it is bright (pale sky, sunlit aspens, white rock), including a line held across several shots, not just on its first frame.
+- **Words across a face.** A line, even one placed at the reference's own height, now moves off a face in the shot.
+- **A title too long for its band** (a reference's title card rewritten as one long line) is set smaller to fit on screen and stays long enough to read every word.
+- **The swap opening** now opens on a person big in the frame. The AI's subject boxes come as lists and weren't being read, so a far drone shot could be picked and the background swap never showed.
 - **Gemini watch** switches to the next model at once when one answers "not found" or its daily quota is used up, instead of waiting on the request pacer first.
 - **Mastering a reel whose encode overshot its peaks** turned the whole mix down and stopped there, leaving it around -16 LUFS; it now lowers the limiter's ceiling instead and keeps -14 LUFS. Music turned down in the editor is made up in the master rather than making the reel quieter.
 - **Editing a plan:** swapping, moving or exchanging shots keeps each slot's place in the story (`role`, the opening hold), reframes the new shot for a letterbox picture, and drops an in-camera whip that belonged to the old footage (which also left a whoosh on a plain cut).

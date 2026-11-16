@@ -120,7 +120,7 @@ def _refit(seg: dict, by_id: dict) -> None:
 
 
 SLOT = ("out_start", "dur", "idx", "level", "drop", "role", "trans_out", "trans_dur", "trans_params", "incam_out",
-        "incam_in", "hero", "shake", "beats", "line", "beatless", "breath", "colour_in")
+        "incam_in", "hero", "shake", "beats", "line", "beatless", "breath", "colour_in", "black_tail")
 
 
 def apply(plan: dict, by_id: dict) -> int:

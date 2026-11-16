@@ -10,7 +10,10 @@ versions follow [Semantic Versioning](https://semver.org/).
   - Split screens can be strip collages: `rows2`–`rows9` / `cols2`–`cols9`, filling in on the beat, in upright and wide reels.
   - `motion.backdrop` keeps a person still while the background swaps to other places of the trip, or to flat colours from the shot, on each beat. It is used only on an upright figure the cut-out finds.
   - `--orientation sideways` makes a widescreen edit turned on its side in an upright file, for "turn your phone" reels.
-  - New styles `swap-strips` and `turn-phone`.
+  - New styles `swap-strips` and `turn-phone`. `swap-strips` opens on a clip of you facing the camera (`motion.backdrop_first`).
+  - The plan edit `backdrop`, and **Behind the person** in the app's Shot tab, put the swap on any clip of you.
+  - Short reels made on a short reference sound can still have a strip moment.
+  - The stutter check leaves out shots with a photo wall or a background swap.
 - **The grid trend.**
   - A fine grid of light lines over the whole reel (plan `grid`).
   - The `cells` transition fills the next shot in cell by cell, spreading from one spot, with soft colour blocks on the way.

@@ -400,3 +400,31 @@ def test_strip_collages_backdrop_swaps_and_sideways_reels(monkeypatch):
     assert np.array_equal(render.Backdrops().frame(1, seg, fr, 0.1), fr)    # no person found: the shot as it is
     framing.set_canvas(False)
     assert framing.canvas_for({"output": "sideways"}) == (1920, 1080) and framing.output_for({"output": "sideways"})
+
+
+def test_the_swap_opening_faces_the_camera_and_can_be_set_by_hand(tmp_path, monkeypatch):
+    from tripshots import planedit
+    import tripshots.text as T
+    monkeypatch.setattr(T, "storyboard", lambda plan, by_id, out: out)
+    assert planner.facing_camera({"ai": {"people": {"activity": "taking a selfie"}}}) >= 1
+    assert planner.facing_camera({"ai": {"people": {"activity": "walking away"}, "note": "a lake"}}) == 0
+    shots = [{"id": "S0", "kind": "video", "src": "/x/0.mp4", "w": 1920, "h": 1080, "t0": 0, "t1": 9, "thumb": "/x/0.jpg",
+              "ai": {"score": 8, "people": {"count": 1, "activity": "posing"}}, "metrics": {}}] + \
+            [{"id": f"P{i}", "kind": "photo", "src": f"/x/p{i}.jpg", "still": f"/x/p{i}.jpg", "w": 4000, "h": 3000,
+              "t0": 0, "t1": 0, "thumb": f"/x/p{i}.jpg", "ai": {"score": 7, "landmark": f"Place {i}"}, "metrics": {}}
+             for i in range(6)]
+    (tmp_path / "shots_scored.json").write_text(json.dumps(shots))
+    segs = [{"shot_id": "S0", "kind": "video", "src": "/x/0.mp4", "in": 0, "speed": 1, "dur": 3.0, "out_start": 0.0,
+             "level": "mid", "people": True},
+            {"shot_id": "P0", "kind": "photo", "src": "/x/p0.jpg", "still": "/x/p0.jpg", "layout": "kenburns",
+             "dur": 2.0, "out_start": 3.0, "level": "mid"}]
+    p = tmp_path / "t.plan.json"
+    p.write_text(json.dumps({"style": "beat-montage", "work": str(tmp_path), "duration": 5.0, "tempo": 120,
+                             "segments": segs, "overlays": [], "color": {}}))
+    planedit.apply(p, [{"op": "backdrop", "segment": 1, "mode": "places"}])
+    bd = json.loads(p.read_text())["segments"][0]["backdrop"]
+    assert bd["mode"] == "places" and len(bd["items"]) == 5 and "/x/p0.jpg" not in bd["items"]   # one beat each
+    with pytest.raises(Exception):
+        planedit.apply(p, [{"op": "backdrop", "segment": 2, "mode": "places"}])   # a photo: no person to keep
+    planedit.apply(p, [{"op": "backdrop", "segment": 1, "mode": "off"}])
+    assert "backdrop" not in json.loads(p.read_text())["segments"][0]

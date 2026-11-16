@@ -813,17 +813,18 @@ def plan_panels(segs: list[dict], grid: dict, style: dict, avail: int) -> tuple[
     pc = style.get("panels") or {}
     use = float(pc.get("use", 0) or 0)
     beat_len = grid["beat_len"]
-    if use <= 0 or len(segs) < 5:
+    if use <= 0 or len(segs) < 4:
         return segs, beat_len
+    short = len(segs) < 6  # a short reel (a 7-second sound): its strip moment may start at the second shot
     from .panels import KINDS
     kinds = [k for k in (pc.get("kinds") or ["split2", "grid4", "split3", "columns3"]) if k in KINDS] or ["split2"]
     mode = pc.get("mode", "mixed")
     max_n = int(pc.get("max", 2))
     step_beats = 1 if beat_len >= 0.38 else 2
     out = list(segs)
-    count, i = 0, 2
+    count, i = 0, (1 if short else 2)
     budget = avail - (len(segs) - 2)  # spare shots beyond one per remaining cut
-    while i < len(out) - 2 and count < max_n:
+    while i < len(out) - (1 if short else 2) and count < max_n:
         sg = out[i]
         if sg.get("panel") or sg["level"] == "calm" or sg.get("role") in ("hook", "peak", "ending") or _stable_rand("panel", i, sg["out_start"]) >= use:
             i += 1
@@ -886,13 +887,97 @@ def _flat_colours(thumb: str | None, n: int = 3) -> list[list[int]]:
     return [[int(v) for v in np.clip(0.75 * c + 0.25 * c.mean() + 18, 0, 255)] for c in cols]
 
 
+FACING = ("selfie", "toward camera", "towards camera", "to camera", "at the camera", "at camera", "facing",
+          "posing", "pose", "smiling", "portrait", "waving")
+
+
+def facing_camera(shot: dict) -> float:
+    """How sure we are a person in the shot faces the camera: the AI's words for what they do (a selfie, walking
+    toward the camera, posing), and a face the face detector finds in the thumbnail. 0 = no sign."""
+    a = shot.get("ai") or {}
+    words = " ".join(str(x) for x in ((a.get("people") or {}).get("activity"), a.get("note"), a.get("description"))
+                     ).lower()
+    v = 1.0 if any(w in words for w in FACING) else 0.0
+    if shot.get("thumb"):
+        import cv2
+        from .nodes import _faces
+        im = cv2.imread(str(shot["thumb"]))
+        if im is not None:
+            sc = 480 / max(im.shape[:2])
+            faces = _faces(cv2.resize(im, (int(im.shape[1] * sc), int(im.shape[0] * sc))))
+            if any(f[2] * f[3] > 0.002 for f in faces):
+                v += 1.0
+    return v
+
+
+def backdrop_items(mode: str, seg: dict, shots: list[dict], used: set, beats: int) -> list:
+    """What goes behind the person, one per beat: other places of the trip (one picture per landmark, no people)
+    or flat colours from the shot's own palette."""
+    if mode == "colour":
+        thumb = next((s.get("thumb") for s in shots if s["id"] == seg.get("shot_id")), None)
+        cols = _flat_colours(thumb)
+        return [cols[k % len(cols)] for k in range(beats)]
+    from .story import has_people, landmark
+    seen, items = set(), []
+    for s in sorted(shots, key=lambda s: -_quality(s)):
+        if not s.get("thumb") or s["id"] in used or has_people(s) or not (s.get("ai") or {}).get("usable", True):
+            continue
+        m = landmark(s) or s["id"]
+        if m not in seen:
+            seen.add(m)
+            items.append(s["thumb"])
+        if len(items) >= beats:
+            break
+    return items
+
+
+def _open_on_face(segs: list[dict], shots: list[dict], style: dict, every: float) -> bool:
+    """The swap opening (motion.backdrop_first): the first slot becomes the best clip of a person facing the
+    camera, big in frame and long enough to hold the slot, the way these reels open on someone framing the shot."""
+    from .story import has_people
+    s0 = segs[0]
+    if s0.get("panel") or float(s0["dur"]) < 3 * every:
+        return False
+    used = {s.get("shot_id") for s in segs[1:]}
+
+    def big(s):
+        b = (s.get("ai") or {}).get("subject_box") or subject_for(s)
+        try:
+            return (float(b["x1"]) - float(b["x0"])) * (float(b["y1"]) - float(b["y0"]))
+        except (KeyError, TypeError, ValueError):
+            return 0.0
+    from .config import CANVAS
+    pool = [s for s in shots if s.get("kind") == "video" and has_people(s) and s["id"] not in used
+            and s["t1"] - s["t0"] >= float(s0["dur"]) * 0.8 and (s.get("ai") or {}).get("usable", True)
+            and (float(s.get("w") or 1) >= float(s.get("h") or 1)) == CANVAS.horizontal]  # (the head stays in frame)
+    pool = sorted(pool, key=lambda s: -(_quality(s) + 1.5 * min(big(s), 0.3) * 10))[:40]
+    scored = [(facing_camera(s), s) for s in pool]
+    best = max(scored, key=lambda x: (x[0], _quality(x[1]) + 1.5 * min(big(x[1]), 0.3) * 10), default=(0, None))
+    if not best[1] or best[0] <= 0:
+        return False
+    e, _ = _entry_for(best[1], {"out_start": s0["out_start"], "dur": s0["dur"], "level": s0["level"]}, style, 0)
+    for k in ("trans_out", "trans_dur", "trans_params", "role", "idx", "drop", "beats"):
+        if k in s0:
+            e[k] = s0[k]
+    segs[0] = e
+    log(f"swap opening: {best[1]['id']} ({(best[1].get('ai') or {}).get('people', {}).get('activity') or 'a person facing the camera'})")
+    return True
+
+
 def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: float) -> list[int]:
     """The person stays, the world behind them changes (motion.backdrop: places, colour or both): a held shot of a
     person gets, on each beat, a picture of another place of the trip (or a flat colour from its own palette) behind
     them; its last beat is its real background again. The opening person shot gets the places, a later one colour."""
     want = (style.get("motion") or {}).get("backdrop")
     modes = ["places", "colour"] if want in (True, "both") else [str(want)]
-    every = beat_len if beat_len >= 0.38 else 2 * beat_len
+    every = beat_len if beat_len >= 0.3 else 2 * beat_len  # a new place on every beat (every other on fast songs)
+    if (style.get("motion") or {}).get("backdrop_first") and _open_on_face(segs, shots, style, every):
+        segs[0]["backdrop"] = {"mode": modes[0], "every": round(every, 4), "items": backdrop_items(
+            modes[0], segs[0], shots, {s.get("shot_id") for s in segs}, max(1, int(float(segs[0]["dur"]) / every) - 1))}
+        modes = modes[1:]
+        if not modes:
+            return [0]
+
     def size(s):  # how much of the frame the subject (the person) fills
         b = s.get("subject") or {}
         return (float(b.get("x1", 0)) - float(b.get("x0", 0))) * (float(b.get("y1", 0)) - float(b.get("y0", 0)))
@@ -900,27 +985,12 @@ def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: f
             and float(s["dur"]) >= 3 * every and not s.get("mosaic") and size(s) >= 0.03]
     cand = sorted(cand, key=lambda i: -size(segs[i]))[:2]   # the person big in frame: the swap reads
     cand.sort()
-    by_id = {s["id"]: s for s in shots}
     used = {s.get("shot_id") for s in segs}
-    from .story import has_people
-    places = [s for s in sorted(shots, key=lambda s: -_quality(s)) if s.get("thumb") and s["id"] not in used
-              and not has_people(s) and (s.get("ai") or {}).get("usable", True)]
-    done = []
+    done = [0] if segs[0].get("backdrop") else []
+    cand = [i for i in cand if not segs[i].get("backdrop")]
     for mode, i in zip(modes, cand[:1] + cand[-1:] if len(cand) > 1 else cand):
         beats = max(1, int(float(segs[i]["dur"]) / every) - 1)
-        if mode == "places":
-            from .story import landmark
-            seen, items = set(), []
-            for s in places:
-                m = landmark(s) or s["id"]
-                if m not in seen:
-                    seen.add(m)
-                    items.append(s["thumb"])
-                if len(items) >= beats:
-                    break
-        else:
-            cols = _flat_colours((by_id.get(segs[i].get("shot_id")) or {}).get("thumb"))
-            items = [cols[k % len(cols)] for k in range(beats)]
+        items = backdrop_items(mode, segs[i], shots, used, beats)
         if items:
             segs[i]["backdrop"] = {"mode": mode, "items": items, "every": round(every, 4)}
             done.append(i)

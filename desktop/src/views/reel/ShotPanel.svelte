@@ -132,6 +132,18 @@
         <input id="isx" type="range" min="0" max="1" step="0.01" bind:value={sx} onchange={() => op({ op: "frame", subject_x: +sx })} />
       </div>
     </section>
+    <section class="panel">
+      <h3>Behind the person</h3>
+      <div class="field">
+        <label for="ibd" class="sr-only">Background</label>
+        <select id="ibd" value={s.backdrop || "off"} onchange={(e) => op({ op: "backdrop", mode: e.currentTarget.value })}>
+          <option value="off">Their own background</option>
+          <option value="places">Other places of the trip, one per beat</option>
+          <option value="colour">Flat colours from the shot, one per beat</option>
+        </select>
+        <p class="quiet small help">{s.people ? "The person stays; the world behind them changes on the beat, and the last beat is the real place again. Works best on a clip of you facing the camera, held still" : "Needs a clip with a person in it: the cut-out keeps only an upright figure"}</p>
+      </div>
+    </section>
   {/if}
 {/if}
 

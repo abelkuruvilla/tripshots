@@ -468,8 +468,9 @@ def job_args(kind: str, b: dict) -> tuple[list[str], str]:
         if not notes:
             raise ReelError("no notes")
         return ["revise", str(_plan(s("plan"))), "--notes-json", json.dumps(notes)], Path(s("plan")).name
-    if kind == "analyze":
-        return ["analyze", "--", *items("sources")], "analyse footage"
+    if kind == "analyze":   # the catalogue: new files only, unless asked to look at every shot again
+        flags = (["--rescore"] if b.get("rescore") else []) + (["--no-ai"] if b.get("no_ai") else [])
+        return ["analyze", *flags, "--", *items("sources")], "analyse footage"
     if kind == "discover":
         return ["people", "discover", "--", *items("folders")], "people"
     raise ReelError(f"unknown job kind: {kind}")

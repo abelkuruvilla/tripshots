@@ -3,7 +3,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { check } from "@tauri-apps/plugin-updater";
   import { relaunch } from "@tauri-apps/plugin-process";
-  import { app, api, startEngine, toast } from "../lib/store.svelte.js";
+  import { app, api, startEngine, startJob, toast } from "../lib/store.svelte.js";
   import { theme, applyTheme } from "../lib/theme.svelte.js";
   import Icon from "../lib/Icon.svelte";
   import AiSetup from "./AiSetup.svelte";
@@ -34,7 +34,15 @@
     const id = setTimeout(() => save(snapshot), 600);
     return () => clearTimeout(id);
   });
-  const sections = [["ai", "AI"], ["folders", "Folders"], ["appearance", "Appearance"], ["instagram", "Instagram"],
+  // the footage catalogue (tripshots analyze): new files only; "again" re-asks the AI about every shot
+  let again = $state(false);
+  let analysing = $derived(app.jobs.find((j) => j.kind === "analyze" && j.state === "running"));
+  let lastAnalysis = $derived(app.jobs.find((j) => j.kind === "analyze" && j.state !== "running"));
+  const analyse = run(async () => {
+    if (!footage.length) return toast("Add a footage folder first", "error");
+    await startJob("analyze", { sources: footage, rescore: again }, again ? "Analyse all footage again" : "Analyse new footage");
+  });
+  const sections = [["ai", "AI"], ["folders", "Folders"], ["analysis", "Footage analysis"], ["appearance", "Appearance"], ["instagram", "Instagram"],
                     ["outside", "Outside the app"], ["about", "About"]];
   const go = (id) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
   let engineUpdate = $state(null);
@@ -125,6 +133,22 @@
             <button class="btn sm" onclick={() => pickInto(music)}><Icon name="folder" size={14} /> Add</button>
           </div>
         </div>
+      </section>
+
+      <section class="surface block" id="analysis">
+        <h2>Footage analysis</h2>
+        <p class="muted small">TripShots looks at every photo and clip once: sharpness, light, faces, where it was taken, and
+          what the AI sees in it. That is what finding footage and picking shots use. Reels analyse their own footage as they
+          go; this catalogues everything in your footage folders ahead of time, so searches and new reels start faster.</p>
+        <p class="quiet small">Already-analysed files are skipped, so running it again only does the new ones.</p>
+        <label class="check"><input type="checkbox" bind:checked={again} /> Ask the AI again about every shot
+          <span class="hint">· slow; only after a big change to how shots are described</span></label>
+        <div class="row">
+          <button class="btn" onclick={analyse} disabled={!!analysing}>
+            {#if analysing}<span class="spin" style="width: 10px; height: 10px; border-width: 1.5px"></span> Analysing{:else}<Icon name="sparkle" size={14} /> {again ? "Analyse everything again" : "Analyse new footage"}{/if}</button>
+          {#if analysing}<button class="btn ghost sm" onclick={() => (app.view = "jobs")}>See the progress</button>{/if}
+        </div>
+        {#if lastAnalysis && !analysing}<p class="quiet small">Last run: {lastAnalysis.state === "done" ? "finished" : lastAnalysis.state}</p>{/if}
       </section>
 
       <section class="surface block" id="appearance">

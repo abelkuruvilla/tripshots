@@ -36,6 +36,8 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
   - move it to the Trash.
 
   `tripshots reels` and MCP `manage_reel` do the same.
+- **Settings → Footage analysis**: catalogues everything in your footage folders ahead of time (`tripshots analyze`);
+  files already analysed are skipped. **Ask the AI again about every shot** re-describes them all (slow).
 - **The editor's inspector**: a rail of tools down its side (Shot, Text, Colour, Sound, Notes, Post, Carousel), each
   a column of sections that fold away and show a one-line summary when closed ("Transition · Dissolve"). The
   editor remembers which sections are open. The inspector runs the whole height, with the timeline under the viewer.

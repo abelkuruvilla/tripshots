@@ -414,6 +414,57 @@ def cmd_cookies(a):
     print(f"\nreel links use: {cur or none}")
 
 
+def cmd_inbox(a):
+    from . import inbox as I
+    if a.action == "setup":
+        root = I.setup()
+        print(f"inbox: {root}\nEach <style>.txt here feeds that style; see docs/making-reels.md (\"Send reels to a style from your phone\") "
+              "phone shortcut. Then `tripshots inbox watch` learns new links as they arrive.")
+        return
+    if a.action == "add":
+        if not a.style or not a.links:
+            raise SystemExit("tripshots inbox add STYLE <reel links...>")
+        name = I.style_name(a.style)
+        got = I.links(" ".join(a.links))
+        if not name or not got:
+            raise SystemExit("give a style name and Instagram reel links")
+        path = I.setup() / f"{name}.txt"
+        with open(path, "a") as f:
+            f.write("".join(f"{u}\n" for u in got))
+        print(f"added {len(got)} link(s) to {path}")
+        return
+    if a.action == "watch":
+        print(I.watch(not a.off, a.every, a.cookies_from_browser, a.cookies))
+        return
+    if a.action == "status":
+        st = I.load_state()
+        print(f"inbox: {I.folder()}\nlast sync: {st.get('last_sync') or 'never'}")
+        for style, urls in I.inboxes().items():
+            print(f"{style}.txt: {len(urls)} link(s), {len(st['added'].get(style, []))} learned from the inbox")
+        for code, f in st["failed"].items():
+            print(f"couldn't download {I.reel_url(code)} ({f['n']}x): {f.get('why', '')[:100]}")
+        print(f"background watch: {'on' if I.plist_path().exists() else 'off'}")
+        return
+    browser = a.cookies_from_browser or (None if a.cookies or os.environ.get("TRIPSHOTS_COOKIES_FILE")
+                                         or os.environ.get("TRIPSHOTS_COOKIES_BROWSER") else "auto")
+    try:
+        rep = I.sync(browser, a.cookies, a.backend, dry_run=a.action == "check")
+    except util.ReelError as e:
+        if a.notify:
+            I.notify(f"Inbox: {e}")
+        raise
+    print(f"inbox: {rep['folder']}")
+    if rep.get("hint"):
+        print(rep["hint"])
+    for style, r in rep["styles"].items():
+        print(f"{style}: {len(r['new'])} new" + (" (would learn)" if a.action == "check" and r["new"] else "")
+              + (f", {len(r['skipped'])} skipped" if r["skipped"] else "")
+              + (f"  ERROR {r['error']}" if r.get("error") else ""))
+        for u in r["new"]:
+            print(f"  + {u}")
+    if a.notify:
+        I.notify(I.summary(rep))
+
 def cmd_results(a):
     from . import results as R
     if a.action == "add":
@@ -753,6 +804,21 @@ def build_parser() -> argparse.ArgumentParser:
         rs.add_argument(f"--{k}", type=float, help=h)
     rs.add_argument("--roots", nargs="*", help="sync: folders with your reels (default: the output folder)")
     rs.set_defaults(fn=cmd_results)
+
+    ib = sub.add_parser("inbox", help="share reels from your phone into a style: each <style>.txt in the inbox "
+                                      "(iCloud Drive/TripShots) feeds that style")
+    ib.add_argument("action", choices=["sync", "check", "add", "status", "setup", "watch"],
+                    help="sync = learn new links; check = only list them; add STYLE LINKS = add links from here; "
+                         "setup = make the folder; watch = sync in the background when it changes (macOS)")
+    ib.add_argument("style", nargs="?", help="add: the style")
+    ib.add_argument("links", nargs="*", help="add: reel links")
+    ib.add_argument("--every", type=float, default=6, metavar="HOURS",
+                    help="watch: also check this often (default 6)")
+    ib.add_argument("--off", action="store_true", help="watch: stop watching")
+    ib.add_argument("--notify", action="store_true", help="show a macOS notification with the result")
+    ib.add_argument("-b", "--backend")
+    add_cookie_args(ib)
+    ib.set_defaults(fn=cmd_inbox)
 
     ck = sub.add_parser("cookies", help="which browsers TripShots can borrow your Instagram login from (for reel links)")
     ck.add_argument("--login", metavar="BROWSER", nargs="?", const="auto",

@@ -157,6 +157,56 @@ right cancel each other out (some recordings) is fixed, so the beat can be heard
 
 Styles learned before this version don't have these: re-learn one with `tripshots learn -n my-vibe` (no links: it uses the reels it was learned from, already downloaded). Instagram usually needs your browser login for downloads, which is what `--cookies-from-browser` is for. You can also pass local `.mp4` files you saved.
 
+## Send reels to a style from your phone
+
+Found a reel you'd like your style to learn from? Share it from Instagram to a TripShots shortcut, and the Mac
+adds it to the style by itself.
+
+How it works: the **style inbox** is a folder in iCloud Drive, `iCloud Drive/TripShots`, with one text file per
+style. A link in `westcoast.txt` goes to the style `westcoast`, and a new file name makes a new style. The Mac
+watches the folder. When a link arrives, it downloads the reel the same way `learn` does, then re-learns the style
+once, with all its new reels. You get a notification when it's done.
+
+**On the Mac (once):**
+
+```bash
+tripshots inbox setup     # makes iCloud Drive/TripShots
+tripshots inbox watch     # learns new links as they arrive (and checks every 6 hours)
+```
+
+The background sync uses the browser login TripShots already uses for reel links (`TRIPSHOTS_COOKIES_BROWSER`,
+or `--cookies-from-browser chrome` on `watch`). The first run may ask for the Keychain. Choose **Always Allow**,
+because later runs have no window to ask in.
+
+**On the iPhone (once), in the Shortcuts app:**
+
+1. Tap **+** to make a new shortcut and name it **Add to TripShots**.
+2. Tap the **ⓘ** button and turn on **Show in Share Sheet**. Under share sheet types, keep only **URLs**.
+3. Add **Choose from Menu**, with one item per style: `westcoast`, `sunsets`, and so on.
+4. Under each item, add **Append to Text File**:
+   - Text: **Shortcut Input**.
+   - File path: `TripShots/westcoast.txt`, with the same name as the menu item.
+   - Turn on **Make New Line**.
+5. Optional: add **Show Notification** "Sent to TripShots".
+
+Then, in Instagram, tap **Share** on a reel, choose **Add to TripShots**, and pick the style. On the Mac it works
+too: `tripshots inbox add westcoast <link>`, or paste the link on a new line of the file.
+
+`tripshots inbox check` lists what would be learned, without downloading anything. `inbox status` shows each
+file, what it added and any reel that couldn't be downloaded. A reel that is private or deleted is tried three
+times, then skipped; the others are still learned. `inbox watch --off` stops the watch. The log is
+`~/.tripshots/inbox.log`.
+
+Good to know:
+
+- **Your files stay as they are.** The inbox only reads them, so removing a line doesn't remove a reel from a
+  style. To drop a reel, edit `learned_from` in the style and run `tripshots learn -n NAME`.
+- **Hand-made styles are left alone.** A file named after a built-in style that wasn't learned from reels, such
+  as `travel-diary`, is not used, because learning would replace that style.
+- **Saving a reel in Instagram isn't enough.** Instagram has no public way to read your Saved list, so a reel
+  only reaches TripShots through the share sheet.
+- **Learning costs a little AI time.** Each sync reads only the new reels; the ones already read are cached.
+
 ## Checks after every render
 
 After each render TripShots checks the file the way an editor would before posting, and logs what failed:

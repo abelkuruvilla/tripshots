@@ -19,6 +19,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
 | [`music`](#music) | download the sound of an Instagram reel (or any yt-dlp link) |
 | [`results`](#results) | record how your reels did on Instagram; learn what works for your audience |
+| [`inbox`](#inbox) | share reels from your phone into a style: each <style>.txt in the inbox (iCloud Drive/TripShots) feeds that style |
 | [`cookies`](#cookies) | which browsers TripShots can borrow your Instagram login from (for reel links) |
 | [`scan`](#scan) | analyze + score footage and list the best shots |
 | [`frame`](#frame) | pop-out frame stills: the subject steps out of a framed photo |
@@ -467,6 +468,37 @@ options:
   --likes LIKES         likes
   --comments COMMENTS   comments
   --roots [ROOTS ...]   sync: folders with your reels (default: the output folder)
+```
+
+## inbox
+
+```text
+usage: tripshots inbox [-h] [--every HOURS] [--off] [--notify] [-b BACKEND]
+                       [--cookies-from-browser BROWSER] [--cookies FILE]
+                       {sync,check,add,status,setup,watch} [style] [links ...]
+
+positional arguments:
+  {sync,check,add,status,setup,watch}
+                        sync = learn new links; check = only list them; add STYLE LINKS = add
+                        links from here; setup = make the folder; watch = sync in the background
+                        when it changes (macOS)
+  style                 add: the style
+  links                 add: reel links
+
+options:
+  -h, --help            show this help message and exit
+  --every HOURS         watch: also check this often (default 6)
+  --off                 watch: stop watching
+  --notify              show a macOS notification with the result
+  -b, --backend BACKEND
+
+instagram login (most reels need it):
+  --cookies-from-browser BROWSER
+                        auto | chrome | safari | brave | arc | firefox | edge | vivaldi | opera:
+                        the browser where you're logged in to Instagram (auto = the first one that
+                        is; 'chrome:Profile 1' for another profile; `tripshots cookies` checks
+                        them). Default: $TRIPSHOTS_COOKIES_BROWSER
+  --cookies FILE        cookies.txt exported from your browser (alternative)
 ```
 
 ## cookies

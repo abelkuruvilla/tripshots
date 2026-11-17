@@ -161,3 +161,32 @@ def test_the_copywriter_is_told_which_shot_the_sunset_belongs_to():
 def test_a_line_trails_off_with_three_dots():
     assert ai.clean_line("POV: Someone asks what I dream about....") == "POV: Someone asks what I dream about..."
     assert ai.clean_line("wait for it….") == "wait for it..." and ai.clean_line("One. Two... three") == "One. Two... three"
+
+
+def test_every_wording_of_a_spent_limit_is_recognised():
+    for msg in ("You've hit your 5-hour limit · resets 1:10am (America/Chicago)",
+                "You've hit your session limit · resets 7:20am (America/Chicago)",
+                "Claude AI usage limit reached|1712345678", "Opus weekly limit reached ∙ resets Mon 9am",
+                "5-hour limit reached · resets 3pm", "Your limit will reset at 4pm"):
+        assert ai.is_limit(msg), msg
+    for msg in ("claude CLI error: overloaded", "Invalid API key · Please run /login", "the image limit is 20 files"):
+        assert not ai.is_limit(msg), msg
+
+
+def test_a_spent_claude_hands_over_to_minimax_once_even_from_several_threads(monkeypatch):
+    import threading
+    reply = {"is_error": True, "result": "You've hit your 5-hour limit · resets 1:10am (America/Chicago)"}
+    gate = threading.Barrier(3)
+
+    def answer(cmd):
+        gate.wait(timeout=5)   # three sheets asked at once, all refused together
+        return {"rc": 1, "stdout": json.dumps(reply)}
+    run, calls = _fake_run(answer)
+    monkeypatch.setattr(ai, "run", run)
+    mm = _B("minimax")
+    c = ai.Chain([ai.ClaudeCLI(), mm])
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(3) as ex:
+        got = list(ex.map(lambda k: c.ask(f"sheet {k}"), range(3)))
+    assert got == ["minimax says hi"] * 3 and c.name == "minimax" and len(calls) == 3 and mm.calls == 3
+    assert c.ask("next") == "minimax says hi" and len(calls) == 3   # Claude isn't asked again this run

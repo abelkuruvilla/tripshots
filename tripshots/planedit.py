@@ -4,7 +4,7 @@ Segments are numbered from 1, as on the storyboard. Shot content moves between b
 timing (dur, out_start, level, the transition into the next slot) stays where it is.
 
 ops:
-  {"op": "swap", "segment": 3, "shot_id": "S012"}        put another shot in slot 3
+  {"op": "swap", "segment": 3, "shot_id": "S012"}        put another shot in slot 3 ("in": 12.4 = play from there)
   {"op": "move", "from": 5, "to": 1}                     move slot 5's shot to the front
   {"op": "exchange", "a": 2, "b": 6}                     swap the shots of two slots
   {"op": "text", "type": "hook", "text": "Old Faithful at dawn"}   set (or add) hook / location / cta text
@@ -90,6 +90,21 @@ def _plain_cut(segs: list, i: int) -> None:
     if segs[i].pop("incam_out", None) is not None and i + 1 < len(segs):
         segs[i + 1].pop("incam_in", None)
     segs[i].pop("incam_in", None)
+
+
+def _set_in(seg: dict, sh: dict, shots: dict, at) -> None:
+    """Where a clip starts playing in its slot, chosen by hand: anywhere in the whole file (a long file is cut into
+    several shots, and the part wanted may run past this one's edges)."""
+    if seg.get("kind") != "video":
+        return
+    from .clippick import file_length
+    length = file_length(shots, sh)
+    use = float(seg["dur"]) * float(seg.get("speed", 1.0))
+    if use > length:   # the slot is longer than the whole clip: a gentle slow-down, as when the planner fits it
+        seg["speed"] = round(max(0.2, length / float(seg["dur"])), 3)
+        use = float(seg["dur"]) * seg["speed"]
+    seg["in"] = round(max(0.0, min(max(0.0, length - use), float(at))), 3)
+    seg["track"] = False
 
 
 def _slot(plan, n) -> int:
@@ -381,6 +396,8 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             e, _ = _shot_fields(sh, segs[i]["dur"], segs[i].get("level", "mid"), style, i)
             _put(segs[i], e)
             _plain_cut(segs, i)
+            if ed.get("in") is not None:
+                _set_in(segs[i], sh, shots, ed["in"])
             regrade = True
             done.append(f"slot {i + 1} -> {sh['id']}")
         elif op in ("move", "exchange"):
@@ -585,10 +602,7 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             sh = shots.get(s.get("shot_id"))
             if s.get("kind") != "video" or not sh:
                 raise ReelError(f"slot {i + 1} isn't a video clip")
-            use = float(s["dur"]) * float(s.get("speed", 1.0))
-            lo, hi = float(sh["t0"]), max(float(sh["t0"]), float(sh["t1"]) - use)
-            s["in"] = round(max(lo, min(hi, float(ed["in"]))), 3)
-            s["track"] = False
+            _set_in(s, sh, shots, ed["in"])
             done.append(f"slot {i + 1} plays from {s['in']:.2f}s of its clip")
         elif op == "split":
             i = _slot(plan, ed["segment"])
@@ -832,6 +846,8 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             e, _ = _shot_fields(sh, dur, "mid", style, after)
             new = {**e, "dur": dur, "level": "mid", "drop": False, "trans_out": None, "trans_dur": 0.0,
                    "trans_params": {}, "role": None}
+            if ed.get("in") is not None:
+                _set_in(new, sh, shots, ed["in"])
             at = sum(float(s["dur"]) for s in segs[:after])
             segs.insert(after, new)
             _shift_text(plan, at, dur)
@@ -1010,10 +1026,16 @@ def candidates(plan_path: Path, top: int = 30) -> list[dict]:
     from .insight import burned_in
     from .planner import _quality
     out = []
-    for s in sorted(_shots(plan).values(), key=lambda s: -_quality(s)):
+    shots = _shots(plan)
+    lens: dict[str, float] = {}
+    for s in shots.values():
+        if s.get("kind") == "video":
+            lens[s["src"]] = max(lens.get(s["src"], 0.0), float(s.get("t1") or 0))
+    for s in sorted(shots.values(), key=lambda s: -_quality(s)):
         a = s.get("ai", {})
         out.append({"id": s["id"], "used": s["id"] in used, "kind": s["kind"], "score": round(_quality(s), 1),
                     "len_s": round(s["t1"] - s["t0"], 1) if s["kind"] == "video" else None,
+                    "file_s": round(lens.get(s["src"], 0), 1) if s["kind"] == "video" else None,
                     "file": Path(s["src"]).name, "when": (s.get("created") or "")[:16], "note": a.get("note", ""),
                     "tags": a.get("tags", [])[:5], "thumb": s.get("thumb"), "caption": a.get("caption", ""),
                     "vibes": list((a.get("vibes") or {}))[:2], "size": a.get("shot_size"), "angle": a.get("angle"),

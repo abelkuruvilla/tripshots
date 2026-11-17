@@ -86,6 +86,7 @@ def list_reels(limit: int = 400) -> list[dict]:
 
 def reel_detail(plan: Path) -> dict:
     """A reel with its timeline: every slot's time, role, shot (with its thumbnail), transition, and the words."""
+    from .clippick import file_length
     from .planedit import _shots
     p = read_json(plan)
     shots = _shots(p)
@@ -97,7 +98,7 @@ def reel_detail(plan: Path) -> dict:
                      "thumb": sh.get("thumb"), "file": Path(sh.get("src") or s.get("src") or "").name,
                      "note": (sh.get("ai") or {}).get("note"), "transition": s.get("trans_out"),
                      "speed": s.get("speed"), "panel": s.get("panel"), "ramp": s.get("ramp"),
-                     "in": s.get("in"), "clip": [sh.get("t0"), sh.get("t1")] if sh.get("kind") == "video" else None,
+                     "in": s.get("in"), "clip": [0.0, file_length(shots, sh)] if sh.get("kind") == "video" else None,
                      "layout": s.get("layout"), "subject_x": s.get("subject_x"), "kb": s.get("kb"),
                      "trans_dur": s.get("trans_dur"), "adjust": s.get("adjust") or {},
                      "graded": bool(s.get("lut")) and not s.get("no_grade"), "no_grade": bool(s.get("no_grade")),
@@ -629,6 +630,19 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/candidates":
                     from .planedit import candidates
                     return self._json(candidates(_plan(arg("plan")), int(arg("top", "40"))))
+                if path == "/api/shots":   # every shot of the reel's footage, searched and paged (clippick.py)
+                    from .clippick import browse
+                    return self._json(browse(_plan(arg("plan")), arg("q", ""), arg("kind", "all"), arg("sort", "best"),
+                                             int(arg("offset", "0")), int(arg("limit", "60")), arg("group", "1") == "1"))
+                if path == "/api/clip":   # a long clip for the trim step: its length, a strip of its frames
+                    from .clippick import clip
+                    slot = arg("slot")
+                    return self._json(clip(_plan(arg("plan")), arg("shot"), int(slot) if slot else None,
+                                           float(arg("dur")) if arg("dur") else None))
+                if path == "/api/clip/play":   # the chosen part of a clip, small enough for the app's player
+                    from .clippick import window
+                    return self._file(window(_plan(arg("plan")), arg("shot"), float(arg("at", "0")),
+                                             float(arg("need", "1"))), trusted=True)
                 if path == "/api/jobs":
                     return self._json(jobs.recent(int(arg("n", "20"))))
                 m = re.fullmatch(r"/api/jobs/([\w-]+)", path)
@@ -683,6 +697,12 @@ class Handler(BaseHTTPRequestHandler):
                                                             bool(b.get("diagnostics", True))))
                 if path == "/api/ai/test":
                     return self._json(ai_test(str(b.get("provider"))))
+                if path == "/api/clip/ai":   # the AI chooses which part of the clip plays in the slot
+                    from .clippick import ai_window
+                    slot = b.get("slot")
+                    return self._json(ai_window(_plan(str(b.get("plan"))), str(b.get("shot")),
+                                                int(slot) if slot else None,
+                                                float(b["dur"]) if b.get("dur") else None))
                 if path == "/api/caption":
                     plan = _plan(str(b.get("plan")))
                     Path(f"{_base(plan)}.caption.txt").write_text(str(b.get("text") or ""))

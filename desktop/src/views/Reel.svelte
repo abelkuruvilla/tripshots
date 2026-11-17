@@ -14,6 +14,7 @@
   import SoundPanel from "./reel/SoundPanel.svelte";
   import ColourPanel from "./reel/ColourPanel.svelte";
   import CarouselPanel from "./reel/CarouselPanel.svelte";
+  import ClipTrim from "./reel/ClipTrim.svelte";
 
   let video = $state(null);
   let bust = $state(Date.now());
@@ -21,6 +22,31 @@
   let cands = $state([]);
   let kindShown = $state("all"); // the drawer shows clips, photos or both
   let candQ = $state("");
+  // "suggested" = the best shots of the footage; "all" = every shot of it, searched and paged by the engine
+  let source = $state("suggested");
+  let sortBy = $state("best");
+  let all = $state({ total: 0, items: [], loading: false });
+  let trim = $state(null); // a long clip chosen: which part of it plays (ClipTrim)
+  let allTimer;
+  async function loadAll(more = false) {
+    if (!reel) return;
+    const offset = more ? all.items.length : 0;
+    all.loading = true;
+    const q = new URLSearchParams({ plan: reel.plan, q: candQ, kind: kindShown, sort: sortBy, offset, limit: 60 });
+    try {
+      const r = await api(`/api/shots?${q}`);
+      all = { total: r.total, items: more ? [...all.items, ...r.items] : r.items, loading: false };
+    } catch {
+      all.loading = false;
+    }
+  }
+  $effect(() => {
+    // search again when the words, the kind or the order change (the words after a short pause)
+    const key = `${source}|${candQ}|${kindShown}|${sortBy}`;
+    if (!picking || source !== "all" || !key) return;
+    clearTimeout(allTimer);
+    allTimer = setTimeout(() => loadAll(), candQ ? 250 : 0);
+  });
   let shownCands = $derived(cands.filter((c) => (kindShown === "all" || c.kind === kindShown)
     && (!candQ || candQ.toLowerCase().split(/\s+/).every((w) => `${c.caption} ${c.note} ${c.file} ${(c.tags || []).join(" ")} ${(c.vibes || []).join(" ")} ${c.size || ""} ${c.angle || ""}`.toLowerCase().includes(w)))));
   let still = $state(""); // the edited frame's address
@@ -179,38 +205,58 @@
     ed.splitAt = Math.max(0, Math.min(1, ed.splitAt + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 0.1 : 0.02)));
   }
 
+  function openDrawer(p) {
+    picking = p;
+    trim = null;
+    source = "suggested";
+  }
+  // the part of the selected clip that plays, from the Shot tab: straight to the trim step
+  function choosePart(seg) {
+    picking = { mode: "part", seg };
+    trim = { shot: { id: seg.shot_id, file: seg.file }, start: seg.in };
+  }
   async function pick(seg) {
-    picking = { mode: "swap", seg };
+    openDrawer({ mode: "swap", seg });
     kindShown = seg.kind === "video" ? "video" : "all"; // a clip's slot: clips first
     cands = [];
     cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
   // any panel can ask for a shot from this trip (the carousel's slides): the same drawer, its own title
   async function pickShot(title, note, done) {
-    picking = { mode: "custom", title, note, done };
+    openDrawer({ mode: "custom", title, note, done });
     cands = [];
     cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
   async function addOnTop() {
-    picking = { mode: "pip" };
+    openDrawer({ mode: "pip" });
     cands = [];
     cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
   async function insertAfter(slot) {
-    picking = { mode: "insert", after: slot };
+    openDrawer({ mode: "insert", after: slot });
     cands = [];
     cands = await api(`/api/candidates?plan=${encodeURIComponent(reel.plan)}&top=200`);
   }
-  async function choose(shot) {
+  // a clip longer than the slot: choose which part plays before it goes in
+  const slotLen = (p) => (p.mode === "swap" ? p.seg.dur : p.mode === "insert" ? 1.5 : null);
+  async function choose(shot, at = null) {
     const p = picking;
+    const len = slotLen(p);
+    if (at === null && len && shot.kind === "video" && (shot.file_s ?? shot.len_s ?? 0) > len + 0.3) {
+      trim = { shot };
+      return;
+    }
     picking = null;
+    trim = null;
+    const from = at === null ? {} : { in: at };
+    if (p.mode === "part") return void (await edit({ op: "slip", segment: p.seg.slot, in: at }));
     if (p.mode === "custom") return p.done(shot);
-    if (p.mode === "swap") await edit({ op: "swap", segment: p.seg.slot, shot_id: shot.id });
+    if (p.mode === "swap") await edit({ op: "swap", segment: p.seg.slot, shot_id: shot.id, ...from });
     else if (p.mode === "pip") {
       const res = await edit({ op: "pip_add", shot_id: shot.id, start: frames(Math.max(0, ed.now)), dur: 2 });
       if (res) select({ kind: "pip", index: ed.reel.pips.length });
     } else {
-      const res = await edit({ op: "insert", after: p.after, shot_id: shot.id, dur: 1.5 });
+      const res = await edit({ op: "insert", after: p.after, shot_id: shot.id, dur: 1.5, ...from });
       if (res) select({ kind: "clip", slot: p.after + 1 });
     }
   }
@@ -367,7 +413,7 @@
           {/each}
         </div>
         <div class="pane" id="tabpanel" role="tabpanel" aria-labelledby={`tab-${ed.tab}`}>
-          {#if ed.tab === "shot"}<ShotPanel onpick={pick} oninsert={insertAfter} onontop={addOnTop} />
+          {#if ed.tab === "shot"}<ShotPanel onpick={pick} oninsert={insertAfter} onontop={addOnTop} onpart={choosePart} />
           {:else if ed.tab === "text"}<TextPanel />
           {:else if ed.tab === "colour"}<ColourPanel />
           {:else if ed.tab === "sound"}<SoundPanel />
@@ -388,31 +434,50 @@
   <div class="overlay" onclick={(e) => e.target === e.currentTarget && (picking = null)}>
     <div class="drawer" role="dialog" aria-modal="true" aria-label="Choose a shot" tabindex="-1">
       <div class="row">
-        <h2>{picking.mode === "custom" ? picking.title : picking.mode === "swap" ? `Replace shot ${picking.seg.slot}` : picking.mode === "pip" ? "Put a shot on top" : `Add a shot after shot ${picking.after}`}</h2>
-        {#if picking.mode === "swap"}<span class="meta">{tc(picking.seg.dur)}</span>{/if}
+        <h2>{picking.mode === "custom" ? picking.title : picking.mode === "part" ? `The part of shot ${picking.seg.slot} that plays` : picking.mode === "swap" ? `Replace shot ${picking.seg.slot}` : picking.mode === "pip" ? "Put a shot on top" : `Add a shot after shot ${picking.after}`}</h2>
+        {#if picking.mode === "swap" || picking.mode === "part"}<span class="meta">{tc(picking.seg.dur)}</span>{/if}
         <div class="spacer"></div>
         <button class="btn ghost icon" onclick={() => (picking = null)} aria-label="Close"><Icon name="x" /></button>
       </div>
-      <p class="muted">{picking.mode === "custom" ? picking.note : picking.mode === "swap" ? "The best shots of this reel's footage. The slot keeps its length and its place on the beat"
+      {#if trim}
+        <ClipTrim plan={reel.plan} shot={trim.shot} slot={picking.seg?.slot ?? null} dur={picking.mode === "insert" ? 1.5 : null}
+                  start={trim.start ?? null} back={picking.mode === "part" ? "Close" : "All shots"}
+                  onback={() => (picking.mode === "part" ? (picking = null) : (trim = null))}
+                  onuse={(at) => choose(trim.shot, at)} />
+      {:else}
+      <p class="muted">{picking.mode === "custom" ? picking.note : picking.mode === "swap" ? `${source === "all" ? "Every shot of this reel's footage" : "The best shots of this reel's footage"}. The slot keeps its length and its place on the beat; for a longer clip you choose the part that plays next`
         : picking.mode === "pip" ? "It appears in a corner at the playhead for 2 s; move it, size it and set its length in the Shot tab"
         : "It comes in for 1.5 s; change its length in the Shot tab"}</p>
+      <div class="row cfilter">
+        <div class="seg" role="radiogroup" aria-label="Which shots">
+          {#each [["suggested", "Suggested"], ["all", "All footage"]] as [id, label]}
+            <button role="radio" aria-checked={source === id} onclick={() => (source = id)}>{label}</button>
+          {/each}
+        </div>
+        {#if source === "all"}
+          <select bind:value={sortBy} aria-label="Order">
+            <option value="best">Best first</option><option value="time">When filmed</option><option value="file">File name</option>
+          </select>
+        {/if}
+      </div>
       <div class="row cfilter">
         <div class="seg" role="radiogroup" aria-label="Show">
           {#each [["all", "All"], ["video", "Clips"], ["photo", "Photos"]] as [id, label]}
             <button role="radio" aria-checked={kindShown === id} onclick={() => (kindShown = id)}>{label}
-              <span class="meta">{id === "all" ? cands.length : cands.filter((c) => c.kind === id).length}</span></button>
+              {#if source === "suggested"}<span class="meta">{id === "all" ? cands.length : cands.filter((c) => c.kind === id).length}</span>{/if}</button>
           {/each}
         </div>
         <input type="search" placeholder="Find: bison, aerial, serene, close…" bind:value={candQ} aria-label="Find a shot" />
       </div>
-      {#if !cands.length}<div class="empty"><span class="spin"></span></div>
-      {:else if !shownCands.length}<p class="quiet">No {kindShown === "video" ? "clips" : kindShown === "photo" ? "photos" : "shots"} match</p>{/if}
+      {#if source === "all"}<p class="meta">{all.loading && !all.items.length ? "Looking…" : `${all.total} clip${all.total === 1 ? "" : "s"} and photo${all.total === 1 ? "" : "s"} of this trip's footage`}</p>{/if}
+      {#if source === "suggested" && !cands.length}<div class="empty"><span class="spin"></span></div>
+      {:else if (source === "suggested" ? shownCands : all.items).length === 0 && !all.loading}<p class="quiet">No {kindShown === "video" ? "clips" : kindShown === "photo" ? "photos" : "shots"} match</p>{/if}
       <div class="cands">
-        {#each shownCands as c (c.id)}
-          <button class="cand" onclick={() => choose(c)} disabled={c.used && picking.mode === "swap"}>
+        {#each source === "suggested" ? shownCands : all.items as c (c.id)}
+          <button class="cand" onclick={() => choose(c)} disabled={c.used && picking.mode === "swap" && source === "suggested"}>
             <span class="pic">
               {#if c.thumb}<img src={media(c.thumb)} alt="" loading="lazy" />{/if}
-              {#if c.kind === "video"}<span class="vbadge"><Icon name="play" size={10} /> {c.len_s}s</span>{:else}<span class="vbadge photo">Photo</span>{/if}
+              {#if c.kind === "video"}<span class="vbadge"><Icon name="play" size={10} /> {c.file_s ?? c.len_s}s</span>{:else}<span class="vbadge photo">Photo</span>{/if}
               {#if c.words}<span class="vbadge warn" title="Words are drawn on this picture (an edited export or a screenshot)">Text on it</span>{/if}
             </span>
             <span class="row"><span class="tc score">{c.score.toFixed(1)}</span>{#if c.used}<span class="meta">in this reel</span>{/if}</span>
@@ -421,6 +486,10 @@
           </button>
         {/each}
       </div>
+      {#if source === "all" && all.items.length < all.total}
+        <button class="btn ghost more" onclick={() => loadAll(true)} disabled={all.loading}>{all.loading ? "Loading" : `Show more (${all.total - all.items.length} left)`}</button>
+      {/if}
+      {/if}
     </div>
   </div>
 {/if}
@@ -508,6 +577,8 @@
   .chips2 { display: flex; flex-wrap: wrap; gap: 3px; }
   .vchip { font-size: 10px; line-height: 14px; padding: 0 5px; border-radius: 7px; background: var(--raised); color: var(--text-2); }
   .cfilter { gap: 12px; }
+  .more { align-self: center; }
+  .cfilter select { width: auto; flex: none; min-height: 32px; height: 32px; padding-block: 0; }
   .cfilter input { flex: 1; min-width: 0; min-height: 32px; height: 32px; }
   .score { font-size: 13px; }
   .note { font-size: 12px; line-height: 16px; color: var(--text-3); display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

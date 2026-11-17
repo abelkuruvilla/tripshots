@@ -170,3 +170,73 @@ def test_colour_a_look_for_the_reel_and_corrections_per_shot(tmp_path, monkeypat
     from tripshots.util import ReelError
     with pytest.raises(ReelError):
         planedit.apply(p, [{"op": "grade", "look": "no-such-look"}])
+
+
+def _long_clip_plan(tmp_path):
+    """A 40 s file cut into four shots, plus photos; slot 1 is a 1.2 s photo slot."""
+    p = _plan(tmp_path)
+    shots = json.loads((tmp_path / "shots_scored.json").read_text())
+    for k in range(4):
+        shots.append({"id": f"V{k}", "kind": "video", "src": "/x/long.mp4", "t0": 10.0 * k, "t1": 10.0 * (k + 1),
+                      "dur": 10.0, "fps": 30, "w": 1920, "h": 1080, "created": f"2026-10-0{k + 1}T10:00",
+                      "ai": {"score": 7, "caption": "bison crossing the road" if k == 2 else "a road"},
+                      "metrics": {"pan": 0.0, "activity": 0.0}})
+    (tmp_path / "shots_scored.json").write_text(json.dumps(shots))
+    return p
+
+
+def test_every_shot_can_be_found_and_paged(tmp_path):
+    from tripshots.clippick import browse
+    p = _long_clip_plan(tmp_path)
+    r = browse(p, limit=3, group=False)
+    assert r["total"] == 9 and len(r["items"]) == 3
+    assert len(browse(p, offset=3, limit=60, group=False)["items"]) == 6
+    hit = browse(p, q="bison", kind="video")
+    assert [i["id"] for i in hit["items"]] == ["V2"] and hit["items"][0]["file_s"] == 40.0
+    assert [i["id"] for i in browse(p, kind="video", sort="time", group=False)["items"]] == ["V0", "V1", "V2", "V3"]
+    assert browse(p, kind="video")["total"] == 1     # one card per file: the part is chosen in the trim step
+    assert browse(p, kind="photo")["total"] == 5
+    assert planedit.candidates(p, top=20)[0].get("file_s") is None   # photos have no length
+
+
+def test_the_part_that_plays_can_be_anywhere_in_the_file(tmp_path, monkeypatch):
+    import tripshots.text as T
+    monkeypatch.setattr(T, "storyboard", lambda plan, by_id, out: out)
+    p = _long_clip_plan(tmp_path)
+    # V0 covers 0-10 s, but the part chosen is at 33 s: past this shot's edge, inside the file
+    planedit.apply(p, [{"op": "swap", "segment": 1, "shot_id": "V0", "in": 33.0}])
+    s = json.loads(p.read_text())["segments"][0]
+    assert s["shot_id"] == "V0" and s["in"] == 33.0 and s["track"] is False
+    planedit.apply(p, [{"op": "slip", "segment": 1, "in": 99.0}])        # never past the end of the file
+    s = json.loads(p.read_text())["segments"][0]
+    assert s["in"] == round(40.0 - s["dur"] * s["speed"], 3)
+    planedit.apply(p, [{"op": "insert", "after": 0, "shot_id": "V3", "dur": 1.5, "in": 2.0}])
+    assert json.loads(p.read_text())["segments"][0]["in"] == 2.0
+
+
+def test_the_ai_chooses_the_part_and_a_bad_answer_falls_back(tmp_path, monkeypatch):
+    from pathlib import Path
+    from tripshots import ai, clippick
+    p = _long_clip_plan(tmp_path)
+    monkeypatch.setattr(clippick, "filmstrip", lambda sh, length, n=14: None)
+    monkeypatch.setattr(clippick, "_sheet", lambda sh, length, n=12: (Path("/x/sheet.jpg"), []))
+    seen = {}
+
+    class Fake(ai.Backend):
+        name = "fake"
+
+        def __init__(self, answer):
+            self.answer = answer
+
+        def ask(self, prompt, images=None, max_tokens=4000):
+            seen["prompt"] = prompt
+            return self.answer
+    monkeypatch.setattr(ai, "get_backend", lambda name=None: Fake('{"start": 21.5, "why": "the bison steps out"}'))
+    r = clippick.ai_window(p, "V0", slot=1)
+    assert r == {"in": 21.5, "by": "fake", "why": "the bison steps out"}
+    assert "1.00 s" in seen["prompt"] and "40.0 s clip" in seen["prompt"]
+    monkeypatch.setattr(ai, "get_backend", lambda name=None: Fake("no idea"))
+    assert clippick.ai_window(p, "V0", slot=1)["by"] == "rules"
+    monkeypatch.setattr(ai, "get_backend", lambda name=None: None)
+    r = clippick.ai_window(p, "V0", slot=1)
+    assert r["by"] == "rules" and 0 <= r["in"] <= 39

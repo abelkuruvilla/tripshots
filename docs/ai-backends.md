@@ -7,12 +7,33 @@ Pick one:
 * **Claude subscription (default).** Install [Claude Code](https://docs.claude.com/en/docs/claude-code) and run `claude` once to log in. TripShots runs it headless, so shot judging uses your Pro/Max plan and needs no API key.
 * **MiniMax.** Put `MINIMAX_API_KEY=...` in `~/.tripshots/.env` and use `--backend minimax`. It uses MiniMax's Anthropic-compatible endpoint with `MiniMax-M3`, which accepts images. The M2.x models are text-only and can't judge footage.
 * **Claude API key.** Set `ANTHROPIC_API_KEY` and use `--backend api`.
+* **Other providers.** Any of these works with a key (most speak the same OpenAI-style protocol, so one client
+  serves them all):
+
+  | Provider | `--backend` | Key | Model setting (default) | Pictures |
+  |---|---|---|---|---|
+  | OpenAI | `openai` | `OPENAI_API_KEY` | `TRIPSHOTS_OPENAI_MODEL` (`gpt-5`) | yes |
+  | Google Gemini | `gemini` | `GEMINI_API_KEY` | `TRIPSHOTS_GEMINI_MODEL` (`gemini-flash-latest`) | yes |
+  | xAI Grok | `xai` | `XAI_API_KEY` | `TRIPSHOTS_XAI_MODEL` (`grok-4`) | yes |
+  | Mistral | `mistral` | `MISTRAL_API_KEY` | `TRIPSHOTS_MISTRAL_MODEL` (`mistral-medium-latest`) | yes |
+  | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `TRIPSHOTS_OPENROUTER_MODEL` (`openrouter/auto`) | yes |
+  | DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | `TRIPSHOTS_DEEPSEEK_MODEL` (`deepseek-chat`) | no |
+  | Ollama (on this computer) | `ollama` | none; `OLLAMA_BASE_URL` | `TRIPSHOTS_OLLAMA_MODEL` (choose one, e.g. `qwen2.5vl`) | with a vision model |
+
+  An AI that can't look at pictures still writes words and chooses effects; the next AI in the order judges the
+  footage. The list lives in `tripshots/aiproviders.py`.
 * **None.** `--backend none` uses only technical measures (sharpness, exposure, shake). It's quick and free, but has no taste.
 
 Check everything with `tripshots doctor`, or in the desktop app under Settings > AI, which walks through each one
-(install and log in to Claude Code from a Terminal it opens, paste a MiniMax, Anthropic or Gemini key) and tests it.
+(install and log in to Claude Code from a Terminal it opens, paste a key, choose a model) and tests it.
 
-**Automatic mode** (`TRIPSHOTS_BACKEND=auto`, the default) uses every AI you have set up, in this order: Claude Code (if installed and logged in), then MiniMax (if `MINIMAX_API_KEY` is set), then the Anthropic API (if `ANTHROPIC_API_KEY` is set). If one stops working during a run (logged out, key refused, out of credit), the next one takes over for the rest of the run, and each verdict is stored under the AI that gave it. Naming a backend (`-b claude-cli`, `-b minimax`, `-b api`) uses only that one. `tripshots doctor` shows the order.
+**Automatic mode** (`TRIPSHOTS_BACKEND=auto`, the default) uses every AI you have set up, in the order you choose
+(Settings > AI: arrows move one up or down, a switch keeps one out). Saved as `TRIPSHOTS_AI_ORDER` (a comma list;
+AIs it doesn't name come after, in the default order: Claude Code, Claude API, MiniMax, OpenAI, Gemini, xAI, Mistral,
+OpenRouter, DeepSeek, Ollama) and `TRIPSHOTS_AI_OFF`. If one stops working during a run (logged out, key refused,
+usage limit or quota spent, too busy for too long, can't be reached), the next one takes over for the rest of the
+run, and each verdict is stored under the AI that gave it. Naming a backend (`-b openai`, `-b claude-cli`, ...) uses
+only that one. `tripshots doctor` shows the order.
 
 TripShots checks that Claude Code is logged in before it starts (`claude auth status`, no request sent) and stops with instructions if it isn't, instead of failing on every contact sheet. If the login expires mid-run, it stops asking at the first refusal. `tripshots doctor` shows the login status.
 

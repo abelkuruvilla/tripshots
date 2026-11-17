@@ -20,6 +20,7 @@ from .util import ReelError, debug, log, run, which
 
 class Backend:
     name = "none"
+    vision = True   # can look at pictures
 
     def ask(self, prompt: str, images: list[Path] | None = None, max_tokens: int = 4000) -> str:
         raise NotImplementedError
@@ -149,6 +150,83 @@ class AnthropicAPI(Backend):
         return "".join(getattr(b, "text", "") for b in msg.content)
 
 
+class OpenAIChat(Backend):
+    """Any OpenAI-style chat-completions service: OpenAI, Gemini, xAI, Mistral, OpenRouter, DeepSeek, Ollama
+    (aiproviders.PROVIDERS). Standard library only. A refused key stops it; a spent quota or a limit that doesn't
+    clear after a few tries hands over to the next AI."""
+
+    RETRIES = (2.0, 6.0, 15.0)   # waits after a busy (429/5xx) answer before trying again
+
+    def __init__(self, pid: str):
+        from . import aiproviders as P
+        meta = P.PROVIDERS[pid]
+        self.name, self.vision = pid, bool(meta.get("vision", True))
+        self.model, self.base, self.key = P.model(pid), P.base(pid), P.key(pid)
+        self.tokens = meta.get("tokens", "max_tokens")
+        self.think = int(meta.get("think", 0))
+        if not self.model:
+            raise ReelError(f"{meta['name']}: choose a model first (Settings → AI)")
+        if meta.get("key_env") and not self.key:
+            raise AIAuthError(f"{meta['name']}: no API key (Settings → AI)")
+        self.broken: str | None = None
+        self.limited = False
+
+    def ask(self, prompt, images=None, max_tokens=4000):
+        import time
+        import urllib.error
+        import urllib.request
+        if self.broken:
+            raise (AILimitError if self.limited else AIAuthError)(self.broken)
+        if images and not self.vision:
+            raise ReelError(f"{self.name} can't look at pictures")
+        content: list[dict] = [{"type": "text", "text": prompt}]
+        for p in images or []:
+            data = base64.b64encode(Path(p).read_bytes()).decode()
+            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{data}"}})
+        body = {"model": self.model, "messages": [{"role": "user", "content": content if images else prompt}],
+                self.tokens: max_tokens + self.think}
+        head = {"Content-Type": "application/json", "User-Agent": "TripShots"}
+        if self.key:
+            head["Authorization"] = f"Bearer {self.key}"
+        req = urllib.request.Request(f"{self.base}/chat/completions", json.dumps(body).encode(), head)
+        for attempt in range(len(self.RETRIES) + 1):
+            try:
+                with urllib.request.urlopen(req, timeout=600) as r:
+                    data = json.loads(r.read().decode("utf-8", "replace"))
+                break
+            except urllib.error.HTTPError as e:
+                msg = e.read().decode("utf-8", "replace")[:400]
+                low = msg.lower()
+                if e.code in (401, 403):
+                    self.broken = f"{self.name}: the key was refused ({' '.join(msg.split())[:120]})"
+                    raise AIAuthError(self.broken)
+                if e.code == 402 or any(w in low for w in ("insufficient_quota", "quota", "credit", "billing")) \
+                        or is_limit(msg):
+                    self.broken, self.limited = f"{self.name}: the usage limit is reached ({' '.join(msg.split())[:120]})", True
+                    raise AILimitError(self.broken)
+                if e.code in (429, 500, 502, 503, 504, 529) and attempt < len(self.RETRIES):
+                    time.sleep(self.RETRIES[attempt])
+                    continue
+                if e.code == 429:   # still too many requests after waiting: let the next AI carry on
+                    self.broken, self.limited = f"{self.name}: too many requests for now", True
+                    raise AILimitError(self.broken)
+                raise ReelError(f"{self.name} error {e.code}: {' '.join(msg.split())[:300]}")
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+                if attempt < len(self.RETRIES):
+                    time.sleep(self.RETRIES[attempt])
+                    continue
+                # can't be reached at all (offline, Ollama not running): the next AI takes over
+                self.broken = f"{self.name} can't be reached ({getattr(e, 'reason', e)})"
+                raise AIAuthError(self.broken)
+        msg = ((data.get("choices") or [{}])[0].get("message") or {})
+        text = msg.get("content")
+        if isinstance(text, list):   # (some services answer in parts)
+            text = "".join(c.get("text", "") for c in text if isinstance(c, dict))
+        if not text:
+            raise ReelError(f"{self.name} gave an empty answer ({(data.get('choices') or [{}])[0].get('finish_reason')})")
+        return text
+
+
 class Chain(Backend):
     """Automatic mode: the first AI that works, moving on to the next when one refuses (not logged in, bad key,
     no credit). Verdicts are stored under the name of the AI that actually gave them."""
@@ -158,20 +236,34 @@ class Chain(Backend):
         self.backends = backends
         self.i = 0
         self.lock = threading.Lock()   # scoring asks from several threads at once
+        self.last: str | None = None   # the AI that gave the latest answer (a stand-in for pictures, too)
 
     @property
     def name(self) -> str:
-        return self.backends[self.i].name
+        return self.last or self.backends[self.i].name
 
     def ask(self, prompt, images=None, max_tokens=4000):
         while True:
             with self.lock:
                 k = self.i
-            b = self.backends[k]
+                # a text-only AI can't judge pictures: the next one that can does this request (the text-only one
+                # stays first for text work)
+                j = k if not images else next((x for x in range(k, len(self.backends))
+                                               if getattr(self.backends[x], "vision", True)), None)
+                if j is None:
+                    raise ReelError("none of the AIs set up can look at pictures")
+                b = self.backends[j]
             try:
-                return b.ask(prompt, images, max_tokens)
+                out = b.ask(prompt, images, max_tokens)
+                self.last = b.name
+                return out
             except AIAuthError as e:
                 with self.lock:
+                    if j > k:   # the stand-in for pictures stopped working: leave it out from now on
+                        if self.backends[j] is b:
+                            self.backends.pop(j)
+                        log(f"{b.name} can't be used ({str(e)[:100]}); leaving it out")
+                        continue
                     if self.i != k:
                         continue   # another thread already moved on from this one: ask the next AI
                     if k + 1 >= len(self.backends):
@@ -181,14 +273,32 @@ class Chain(Backend):
 
 
 def _minimax() -> AnthropicAPI:
+    from . import aiproviders as P
     key = os.environ.get("MINIMAX_API_KEY")
     if not key:
         raise ReelError("MINIMAX_API_KEY is not set")
     model = os.environ.get("TRIPSHOTS_MINIMAX_MODEL") or (
         os.environ.get("TRIPSHOTS_MODEL") if (os.environ.get("TRIPSHOTS_MODEL") or "").lower().startswith("minimax")
         else None) or "MiniMax-M3"
-    return AnthropicAPI(base_url=os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic"),
-                        api_key=key, model=model, name="minimax")
+    return AnthropicAPI(base_url=P.base("minimax"), api_key=key, model=model, name="minimax")
+
+
+def make(pid: str) -> Backend:
+    """One AI by its id (aiproviders.PROVIDERS)."""
+    from . import aiproviders as P
+    if pid not in P.PROVIDERS:
+        raise ReelError(f"unknown AI '{pid}' (use auto, none, or one of {', '.join(P.PROVIDERS)})")
+    if pid == "claude-cli":
+        if not which("claude"):
+            raise ReelError("`claude` CLI not found. Install Claude Code and run `claude` once to log in.")
+        if not _claude_ready():
+            raise AIAuthError(LOGIN_HELP)
+        return ClaudeCLI()
+    if pid == "minimax":
+        return _minimax()
+    if pid == "api":
+        return AnthropicAPI()
+    return OpenAIChat(pid)
 
 
 def _claude_ready() -> bool:
@@ -197,34 +307,31 @@ def _claude_ready() -> bool:
 
 
 def get_backend(name: str | None = None) -> Backend | None:
-    """The AI to use. auto: Claude Code (your subscription) if it's installed and logged in, then MiniMax, then the
-    Anthropic API, each only if set up; if one stops working mid-run (logged out, key refused), the next takes over."""
+    """The AI to use. A name picks that one. auto: the AIs set up, in the order chosen in Settings
+    (aiproviders.order; Claude Code, then MiniMax, then the Claude API, ... by default), leaving out the ones
+    switched off; if one stops working mid-run (logged out, key refused, limit spent), the next takes over."""
+    from . import aiproviders as P
     name = (name or os.environ.get("TRIPSHOTS_BACKEND") or "auto").lower()
     if name == "none":
         return None
-    if name == "minimax":
-        return _minimax()
-    if name == "claude-cli":
-        if not which("claude"):
-            raise ReelError("`claude` CLI not found. Install Claude Code and run `claude` once to log in.")
-        if not _claude_ready():
-            raise AIAuthError(LOGIN_HELP)
-        return ClaudeCLI()
-    if name == "api":
-        return AnthropicAPI()
     if name != "auto":
-        raise ReelError(f"unknown backend '{name}' (use auto, claude-cli, api, minimax or none)")
+        return make(name)
     chain: list[Backend] = []
     skipped = None
-    if which("claude"):
-        if _claude_ready():
-            chain.append(ClaudeCLI())
-        else:
-            skipped = "Claude Code is installed but not logged in (`claude auth login`)"
-    if os.environ.get("MINIMAX_API_KEY"):
-        chain.append(_minimax())
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        chain.append(AnthropicAPI())
+    off = P.off()
+    for pid in P.order():
+        if pid in off or not P.configured(pid):
+            continue
+        if pid == "claude-cli":
+            if not which("claude"):
+                continue
+            if not _claude_ready():
+                skipped = "Claude Code is installed but not logged in (`claude auth login`)"
+                continue
+        try:
+            chain.append(make(pid))
+        except ReelError as e:   # (set up but not usable: say why and use the others)
+            log(f"{P.PROVIDERS[pid]['name']} left out: {e}")
     if not chain:
         if skipped:
             raise AIAuthError(LOGIN_HELP)

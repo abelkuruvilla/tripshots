@@ -6,7 +6,7 @@ decide what to turn on.
 
 | Feature | Sends | To | Turn it off |
 |---|---|---|---|
-| AI shot judging, colour notes, hooks, captions, labels | Small JPEG stills and contact sheets of your shots (not the video files), technical numbers (length, fps, brightness, shake), place names | Your chosen backend: Anthropic (Claude Code / API) or MiniMax | `--backend none` / `TRIPSHOTS_BACKEND=none` |
+| AI shot judging, colour notes, hooks, captions, labels | Small JPEG stills and contact sheets of your shots (not the video files), technical numbers (length, fps, brightness, shake), place names | Your chosen AI: Anthropic (Claude Code / API), MiniMax, OpenAI, Google, xAI, Mistral, OpenRouter (and the model it routes to), DeepSeek, or Ollama on your own computer (nothing leaves it) | `--backend none` / `TRIPSHOTS_BACKEND=none` |
 | `tripshots ask` / the app's Ask tab | Your request, today's date, the names and aliases of people you've taught it, your trips (dates, GPS centre points, folder names), style names, the file names (not paths) of tracks in `TRIPSHOTS_MUSIC` | Your chosen backend | Don't use `ask`; use `find` + `make` |
 | Gemini video watching (optional) | A 480p, 15 fps proxy of each clip with its sound, deleted from Google right after | Google Gemini API | Leave `GEMINI_API_KEY` unset, or `--watch off` |
 | Place names (location titles, trips) | GPS coordinates rounded to about 10–100 m | OpenStreetMap Nominatim (town) and Overpass (the park or landmark the point is in or near) | `--no-location`, `trips --no-names`, or `TRIPSHOTS_OFFLINE=1` |

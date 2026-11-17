@@ -105,10 +105,12 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
   (each becomes a recipe); **Add examples** grows one of yours.
 - **Activity** (⌘4): everything being made, rendered or learned, with its state in words, its steps and its log. Jobs started from the command line or by
   an AI agent show up here too, and reels they make appear in the gallery.
-- **Settings > AI**: which AI makes the creative calls (Automatic, Claude, MiniMax, Claude API, None) and, for
-  each one, the steps to set it up with links and a **Test** button: Claude Code is installed and logged in from a
-  Terminal window the app opens (`claude auth login`, your Pro/Max plan, no key), MiniMax and the Claude API take a
-  key from their sites, and Gemini (optional, a free key from Google AI Studio) watches clips. The gallery says so
+- **Settings > AI**: which AI makes the creative calls (Automatic, one AI only, or none) and every AI TripShots can
+  use, listed in the order Automatic tries them: arrows move one earlier or later, a switch leaves one out, and each
+  opens to the steps to set it up with links, a model field and a **Test** button. Claude Code is installed and
+  logged in from a Terminal window the app opens (`claude auth login`, your Pro/Max plan, no key); the Claude API,
+  MiniMax, OpenAI, Google Gemini, xAI Grok, Mistral, OpenRouter and DeepSeek take a key from their sites; Ollama runs
+  a model on this computer. A Gemini key also lets Gemini watch clips. The gallery says so
   when no AI is set up.
 - **Settings**: footage, reels and music folders; the browser to borrow your Instagram login from;
   **Command line** (puts `tripshots` on your PATH) and **Claude** (adds TripShots to Claude Desktop's MCP servers

@@ -7,7 +7,10 @@ Settings tab writes it too). A `.env` in the current folder is read first. Real 
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `TRIPSHOTS_BACKEND` | `auto` | AI backend: `auto`, `claude-cli`, `api`, `minimax`, `none` ([AI backends](ai-backends.md)) |
+| `TRIPSHOTS_BACKEND` | `auto` | AI backend: `auto`, `none`, or one AI: `claude-cli`, `api`, `minimax`, `openai`, `gemini`, `xai`, `mistral`, `openrouter`, `deepseek`, `ollama` ([AI backends](ai-backends.md)) |
+| `TRIPSHOTS_AI_ORDER`, `TRIPSHOTS_AI_OFF` | | The order `auto` tries the AIs in, and the ones it leaves out (comma lists) |
+| `OPENAI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY` | | Keys for those providers; `GEMINI_API_KEY` also serves Gemini |
+| `TRIPSHOTS_OPENAI_MODEL`, `TRIPSHOTS_XAI_MODEL`, `TRIPSHOTS_MISTRAL_MODEL`, `TRIPSHOTS_OPENROUTER_MODEL`, `TRIPSHOTS_DEEPSEEK_MODEL`, `TRIPSHOTS_OLLAMA_MODEL`, `OLLAMA_BASE_URL` | see [AI backends](ai-backends.md) | Each provider's model (and where Ollama answers) |
 | `TRIPSHOTS_CLAUDE_MODEL` | Claude Code's default | Model for the `claude-cli` backend (`sonnet`, `opus`, …) |
 | `TRIPSHOTS_MINIMAX_MODEL` | `MiniMax-M3` | Model for the `minimax` backend |
 | `TRIPSHOTS_MODEL` | a Claude model | Model for the `api` backend (a `MiniMax-…` value still sets MiniMax's model, as before) |

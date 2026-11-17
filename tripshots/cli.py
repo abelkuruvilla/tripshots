@@ -722,7 +722,8 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("-s", "--style", default="beat-montage", help="style name or path to YAML")
     m.add_argument("-d", "--duration", type=float, help="target length in seconds")
     m.add_argument("-o", "--out", help="output .mp4 path")
-    m.add_argument("-b", "--backend", help="claude-cli | api | minimax | none (default: auto)")
+    m.add_argument("-b", "--backend", help="auto (the order set in Settings) | none | claude-cli | api | minimax | "
+                   "openai | gemini | xai | mistral | openrouter | deepseek | ollama (default: auto)")
     m.add_argument("--hook", help="on-screen hook text (overrides style/AI)")
     m.add_argument("--location", help="location label text (overrides GPS lookup)")
     m.add_argument("--no-location", action="store_true",
@@ -801,7 +802,7 @@ def build_parser() -> argparse.ArgumentParser:
                                                      "(repeat for more)")
     rv.add_argument("--notes-json", help="notes as JSON [{\"t\": 12.3, \"text\": \"...\"}] (or a file holding it)")
     rv.add_argument("--no-render", action="store_true", help="edit the plan only")
-    rv.add_argument("--backend", help="AI backend: auto|claude-cli|api|minimax|none")
+    rv.add_argument("--backend", help="AI backend: auto|none or one AI (claude-cli, api, minimax, openai, gemini, ...)")
     rv.set_defaults(fn=cmd_revise)
 
     po = sub.add_parser("post", help="post a finished reel (now or at a set time) through Upload-Post; a dry run "

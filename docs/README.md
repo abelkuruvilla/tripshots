@@ -19,7 +19,7 @@
 - [Finish in Edits](edits.md): hand a reel to Instagram's Edits app, with text, sound and music left editable
 
 **AI**
-- [AI backends](ai-backends.md): Claude subscription, MiniMax, API, none; optional Gemini video watching
+- [AI backends](ai-backends.md): Claude subscription, Claude API, MiniMax, OpenAI, Gemini, xAI, Mistral, OpenRouter, DeepSeek, Ollama, in the order you choose; Gemini video watching
 - [AI agents](agents.md): MCP server, the agent skill, `tripshots ask`
 - [MCP tools](mcp-tools.md): every tool an agent can call (generated)
 

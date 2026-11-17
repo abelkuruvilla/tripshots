@@ -15,6 +15,8 @@ was decided and why.
 """
 from __future__ import annotations
 
+import numpy as np
+
 from .util import debug, log
 
 # ---------------------------------------------------------------- the library
@@ -53,6 +55,23 @@ TRANSITIONS = {
     "cells": ("medium", "graphic, grid", "grid and mosaic reels"),
     "mirror": ("calm", "reflective, dreamy", "lakes, reflections, symmetry"),
     "polaroid": ("medium", "nostalgic, memory", "a photo dropping in: memories, a trip diary"),
+    "film": ("medium", "nostalgic, cinematic, road trip",
+             "the picture shrinks onto a film strip that rolls on a frame: a new day, a memory, a road-trip chapter"),
+    "tear": ("medium", "crafty, raw, scrapbook", "the picture rips like paper to show the next: a scrapbook or "
+             "diary reel, a new chapter (params direction horizontal|vertical)"),
+    "cube": ("medium", "energetic, travelling, 3D", "the two shots turn as faces of a cube: moving on to the next "
+             "stop in a list or montage (params direction left|right|up|down: the way the trip goes)"),
+    "card": ("medium", "social, quick, photo dump", "the shot shrinks to a rounded post card and flicks away: a "
+             "photo dump, a list, a quick change of scene"),
+    "dots": ("medium", "graphic, techy, night", "the next shot builds out of halftone dots, bright parts first: "
+             "night skies, a city, a graphic reveal"),
+}
+# Settings the director may give a transition ("params"): only these values; the rest are chosen by the planner
+TRANSITION_PARAMS = {
+    "whip": {"direction": ("left", "right", "up", "down")}, "push": {"direction": ("left", "right", "up", "down")},
+    "wipe": {"direction": ("left", "right", "up", "down")}, "spin": {"clockwise": (True, False)},
+    "flip": {"axis": ("h", "v")}, "blinds": {"horizontal": (True, False)}, "film": {"direction": ("up", "down")},
+    "tear": {"direction": ("horizontal", "vertical")}, "cube": {"direction": ("left", "right", "up", "down")},
 }
 TEXT_MOTIONS = {   # hfx.py (animated pages) and typo.py entrances
     "rise": ("calm", "elegant", "titles and places, calm openings"),
@@ -107,6 +126,32 @@ MOVES = {
                    "people flash paper-white for two frames as their shot lands on a hit (shots listed under people)"),
     "colour_bloom": ("calm", "cinematic, a moment taking shape",
                      "a shot arrives in black and white and its colour blooms in: the hook, a new place, the payoff"),
+    "freeze_intro": ("medium", "playful, 'meet the crew', a beat to remember",
+                     "the moment stops on a beat: the person keeps their colour with a thick white sticker outline, "
+                     "the world behind goes grey and dim, then it plays on (shots listed under freeze; settings "
+                     "beats 1-4 = how long it holds)"),
+    "clone_trail": ("medium", "magic, playful, motion",
+                    "a person walking or jumping through a still frame leaves copies of themselves where they were "
+                    "on earlier beats (shots listed under clone: tripod or still camera only; settings copies 2-5)"),
+    "colour_pop": ("calm", "focused, dreamy, 'only you'",
+                   "the person stays in colour and the world round them turns black and white: the one person who "
+                   "matters, a quiet moment (shots listed under isolate; settings amount 0.5-1)"),
+    "spotlight": ("intense", "dramatic, stage, a reveal",
+                  "the lights go down round the person and they stay lit: a drop, a big reveal, an entrance "
+                  "(shots listed under isolate; settings amount 0.4-0.9)"),
+    "camera_roll": ("medium", "photo dump, 'my camera roll', personal",
+                    "the reel opens on the phone's camera roll: a grid of the trip's photos scrolls and slows, then "
+                    "one opens into the shot (shots listed under opener; settings seconds 0.8-1.6)"),
+}
+# what the director may set per move ("settings"): name -> (low, high) or choices; clipped into range
+MOVE_SETTINGS = {
+    "grid_lines": {"cols": (6, 12), "alpha": (0.15, 0.45)},
+    "colour_bloom": {"seconds": (0.3, 1.2)},
+    "freeze_intro": {"beats": (1, 4), "outline": (True, False)},
+    "clone_trail": {"copies": (2, 5)},
+    "colour_pop": {"amount": (0.5, 1.0)},
+    "spotlight": {"amount": (0.4, 0.9)},
+    "camera_roll": {"seconds": (0.8, 1.6), "light": (True, False)},
 }
 MAX_MOVES = 2   # kinds of move in one reel
 
@@ -129,7 +174,25 @@ def _subject_size(seg: dict) -> float:
         return 0.0
 
 
-def eligible(plan: dict, style: dict) -> dict[str, list[int]]:
+def _still_camera(seg: dict, by_id: dict | None) -> bool:
+    sh = (by_id or {}).get(seg.get("shot_id")) or {}
+    met, ai = sh.get("metrics") or {}, sh.get("ai") or {}
+    if ai.get("motion") and ai["motion"] != "static":
+        return False
+    return bool(ai.get("motion") == "static" or (met and float(met.get("pan", 1)) < 0.002
+                                                  and float(met.get("shake", 1)) < 0.004))
+
+
+def _person_big(seg: dict, by_id: dict | None) -> bool:
+    """Is the person big enough in frame to be cut out (a freeze outline, a colour pop, a clone)? The AI's shot size
+    when known (never a wide view of a place), else the subject box."""
+    size = (((by_id or {}).get(seg.get("shot_id")) or {}).get("ai") or {}).get("shot_size")
+    if size:
+        return size != "wide"
+    return _subject_size(seg) >= 0.03
+
+
+def eligible(plan: dict, style: dict, by_id: dict | None = None) -> dict[str, list[int]]:
     """Which shots (1-based) can carry each move: the AI may only choose among these. A move the style already
     does, or one that can't work in this reel, has none."""
     segs = plan["segments"]
@@ -146,6 +209,18 @@ def eligible(plan: dict, style: dict) -> dict[str, list[int]]:
         if not motion.get("backdrop") else [],
         "people": [i + 1 for i in free if segs[i].get("people")] if not motion.get("silhouette") else [],
         "colour_bloom": [i + 1 for i in free if float(segs[i]["dur"]) >= 1.0] if not motion.get("colour_in") else [],
+        # a beat to stop on, clear of the transitions at either end
+        "freeze": [i + 1 for i in free if segs[i].get("people") and float(segs[i]["dur"]) >= max(1.2, 3 * beat)
+                   and _person_big(segs[i], by_id)],
+        "clone": [i + 1 for i in free if segs[i].get("people") and segs[i].get("kind") == "video"
+                  and _person_big(segs[i], by_id)
+                  and float(segs[i]["dur"]) >= max(1.6, 4 * beat) and not segs[i].get("speed_ramp")
+                  and not segs[i].get("ramp") and _still_camera(segs[i], by_id)],
+        # the opening shot, or the first shot of a new place
+        "opener": [i + 1 for i in free if float(segs[i]["dur"]) >= 1.6 and not segs[i].get("hold")
+                   and (i == 0 or (segs[i].get("place") and segs[i].get("place") != segs[i - 1].get("place")))],
+        "isolate": [i + 1 for i in free if segs[i].get("people") and float(segs[i]["dur"]) >= 0.7
+                    and _person_big(segs[i], by_id)],
     }
     if not (plan.get("grid") or motion.get("grid")):
         out["grid_lines"] = ["whole reel"]   # needs no particular shot
@@ -206,15 +281,21 @@ SHOT EFFECTS (at most {max_fx} shots, only where the shot itself calls for it; n
 SIGNATURE MOVES (the big trend ideas; at most {max_moves} kinds in this reel, each on the shots that can carry it.
 Use one when the footage and the song suit it, so the reel has a memorable moment; none is fine for a plain cut.
 A move suits the reel's mood: the photo wall and grid for warm diaries, the backdrop swap for upbeat songs with
-you in frame, silhouettes on hits, colour bloom for cinematic openings and payoffs)
+you in frame, silhouettes and the spotlight on hits, colour bloom and colour pop for cinematic or tender moments,
+the freeze-frame intro to introduce the people on a beat, the clone trail for someone moving through a still
+frame, the camera roll to open a photo-dump or "my trip in pictures" reel. Choose its settings for this reel:
+a short hold on a fast song, a longer one on a slow song; fewer clones in a short shot)
 {lib_mv}
 Shots that can carry each move: {eligible}
+Settings each move takes: {settings}
+Transition settings ("params", optional; otherwise the planner chooses): {tparams}. Pick a direction that follows
+the movement in the shots or the direction of travel, and vary it between cuts.
 
 Answer with JSON only:
-{{"transitions": [{{"cut": 3, "id": "push", "why": "..."}}],   (every cut you want to change; "cut" = plain cut)
+{{"transitions": [{{"cut": 3, "id": "push", "params": {{"direction": "left"}}, "why": "..."}}],   (every cut you want to change; "cut" = plain cut)
  "texts": [{{"index": 1, "motion": "slam", "look": null, "why": "..."}}],
  "effects": [{{"shot": 5, "id": "glow", "amount": 0.5, "why": "..."}}],
- "moves": [{{"id": "photo_wall", "shots": [7], "why": "..."}}],
+ "moves": [{{"id": "freeze_intro", "shots": [7], "settings": {{"beats": 2}}, "why": "..."}}],
  "summary": "one sentence on the overall choice"}}"""
 
 
@@ -269,6 +350,7 @@ def _check(raw: dict, plan: dict, cuts: list[dict], cfg: dict) -> dict:
     planned = sum(1 for c in cuts if c["now"] != "cut")
     allowed = planned + planned // 3   # a hard-cut style (none planned) stays hard-cut
     tr: dict[int, str] = {c["cut"]: c["now"] for c in cuts}
+    params: dict[int, dict] = {}
     for t in raw.get("transitions") or []:
         try:
             n, tid = int(t.get("cut")), str(t.get("id") or "cut")
@@ -276,6 +358,11 @@ def _check(raw: dict, plan: dict, cuts: list[dict], cfg: dict) -> dict:
             continue
         if n in ok_cuts and (tid == "cut" or tid in TRANSITIONS):
             tr[n] = tid
+            allowed_p = TRANSITION_PARAMS.get(tid) or {}
+            got = {k: v for k, v in (t.get("params") or {}).items() if k in allowed_p and v in allowed_p[k]} \
+                if isinstance(t.get("params"), dict) else {}
+            if got:
+                params[n] = got
     # restraint: no more transitions than the style planned (plus a few), at most three kinds
     kinds: list[str] = []
     for n in sorted(tr):
@@ -314,13 +401,34 @@ def _check(raw: dict, plan: dict, cuts: list[dict], cfg: dict) -> dict:
             amt = float(f.get("amount") or SHOT_EFFECTS[fid][3])
             effects.append({"shot": n, "id": fid, "amount": round(max(0.15, min(1.0, amt)), 2),
                             "why": str(f.get("why") or "")[:120]})
-    return {"transitions": tr, "texts": texts, "effects": effects, "moves": check_moves(raw.get("moves"), cfg),
+    params = {n: v for n, v in params.items() if tr.get(n) not in (None, "cut")}
+    return {"transitions": tr, "params": params, "texts": texts, "effects": effects, "moves": check_moves(raw.get("moves"), cfg),
             "summary": str(raw.get("summary") or "")[:200]}
 
 
 MOVE_SLOTS = {"photo_wall": "photo_wall", "backdrop_places": "backdrop", "backdrop_colour": "backdrop",
-              "silhouette": "people", "colour_bloom": "colour_bloom", "grid_lines": None}
-MOVE_MAX_SHOTS = {"photo_wall": 1, "backdrop_places": 1, "backdrop_colour": 1, "silhouette": 3, "colour_bloom": 2}
+              "silhouette": "people", "colour_bloom": "colour_bloom", "grid_lines": None,
+              "freeze_intro": "freeze", "clone_trail": "clone", "colour_pop": "isolate", "spotlight": "isolate",
+              "camera_roll": "opener"}
+MOVE_MAX_SHOTS = {"photo_wall": 1, "backdrop_places": 1, "backdrop_colour": 1, "silhouette": 3, "colour_bloom": 2,
+                  "freeze_intro": 2, "clone_trail": 1, "colour_pop": 2, "spotlight": 1, "camera_roll": 1}
+
+
+def _settings(mid: str, raw) -> dict:
+    """The move's settings from the AI, only known ones, clipped into range."""
+    out = {}
+    for k, rng in (MOVE_SETTINGS.get(mid) or {}).items():
+        v = (raw or {}).get(k) if isinstance(raw, dict) else None
+        if v is None:
+            continue
+        if isinstance(rng[0], bool):
+            out[k] = bool(v)
+            continue
+        try:
+            out[k] = round(max(rng[0], min(rng[1], float(v))), 2)
+        except (TypeError, ValueError):
+            pass
+    return out
 
 
 def check_moves(raw, cfg: dict) -> list[dict]:
@@ -337,7 +445,8 @@ def check_moves(raw, cfg: dict) -> list[dict]:
         if slot is None:
             if not elig.get("grid_lines"):   # a reel that already has its grid
                 continue
-            out.append({"id": mid, "shots": [], "why": str(m.get("why") or "")[:120]})
+            out.append({"id": mid, "shots": [], "settings": _settings(mid, m.get("settings")),
+                        "why": str(m.get("why") or "")[:120]})
             continue
         try:
             want = [int(x) for x in (m.get("shots") or ([m["shot"]] if m.get("shot") else []))]
@@ -346,7 +455,8 @@ def check_moves(raw, cfg: dict) -> list[dict]:
         ok = [n for n in want if n in (elig.get(slot) or []) and n not in taken][:MOVE_MAX_SHOTS[mid]]
         if ok:
             taken.update(ok)
-            out.append({"id": mid, "shots": ok, "why": str(m.get("why") or "")[:120]})
+            out.append({"id": mid, "shots": ok, "settings": _settings(mid, m.get("settings")),
+                        "why": str(m.get("why") or "")[:120]})
     return out
 
 
@@ -360,10 +470,15 @@ def apply_choices(plan: dict, ch: dict, cfg: dict) -> list[str]:
         for n, tid in sorted((ch.get("transitions") or {}).items()):
             e, nx = segs[n - 1], segs[n]
             name = None if tid == "cut" else tid
+            own = (ch.get("params") or {}).get(n) or {}
             if name == e.get("trans_out"):
+                if own and name:   # the same transition, set the AI's way
+                    e["trans_params"] = {**(e.get("trans_params") or {}), **own}
+                    done.append(f"cut {n}: {name} " + " ".join(f"{k}={v}" for k, v in own.items()))
                 continue
             if name:
                 d, prm = fit_transition(e, nx, name, plan.get("tempo"), None, side)
+                prm = {**prm, **own}
                 d = min(d, 0.9 * min(float(e["dur"]), float(nx["dur"])))
                 if d < 0.12:
                     continue
@@ -397,14 +512,16 @@ def apply_choices(plan: dict, ch: dict, cfg: dict) -> list[str]:
 def apply_moves(plan: dict, moves: list[dict], shots: list[dict] | None) -> list[str]:
     """Put the chosen signature moves into the plan, with the planner's own code for each (planner.plan_mosaic,
     plan_backdrops) and the same segment keys a style that does them sets."""
-    from .planner import plan_backdrops, plan_mosaic
+    from .planner import plan_backdrops, plan_mosaic, plan_roll
     segs = plan["segments"]
     tempo = float(plan.get("tempo") or 120) or 120
+    beat = 60.0 / tempo
     done = []
     for m in moves:
         mid, at = m["id"], [n - 1 for n in m.get("shots") or []]
+        st = m.get("settings") or {}
         if mid == "grid_lines":
-            plan["grid"] = {"cols": 8, "alpha": 0.3}
+            plan["grid"] = {"cols": int(st.get("cols", 8)), "alpha": float(st.get("alpha", 0.3))}
             done.append("move: grid lines")
         elif mid == "photo_wall" and shots:
             cols = int((plan.get("grid") or {}).get("cols", 8))
@@ -422,18 +539,86 @@ def apply_moves(plan: dict, moves: list[dict], shots: list[dict] | None) -> list
             done.append("move: silhouette flash on shot " + ", ".join(str(i + 1) for i in at))
         elif mid == "colour_bloom":
             for i in at:
-                segs[i]["colour_in"] = 0.6
+                segs[i]["colour_in"] = float(st.get("seconds", 0.6))
             done.append("move: colour bloom on shot " + ", ".join(str(i + 1) for i in at))
+        elif mid == "freeze_intro":
+            got = [i for i in at if _pose(segs[i], plan, beat, st)]
+            if not got:
+                continue
+            done.append("move: freeze-frame intro on shot " + ", ".join(str(i + 1) for i in got))
+        elif mid == "clone_trail":
+            got = [i for i in at if _clones(segs[i], plan, beat, st)]
+            if not got:
+                continue
+            done.append(f"move: clone trail on shot {got[0] + 1}")
+        elif mid in ("colour_pop", "spotlight"):
+            kind = "pop" if mid == "colour_pop" else "spotlight"
+            for i in at:
+                segs[i]["isolate"] = {"kind": kind, "amount": float(st.get("amount", 1.0 if kind == "pop" else 0.85))}
+            done.append(f"move: {mid.replace('_', ' ')} on shot " + ", ".join(str(i + 1) for i in at))
+        elif mid == "camera_roll" and shots and at:
+            k = plan_roll(segs, shots, at[0], beat)
+            if k is None:
+                continue
+            if st.get("seconds"):
+                segs[k]["roll"]["dur"] = round(min(float(st["seconds"]), 0.55 * float(segs[k]["dur"])), 3)
+            if st.get("light"):
+                segs[k]["roll"]["light"] = True
+            if k > 0:   # it opens out of the grid on the cut itself: no transition into it
+                segs[k - 1].update({"trans_out": None, "trans_dur": 0.0, "trans_params": {}})
+            done.append(f"move: camera roll opens shot {k + 1}")
         else:
             continue
         plan.setdefault("moves", []).append({k: v for k, v in m.items() if k != "why"} | {"auto": True})
     return done
 
 
+def _ends(seg: dict, plan: dict) -> tuple[float, float]:
+    """(start, end) of the part of a shot clear of the transitions at either end, in seconds into the shot."""
+    segs = plan["segments"]
+    i = next(k for k, s in enumerate(segs) if s is seg)
+    lead = float(segs[i - 1].get("trans_dur") or 0) / 2 if i and segs[i - 1].get("trans_out") else 0.0
+    tail = float(seg.get("trans_dur") or 0) / 2 if seg.get("trans_out") else 0.0
+    return lead, float(seg["dur"]) - tail
+
+
+def _beats_in(seg: dict, plan: dict) -> list[float]:
+    t0 = float(seg.get("out_start", 0))
+    return [float(b) - t0 for b in plan.get("beats") or [] if 0 < float(b) - t0 < float(seg["dur"])]
+
+
+def _pose(seg: dict, plan: dict, beat: float, st: dict) -> bool:
+    """Freeze-frame intro: stop on a beat at least a quarter of a second in, hold `beats` beats (about 0.6 s at
+    least), and play on before the way out."""
+    a, b = _ends(seg, plan)
+    hold = max(0.5, min(1.4, float(st.get("beats", 2)) * beat))
+    on = [t for t in _beats_in(seg, plan) if t >= a + 0.25 and t + hold <= b - 0.15] or \
+         ([a + 0.3] if a + 0.3 + hold <= b - 0.15 else [])
+    if not on:
+        return False
+    seg["pose"] = {"at": round(on[0], 3), "dur": round(hold, 3), "outline": bool(st.get("outline", True))}
+    return True
+
+
+def _clones(seg: dict, plan: dict, beat: float, st: dict) -> bool:
+    """Clone trail: a pose kept on each of `copies` beats spread over the shot, before its last third."""
+    a, b = _ends(seg, plan)
+    n = int(st.get("copies", 3))
+    times = [t for t in _beats_in(seg, plan) if a + 0.1 <= t <= a + (b - a) * 0.7]
+    if len(times) < 2:
+        times = list(np.linspace(a + 0.15, a + (b - a) * 0.65, n)) if b - a >= 1.2 else []
+    if len(times) < 2:
+        return False
+    step = max(1, len(times) // n)
+    seg["clones"] = {"times": [round(float(t), 3) for t in times[::step][:n]], "alpha": 0.9}
+    return True
+
+
 def clear_moves(plan: dict) -> int:
     """Take out the moves the director chose before (plan `moves`, auto), before it chooses again."""
     keys = {"photo_wall": "mosaic", "backdrop_places": "backdrop", "backdrop_colour": "backdrop",
-            "silhouette": "silhouette", "colour_bloom": "colour_in"}
+            "silhouette": "silhouette", "colour_bloom": "colour_in", "freeze_intro": "pose", "clone_trail": "clones",
+            "colour_pop": "isolate", "spotlight": "isolate", "camera_roll": "roll"}
     segs = plan.get("segments") or []
     gone = 0
     for m in plan.pop("moves", None) or []:
@@ -459,6 +644,8 @@ def _rule_moves(plan: dict, by_id: dict, elig: dict) -> list[dict]:
         n = min(elig["photo_wall"], key=lambda n: abs(float(segs[n - 1]["out_start"]) - mid))
         return [{"id": "photo_wall", "shots": [n], "why": "a held shot of you in the middle of the reel"}]
     peak = next((i + 1 for i, s in enumerate(segs) if s.get("role") == "peak"), None)
+    if peak and peak in (elig.get("freeze") or []) and tempo >= 110:
+        return [{"id": "freeze_intro", "shots": [peak], "why": "you on the payoff of a fast song: stop on the beat"}]
     if peak and peak in (elig.get("colour_bloom") or []):
         return [{"id": "colour_bloom", "shots": [peak], "why": "the payoff blooms into colour"}]
     return []
@@ -475,7 +662,7 @@ def direct(plan: dict, by_id: dict, style: dict, backend=None, shots: list[dict]
     if (style.get("transitions") or {}).get("order") or plan.get("recipe"):
         cfg["transitions"] = False   # the style's own run of transitions, or a reference's cuts, stay as they are
     cfg["_shots"] = shots
-    cfg["_eligible"] = elig = eligible(plan, style) if cfg.get("moves", True) else {}
+    cfg["_eligible"] = elig = eligible(plan, style, by_id) if cfg.get("moves", True) else {}
     seen, cuts, texts = _context(plan, by_id)   # (the reel's shots as the AI sees them)
     if backend is None and use != "rules":
         # no AI: the planner's transitions, text and looks (from the style's palette) stand; `use: rules` asks for
@@ -504,7 +691,9 @@ def direct(plan: dict, by_id: dict, style: dict, backend=None, shots: list[dict]
             lib_tr=_lib(TRANSITIONS), lib_tm=_lib(TEXT_MOTIONS), lib_tl=_lib(TEXT_LOOKS),
             lib_fx=_lib(SHOT_EFFECTS), max_fx=cfg["max_shot_effects"],
             lib_mv=_lib(MOVES) if cfg.get("moves", True) else "(none in this reel)", max_moves=cfg["max_moves"],
-            eligible=json.dumps({k: v for k, v in elig.items() if v}) if elig else "{}")
+            eligible=json.dumps({k: v for k, v in elig.items() if v}) if elig else "{}",
+            settings=json.dumps({k: v for k, v in MOVE_SETTINGS.items()}),
+            tparams=json.dumps({k: {p: list(c) for p, c in v.items()} for k, v in TRANSITION_PARAMS.items()}))
         try:
             raw = extract_json(backend.ask(prompt, max_tokens=2500))
             by = "ai"

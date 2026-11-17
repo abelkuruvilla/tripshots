@@ -226,3 +226,73 @@ def test_without_an_ai_one_move_by_rules_and_the_editor_chooses_again(tmp_path, 
     plan["tempo"] = 80   # a slower song: the photo wall instead
     fxlib.direct(plan, by_id, {"name": "x"}, None, shots)
     assert any(s.get("mosaic") for s in plan["segments"])
+
+
+def test_trend_moves_draw_what_they_promise():
+    a, b = _frames()
+    m = np.zeros(a.shape[:2], np.float32)
+    m[100:220, 60:120] = 1.0   # "the person"
+    pop = motion.isolate(a, m, "pop", 1.0)
+    assert (pop[150, 90] == a[150, 90]).all()                          # the person keeps their colour
+    assert np.ptp(pop[20, 170].astype(int)) < 4                        # the world round them is grey
+    lit = motion.isolate(a, m, "spotlight", 1.0)
+    assert lit[10:40, :40].mean() < 0.5 * a[10:40, :40].mean() and (lit[150, 90] == a[150, 90]).all()
+    st = motion.sticker(a, m)
+    assert (st[150, 90] == a[150, 90]).all() and st[100 - 3, 90].min() > 220   # a white outline round them
+    thumbs = [np.full((40, 40, 3), v, np.uint8) for v in (30, 90, 150, 210)]
+    first = motion.camera_roll(b, thumbs, 4, 0.1)
+    assert np.abs(first.astype(int) - b).mean() > 20                     # the grid, not the shot
+    assert np.abs(motion.camera_roll(b, thumbs, 4, 0.999).astype(int) - b).mean() < 6   # opened into the shot
+
+
+def test_the_director_sets_up_the_trend_moves_with_its_own_settings(tmp_path):
+    plan, by_id, shots = _people_plan(tmp_path)
+    plan["tempo"], plan["beats"] = 120, [k * 0.5 for k in range(40)]
+    by_id["S2"]["ai"]["shot_size"] = "medium"                                # you head to toe in shot 3
+    by_id["S5"]["ai"]["shot_size"] = "wide"                                  # a speck in a landscape: no cut-out
+    assert 3 in fxlib.eligible(plan, {}, by_id)["isolate"]
+    ai = FakeAI({"transitions": [{"cut": 5, "id": "cube", "params": {"direction": "up", "speed": 9}}],
+                 "moves": [{"id": "freeze_intro", "shots": [4], "settings": {"beats": 3, "outline": False}},
+                           {"id": "spotlight", "shots": [3], "settings": {"amount": 2}}]})
+    rec = fxlib.direct(plan, by_id, {"name": "x"}, ai, shots)
+    segs = plan["segments"]
+    assert segs[4]["trans_out"] == "cube" and segs[4]["trans_params"] == {"direction": "up"}   # unknown param dropped
+    pz = segs[3]["pose"]
+    assert pz["dur"] == 1.4 and pz["outline"] is False and pz["at"] >= 0.25 and pz["at"] + 1.4 <= 3.0
+    assert segs[2]["isolate"] == {"kind": "spotlight", "amount": 0.9}                          # clipped into range
+    assert any("freeze-frame intro" in c for c in rec["changes"]) and "Settings each move takes" in ai.prompts[0]
+    assert fxlib.clear_moves(plan) == 2 and not segs[3].get("pose") and not segs[2].get("isolate")
+    # a tripod clip of you: the clone trail, with its copies clipped to five, early in the shot
+    plan, by_id, shots = _people_plan(tmp_path)
+    plan["tempo"], plan["beats"] = 120, [k * 0.5 for k in range(40)]
+    by_id["S3"]["ai"]["motion"] = "static"
+    ai = FakeAI({"moves": [{"id": "clone_trail", "shots": [4], "settings": {"copies": 9}}]})
+    fxlib.direct(plan, by_id, {"name": "x"}, ai, shots)
+    cl = plan["segments"][3]["clones"]["times"]
+    assert 2 <= len(cl) <= 5 and cl == sorted(cl) and cl[-1] < 3.0 and '"clone": [4]' in ai.prompts[0]
+
+
+def test_clone_trail_needs_a_still_camera_and_camera_roll_opens_the_reel(tmp_path):
+    plan, by_id, shots = _people_plan(tmp_path)
+    by_id["S3"]["ai"]["motion"] = "pan"
+    plan["segments"][0]["dur"] = 2.0
+    el = fxlib.eligible(plan, {}, by_id)
+    assert el["clone"] == [] and 1 in el["opener"] and 4 in el["isolate"]
+    ai = FakeAI({"moves": [{"id": "camera_roll", "shots": [1], "settings": {"seconds": 1.2}},
+                           {"id": "colour_pop", "shots": [4]}]})
+    fxlib.direct(plan, by_id, {"name": "x"}, ai, shots)
+    segs = plan["segments"]
+    assert segs[0]["roll"]["dur"] == 1.1 and len(segs[0]["roll"]["cells"]) >= 6   # at most 0.55 of the shot
+    assert segs[3]["isolate"] == {"kind": "pop", "amount": 1.0}
+
+
+def test_people_tracker_looks_again_after_missing_someone(monkeypatch):
+    from tripshots import render
+    seen = iter([None, None, np.ones((4, 4), np.float32), None, np.zeros((4, 4), np.float32)])
+    pt = render.People()
+    monkeypatch.setattr(pt, "at", lambda fr: next(seen))
+    fr = np.zeros((4, 4, 3), np.uint8)
+    assert pt.follow(0, fr, 0) is None and pt.follow(0, fr, 3) is None    # (waits a few frames before looking again)
+    assert pt.follow(0, fr, 6) is None and pt.follow(0, fr, 12).mean() == 1.0
+    assert pt.follow(0, fr, 14).mean() == 1.0                             # a frame without them keeps the last mask
+    assert 0.4 < pt.follow(0, fr, 16).mean() < 0.5                        # smoothed over time

@@ -673,6 +673,48 @@ class Backdrops:
         return cv2.blendLinear(fr, bg, last[1], 1.0 - last[1])
 
 
+class People:
+    """The people in a shot as a soft mask, followed over time (cut out every other frame, smoothed so the edge
+    doesn't boil), for the moves that keep the person and change the world round them (segment `isolate`), and
+    single masks for a frozen pose or a clone (`at`)."""
+
+    def __init__(self):
+        self.track: dict = {}
+
+    def at(self, fr: np.ndarray) -> np.ndarray | None:
+        from . import nodes
+        return nodes.people_mask(fr, width=360)
+
+    def follow(self, i: int, fr: np.ndarray, n: int) -> np.ndarray | None:
+        last = self.track.get(i)
+        if last is not None and last[1] is None and n - last[0] < 6:
+            return None   # nobody found a moment ago: look again in a few frames
+        if last is None or last[1] is None or n - last[0] >= 2:
+            m = self.at(fr)
+            if m is None:
+                if last is None or last[1] is None:
+                    self.track[i] = (n, None)
+                    return None
+                m = last[1]
+            elif last is not None and last[1] is not None:
+                m = 0.55 * m + 0.45 * last[1]
+            self.track[i] = last = (n, m)
+        return last[1]
+
+
+def _thumb_squares(paths: list, size: int = 360) -> list[np.ndarray]:
+    out = []
+    for path in paths or []:
+        im = cv2.imread(str(path))
+        if im is None:
+            continue
+        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        s = min(im.shape[:2])
+        y, x = (im.shape[0] - s) // 2, (im.shape[1] - s) // 2
+        out.append(cv2.resize(im[y:y + s, x:x + s], (size, size), interpolation=cv2.INTER_AREA))
+    return out
+
+
 def _wall_tiles(mo: dict, w: int, h: int, shot: np.ndarray | None = None) -> dict:
     """The photo wall's pictures, each cut to its cell's shape: {cell index: RGB array}. With the shot's own frame,
     the cells its subject stands in are left clear (found with the cut-out; the plan only guessed)."""
@@ -919,6 +961,12 @@ def still(plan: dict, t: float, out: Path, raw: bool = False, mask: str | None =
     if seg.get("keys") and not raw:   # zoom and position keyframes
         from .motion import apply_keys
         frame = apply_keys(np.ascontiguousarray(frame), seg["keys"], t - seg["out_start"])
+    if seg.get("isolate") and not raw and not seg.get("panel"):   # colour pop / spotlight, as the render has it
+        m = People().at(np.ascontiguousarray(frame))
+        if m is not None:
+            from .motion import isolate
+            frame = isolate(np.ascontiguousarray(frame), m, str(seg["isolate"].get("kind", "pop")),
+                            float(seg["isolate"].get("amount", 1.0)))
     if seg.get("effect") and not raw and not seg.get("panel"):   # the shot's video effect, as the render has it
         from . import vfx
         frame = vfx.apply(np.ascontiguousarray(frame), seg["effect"], t - seg["out_start"],
@@ -1055,6 +1103,24 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                 fr = graded[key]
             if segs[i].get("backdrop"):  # the person stays, the world behind them changes on the beat
                 fr = backdrop.frame(i, segs[i], fr, n / fps)
+            if segs[i].get("isolate"):  # colour pop or spotlight: the person stays, the world round them changes
+                iso = segs[i]["isolate"]
+                m = people.follow(i, fr, n)
+                if m is not None:
+                    from .motion import ease_out, isolate
+                    k = ease_out(max(0.0, min(1.0, (n / fps - segs[i]["out_start"]) / 0.3)))
+                    fr = isolate(fr, m, str(iso.get("kind", "pop")), k * float(iso.get("amount", 1.0)))
+            if segs[i].get("clones"):  # a clone trail: the person left behind where they stood on earlier beats
+                cl = segs[i]["clones"]
+                got = clones.setdefault(i, [])
+                t_in = n / fps - segs[i]["out_start"]
+                for k, tc in enumerate(cl.get("times") or []):
+                    if k >= len(got) and t_in >= float(tc):   # (frames come in order: the first one at or after it)
+                        got.append((n, np.array(fr), people.at(fr)))
+                a_ = float(cl.get("alpha", 0.9))
+                for n_k, snap, m in got:
+                    if m is not None and n_k < n:   # earlier poses only, oldest first
+                        fr = cv2.blendLinear(snap, fr, m * a_, 1.0 - m * a_)
             ci = float(segs[i].get("colour_in") or 0)
             if ci > 0:  # arrives in black and white (through the transition too), then its colour blooms
                 from .motion import colour_in, ease_in_out
@@ -1078,6 +1144,10 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         frozen = None
         sil: dict = {}  # each shot's people mask for its silhouette flash, found once
         backdrop = Backdrops()
+        people = People()
+        clones: dict = {}   # each clone trail's captured poses
+        poses: dict = {}    # each freeze-frame intro's styled still
+        rolls: dict = {}    # each camera roll's little pictures
         walls: dict = {}  # each photo wall's little pictures, loaded once
         grid = plan.get("grid")
         try:
@@ -1107,6 +1177,27 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
                         if sil[i] is not None:
                             from .motion import silhouette
                             frame = silhouette(frame, sil[i])
+                pz = segs[i].get("pose")
+                if pz and not segs[i].get("panel"):  # freeze-frame intro: the moment stops, the person outlined
+                    t0 = float(segs[i]["out_start"]) + float(pz.get("at", 0))
+                    q = (n / fps - t0) / max(0.1, float(pz.get("dur", 0.6)))
+                    if 0 <= q < 1:
+                        if i not in poses:
+                            m = people.at(frame)
+                            from .motion import sticker
+                            poses[i] = sticker(frame, m, bool(pz.get("outline", True))) if m is not None else None
+                        if poses[i] is not None:
+                            from .motion import ease_out
+                            frame = affine(poses[i], 1.0 + 0.05 * ease_out(min(1.0, q * 3)))
+                rl = segs[i].get("roll")
+                if rl and not segs[i].get("panel"):  # the camera roll scrolls, then opens into this shot
+                    u = (n / fps - float(segs[i]["out_start"])) / max(0.2, float(rl.get("dur", 1.2)))
+                    if 0 <= u < 1:
+                        if i not in rolls:
+                            rolls[i] = _thumb_squares(rl.get("cells"))
+                        from .motion import camera_roll
+                        frame = camera_roll(frame, rolls[i], int(rl.get("target", 4)), u, int(rl.get("cols", 3)),
+                                            bool(rl.get("light")))
                 if fzn and fz0 <= n < fz0 + fzn:  # hero freeze on the biggest beat
                     if frozen is None:
                         frozen = frame.copy()

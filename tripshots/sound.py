@@ -510,6 +510,8 @@ def build_cues(plan: dict, text_events: list[dict] | None = None) -> list[dict]:
             add(cut, "shutter", "flash cut")
         elif tr == "glitch":
             add(cut, "glitch", "glitch transition")
+        elif tr in ("film", "cube", "card", "tear"):
+            add(cut, "whoosh", f"{tr} transition", gain=-3)
     for i, s in enumerate(segs[:-1]):
         if s.get("incam_out"):  # the camera's own swing: a real whoosh where the picture smears
             add(segs[i + 1]["out_start"], "whoosh", "in-camera whip pan", gain=-3, pri=3)
@@ -523,6 +525,10 @@ def build_cues(plan: dict, text_events: list[dict] | None = None) -> list[dict]:
                 add(segs[i + 1]["out_start"], "whoosh", "speeds up into the cut", gain=-2)
         if s.get("rgb") and i > 0:
             add(s["out_start"], "glitch", "colour-split cut", gain=-3)
+        if s.get("pose"):   # the freeze-frame intro: a camera click as the moment stops
+            add(s["out_start"] + float(s["pose"].get("at", 0)), "shutter", "freeze-frame intro")
+        if s.get("roll"):   # the camera roll opening into the shot
+            add(s["out_start"] + 0.6 * float(s["roll"].get("dur", 1.2)), "whoosh", "camera roll opens", gain=-4)
         if s.get("layout") == "popout":
             add(s["out_start"] + 0.3, "pop", "subject steps out of the frame")
         for k, c in enumerate(s.get("clips") or []):

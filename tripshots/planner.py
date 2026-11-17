@@ -994,7 +994,8 @@ def _open_on_face(segs: list[dict], shots: list[dict], style: dict, every: float
     return True
 
 
-def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: float) -> list[int]:
+def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: float,
+                   at: list[int] | None = None) -> list[int]:
     """The person stays, the world behind them changes (motion.backdrop: places, colour or both): a held shot of a
     person gets, on each beat, a picture of another place of the trip (or a flat colour from its own palette) behind
     them; its last beat is its real background again. The opening person shot gets the places, a later one colour."""
@@ -1012,7 +1013,8 @@ def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: f
         b = s.get("subject") or {}
         return (float(b.get("x1", 0)) - float(b.get("x0", 0))) * (float(b.get("y1", 0)) - float(b.get("y0", 0)))
     cand = [i for i, s in enumerate(segs) if s.get("people") and s.get("kind") == "video" and not s.get("panel")
-            and float(s["dur"]) >= 3 * every and not s.get("mosaic") and size(s) >= 0.03]
+            and float(s["dur"]) >= 3 * every and not s.get("mosaic") and size(s) >= 0.03
+            and (at is None or i in at)]   # (at: the slots the effects director chose)
     cand = sorted(cand, key=lambda i: -size(segs[i]))[:2]   # the person big in frame: the swap reads
     cand.sort()
     used = {s.get("shot_id") for s in segs}
@@ -1053,7 +1055,57 @@ def mark_stabilize(segs: list[dict], by_id: dict, style: dict) -> int:
     return n
 
 
-def plan_mosaic(segs: list[dict], shots: list[dict], style: dict) -> int | None:
+def trip_pictures(segs: list[dict], shots: list[dict]) -> list[dict]:
+    """Good shots of the trip the reel doesn't show, one per moment and per landmark (the photo wall and the
+    camera roll show the trip, not Half Dome three times), best first."""
+    used = {s.get("shot_id") for s in segs}
+    from .diversity import scene_groups
+    ok = [s for s in sorted(shots, key=lambda s: -_quality(s)) if s.get("thumb") and s["id"] not in used
+          and s.get("ai", {}).get("usable", True)]
+    from .story import landmark
+    groups, seen, pool = scene_groups(ok) if ok else {}, set(), []
+    marks = {landmark(s) for s in shots if s["id"] in used} - {""}
+    for s in ok:
+        g, m = groups.get(s["id"], s["id"]), landmark(s)
+        if g in seen or (m and m in marks):
+            continue
+        seen.add(g)
+        if m:
+            marks.add(m)
+        pool.append(s)
+    return pool
+
+
+def plan_roll(segs: list[dict], shots: list[dict], at: int, beat: float = 0.5) -> int | None:
+    """The camera-roll opener on slot `at`: the phone's grid of the trip's photos scrolls and slows, and the cell
+    holding this shot opens to fill the screen (motion.camera_roll). Takes about two beats, at least 0.9 s, and
+    never more than half the shot. Returns the slot, or None."""
+    if not 0 <= at < len(segs) or segs[at].get("panel"):
+        return None
+    # a camera roll holds everything: the trip's other moments first, then any good shot (the reel's own too)
+    cells: list[str] = []
+    for s in trip_pictures(segs, shots) + sorted(shots, key=lambda s: -_quality(s)):
+        if s.get("thumb") and s["thumb"] not in cells and s.get("id") != segs[at].get("shot_id"):
+            cells.append(s["thumb"])
+        if len(cells) >= 30:
+            break
+    if len(cells) < 6:
+        return None
+    dur = float(segs[at]["dur"])
+    d = max(0.9, 2 * beat)
+    while d > 1.6:
+        d /= 2
+    d = min(d, 0.55 * dur)
+    if d < 0.8:
+        return None
+    cols = 3
+    target = cols * 3 + 1   # the middle of the fourth row: there are pictures above it to scroll past
+    segs[at]["roll"] = {"cells": cells, "target": target, "cols": cols,
+                        "dur": round(d, 3)}
+    return at
+
+
+def plan_mosaic(segs: list[dict], shots: list[dict], style: dict, at: int | None = None) -> int | None:
     """The photo wall: one shot near the middle of the reel (one with a person, held at least 1.5 s) gets the
     cells round its subject filled with little pictures of other shots from the trip (motion.mosaic). The subject
     keeps its cells clear. Returns the slot, or None."""
@@ -1063,26 +1115,13 @@ def plan_mosaic(segs: list[dict], shots: list[dict], style: dict) -> int | None:
     cols = int(g.get("cols", 8)) if isinstance(g, dict) else 8
     c, r = grid_shape(CANVAS.w, CANVAS.h, cols)
     total = sum(float(s["dur"]) for s in segs)
-    cand = [i for i, s in enumerate(segs) if 0 < i < len(segs) - 1 and not s.get("panel") and float(s["dur"]) >= 1.5]
+    cand = [i for i, s in enumerate(segs) if 0 < i < len(segs) - 1 and not s.get("panel") and float(s["dur"]) >= 1.5
+            and not s.get("backdrop") and (at is None or i == at)]   # (at: the slot the effects director chose)
     if not cand:
         return None
     k = min(cand, key=lambda i: (not segs[i].get("people"), abs(float(segs[i]["out_start"]) + float(segs[i]["dur"]) / 2
                                                                  - 0.5 * total)))
-    used = {s.get("shot_id") for s in segs}
-    from .diversity import scene_groups
-    ok = [s for s in sorted(shots, key=lambda s: -_quality(s)) if s.get("thumb") and s["id"] not in used
-          and s.get("ai", {}).get("usable", True)]
-    from .story import landmark
-    groups, seen, pool = scene_groups(ok) if ok else {}, set(), []
-    marks = {landmark(s) for s in shots if s["id"] in used} - {""}
-    for s in ok:  # one picture per moment and per landmark: the wall shows the trip, not Half Dome three times
-        g, m = groups.get(s["id"], s["id"]), landmark(s)
-        if g in seen or (m and m in marks):
-            continue
-        seen.add(g)
-        if m:
-            marks.add(m)
-        pool.append(s)
+    pool = trip_pictures(segs, shots)
     if not pool:
         return None
     sb = segs[k].get("subject_out") or {}
@@ -1107,7 +1146,8 @@ def fit_transition(e: dict, nxt: dict, name: str, tempo: float | None, beats: fl
     (`beats`, default 2), keyframed on each, and may take both shots whole; the others their natural length."""
     from .motion import MASKS, NATURAL
     if name not in MASKS:
-        return round(NATURAL.get(name, 0.4) * speed, 4), {}
+        own = {"tear": {"seed": side}, "cube": {"direction": ("left", "right")[side % 2]}}.get(name, {})
+        return round(NATURAL.get(name, 0.4) * speed, 4), own
     bl = 60.0 / float(tempo) if tempo else 0.5
     room = min(float(e["dur"]), float(nxt["dur"]))
     n = float(beats or 2)

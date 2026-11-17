@@ -782,10 +782,294 @@ def t_luma(a, b, p, **_):
     return (a * (1 - m) + b * m).astype(np.uint8)
 
 
+# --------------------------------------------- trend transitions and moves (docs/effects.md, research 2026-11)
+FILM = (14, 13, 12)
+
+
+def _shift(img: np.ndarray, dx: int, dy: int) -> np.ndarray:
+    """img moved by whole pixels; what comes in from outside is black (or 0 for a mask)."""
+    h, w = img.shape[:2]
+    out = np.zeros_like(img)
+    if abs(dx) >= w or abs(dy) >= h:
+        return out
+    ys, yd = (slice(0, h - dy), slice(dy, h)) if dy >= 0 else (slice(-dy, h), slice(0, h + dy))
+    xs, xd = (slice(0, w - dx), slice(dx, w)) if dx >= 0 else (slice(-dx, w), slice(0, w + dx))
+    out[yd, xd] = img[ys, xs]
+    return out
+
+
+def t_film(a, b, p, direction: str = "up", **_):
+    """Film-strip roll: the picture shrinks onto a strip of film (dark border, sprocket holes down both sides), the
+    strip rolls one frame on to the next shot, and it grows back to fill the screen. Memories, road trips, a new day."""
+    h, w = a.shape[:2]
+    s = 1.0 - 0.2 * float(np.sin(np.pi * p)) ** 0.7
+    fw, fh = max(2, int(w * s)), max(2, int(h * s))
+    gap = int(0.05 * fh)
+    off = int(round(ease_in_out(p) * (fh + gap)))
+    sign = -1 if direction != "down" else 1
+    out = np.full_like(a, FILM)
+    x0 = (w - fw) // 2
+    for img, k in ((a, 0), (b, 1)):
+        y0 = (h - fh) // 2 + (k * (fh + gap) - off) * (-sign)
+        if y0 >= h or y0 + fh <= 0:
+            continue
+        small = cv2.resize(img, (fw, fh), interpolation=cv2.INTER_AREA)
+        ya, yb = max(0, y0), min(h, y0 + fh)
+        out[ya:yb, x0:x0 + fw] = small[ya - y0:yb - y0]
+    m = (w - fw) // 2
+    if m > 8:   # sprocket holes, moving with the strip
+        hw, hh, pitch = int(m * 0.42), max(3, int(m * 0.6)), max(6, int(m * 1.3))
+        start = (-off * -sign) % pitch
+        for y in range(int(start) - pitch, h, pitch):
+            for x in ((m - hw) // 2, w - m + (m - hw) // 2):
+                cv2.rectangle(out, (x, y), (x + hw, y + hh), (236, 232, 222), -1, lineType=cv2.LINE_AA)
+    v = abs(float(np.cos(np.pi * p)))
+    if v < 0.8:   # the roll is quick in the middle: a little vertical blur
+        out = motion_blur(out, int((0.8 - v) * 30), horizontal=False)
+    return out
+
+
+def _torn(h: int, w: int, seed: int, vertical: bool):
+    """A torn paper edge: a jagged line across the frame (rough at two scales) and the paper fibres along it."""
+    def make():
+        n = h if vertical else w
+        rng = np.random.default_rng(seed)
+        big = np.cumsum(rng.normal(0, 1, n // 40 + 2))
+        big = np.interp(np.arange(n), np.linspace(0, n, len(big)), big - big.mean())
+        fine = np.convolve(rng.normal(0, 1, n), np.ones(3) / 3, mode="same")
+        line = (h if not vertical else w) / 2 + big * 0.012 * n / max(1.0, np.abs(big).max() / 2.5) + fine * 3
+        k = max(0.5, min(h, w) / 1080)
+        fib = (9 + np.abs(np.convolve(rng.normal(0, 6, n), np.ones(5) / 5, mode="same"))) * k
+        return line.astype(np.float32), fib.astype(np.float32)
+    return _geo(("torn", h, w, seed, vertical), make)
+
+
+def t_tear(a, b, p, direction: str = "horizontal", seed: int = 0, **_):
+    """Paper tear: the picture rips across like a page (rough edge, white paper fibres) and the two halves pull
+    apart to show the next shot. Scrapbook and travel-diary reels, a new chapter."""
+    h, w = a.shape[:2]
+    vertical = direction == "vertical"
+    line, fib = _torn(h, w, int(seed), vertical)
+    xx, yy = _xy(h, w)
+    along, across = (yy, xx) if vertical else (xx, yy)
+    li = line[along.astype(np.int32)]
+    fi = fib[along.astype(np.int32)]
+    d = int(round(ease_in(min(1.0, p * 1.15)) * 0.62 * (w if vertical else h)))
+    first = (across < li).astype(np.float32)          # the top (or left) piece
+    paper_a = ((across >= li) & (across < li + fi)).astype(np.float32)   # its torn white edge
+    second = (across >= li).astype(np.float32)
+    paper_b = ((across < li) & (across >= li - fi * 0.6)).astype(np.float32)
+    out = b.copy()
+    for img, m, e, sgn in ((a, first, paper_a, -1), (a, second, paper_b, 1)):
+        dx, dy = (sgn * d, 0) if vertical else (0, sgn * d)
+        mm, ee, im = _shift(m, dx, dy), _shift(e, dx, dy), _shift(img, dx, dy)
+        out = cv2.blendLinear(np.full_like(out, PAPER), out, ee, 1.0 - ee)
+        out = cv2.blendLinear(im, out, mm, 1.0 - mm)
+    return out
+
+
+def t_cube(a, b, p, direction: str = "left", **_):
+    """3D cube: the two shots are faces of a cube that turns a quarter round, with perspective and the face turning
+    away falling into shade. Moving on to the next place; a list of stops; an upbeat montage."""
+    h, w = a.shape[:2]
+    th = ease_in_out(p) * np.pi / 2
+    horiz = direction in ("left", "right")
+    sgn = 1 if direction in ("left", "up") else -1
+    L = w if horiz else h
+    C = 2.4 * L   # camera distance from the cube's centre; the front face fills the frame at rest
+    F = C - L / 2
+
+    def face(rot):
+        pts = []
+        for u, v in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            x, y, z = u * L / 2, v * (h if horiz else w) / 2, -L / 2
+            c, s_ = np.cos(rot), np.sin(rot)
+            x, z = x * c - z * s_, x * s_ + z * c
+            sx, sy = (x, y) if horiz else (y, x)
+            k = F / (z + C)
+            pts.append((w / 2 + sx * k, h / 2 + sy * k))
+        return np.float32(pts), rot
+
+    out = np.full_like(a, 8)
+    src = np.float32([(0, 0), (w, 0), (w, h), (0, h)])
+    faces = [(a, face(sgn * th)), (b, face(sgn * (th - np.pi / 2)))]
+    faces.sort(key=lambda f: -abs(f[1][1]))   # the face turned further away first
+    for img, (q, rot) in faces:
+        if abs(rot) >= np.pi / 2 - 1e-3:
+            continue
+        if not horiz:   # (corners came out top-left, bottom-left, ...: put them in the source's order)
+            q = q[[0, 3, 2, 1]]
+        M = cv2.getPerspectiveTransform(src, q)
+        shade = 0.45 + 0.55 * float(np.cos(rot))
+        wimg = cv2.warpPerspective((img.astype(np.float32) * shade).astype(np.uint8), M, (w, h))
+        m = cv2.warpPerspective(np.ones((h, w), np.float32), M, (w, h))
+        out = cv2.blendLinear(wimg, out, m, 1.0 - m)
+    return out
+
+
+def _rounded(h: int, w: int, r: int) -> np.ndarray:
+    def make():
+        m = np.zeros((h, w), np.uint8)
+        cv2.rectangle(m, (r, 0), (w - 1 - r, h - 1), 255, -1)
+        cv2.rectangle(m, (0, r), (w - 1, h - 1 - r), 255, -1)
+        for cx, cy in ((r, r), (w - 1 - r, r), (r, h - 1 - r), (w - 1 - r, h - 1 - r)):
+            cv2.circle(m, (cx, cy), r, 255, -1, lineType=cv2.LINE_AA)
+        return m.astype(np.float32) / 255.0
+    return _geo(("round", h, w, r), make)
+
+
+def t_card(a, b, p, **_):
+    """Reel card: the shot shrinks into a rounded card with a soft shadow, as if it were one post in a feed, and
+    flicks up off the screen to show the next shot settling in behind it. A photo dump, a list, a quick change."""
+    h, w = a.shape[:2]
+    if p < 0.45:
+        e = ease_out(p / 0.45)
+        g, dy, ang = 1.0 - 0.38 * e, 0.0, -3.0 * e
+    else:
+        e = ease_in((p - 0.45) / 0.55)
+        g, dy, ang = 0.62, -1.15 * h * e, -3.0 - 5.0 * e
+    k = min(1.0, p / 0.9)
+    back = affine(b, 1.08 - 0.08 * ease_out(k))
+    if p < 0.7:
+        back = cv2.GaussianBlur(back, (0, 0), 1 + 10 * (0.7 - p))
+    back = cv2.convertScaleAbs(back, alpha=0.7 + 0.3 * ease_out(k))
+    cw, chh = max(2, int(w * g)), max(2, int(h * g))
+    r = max(2, int(0.06 * cw))
+    card = cv2.resize(a, (cw, chh), interpolation=cv2.INTER_AREA)
+    M = cv2.getRotationMatrix2D((cw / 2, chh / 2), ang, 1.0)
+    M[0, 2] += (w - cw) / 2
+    M[1, 2] += (h - chh) / 2 + dy
+    img = cv2.warpAffine(card, M, (w, h))
+    m = cv2.warpAffine(_rounded(chh, cw, r), M, (w, h))
+    if g < 0.999:
+        sh = cv2.GaussianBlur(cv2.resize(m, (w // 6, h // 6)), (0, 0), 4)
+        sh = np.roll(cv2.resize(sh, (w, h)), int(0.02 * h), axis=0) * 0.5
+        back = (back.astype(np.float32) * (1 - sh[..., None])).astype(np.uint8)
+    return cv2.blendLinear(img, back, m, 1.0 - m)
+
+
+def t_dots(a, b, p, cell: int = 0, **_):
+    """Halftone dots: the next shot builds out of round dots that grow (its bright parts first) until they join
+    into the picture. Graphic, techy or night reels; a reveal."""
+    h, w = a.shape[:2]
+    c = int(cell) or max(12, w // 30)
+
+    def make():
+        xx, yy = _xy(h, w)
+        cx, cy = (np.floor(xx / c) + 0.5) * c, (np.floor(yy / c) + 0.5) * c
+        return (np.hypot(xx - cx, yy - cy) / c).astype(np.float32)
+    d = _geo(("dots", h, w, c), make)
+    cols, rows = (w + c - 1) // c, (h + c - 1) // c
+    lum = cv2.resize(cv2.cvtColor(b, cv2.COLOR_RGB2GRAY), (cols, rows), interpolation=cv2.INTER_AREA).astype(np.float32) / 255
+    order = 0.75 * (1 - lum)   # bright cells first
+    r = np.clip(p * 1.8 - order, 0, 1) * 0.75   # 0.75 cell covers the whole cell
+    rr = cv2.resize(r, (cols * c, rows * c), interpolation=cv2.INTER_NEAREST)[:h, :w]
+    m = np.clip((rr - d) * c / 1.5 + 0.5, 0, 1).astype(np.float32)
+    return cv2.blendLinear(b, a, m, 1.0 - m)
+
+
+def isolate(frame: np.ndarray, mask: np.ndarray, kind: str = "pop", k: float = 1.0) -> np.ndarray:
+    """The people stay as they are and the world round them changes: `pop` = colour pop (the rest black and white),
+    `spotlight` = the lights go down round them. k 0..1 = how far in."""
+    if k <= 0.001:
+        return frame
+    m = np.clip(mask, 0, 1).astype(np.float32)
+    if kind == "spotlight":
+        h, w = frame.shape[:2]
+        xx, yy = _xy(h, w)
+        ys, xs = np.nonzero(m > 0.5)
+        cx, cy = (float(xs.mean()), float(ys.mean())) if len(xs) else (w / 2, h / 2)
+        v = np.clip(1.0 - np.hypot((xx - cx) / (0.55 * w), (yy - cy) / (0.45 * h)), 0, 1)
+        dim = (0.08 + 0.32 * v * v)[..., None]
+        rest = (frame.astype(np.float32) * (1 - k + k * dim)).astype(np.uint8)
+    else:
+        g = cv2.cvtColor(cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY), cv2.COLOR_GRAY2RGB)
+        g = cv2.convertScaleAbs(g, alpha=1.12, beta=-12)
+        rest = cv2.addWeighted(frame, 1 - k, g, k, 0)
+    return cv2.blendLinear(frame, rest, m, 1.0 - m)
+
+
+def sticker(frame: np.ndarray, mask: np.ndarray, outline: bool = True) -> np.ndarray:
+    """A freeze-frame character intro: the person cut out with a thick white outline like a sticker, the world
+    behind them dimmed, greyed and softened."""
+    h, w = frame.shape[:2]
+    m = np.clip(mask, 0, 1).astype(np.float32)
+    small = cv2.resize(frame, (w // 4, h // 4), interpolation=cv2.INTER_AREA)
+    bg = cv2.resize(cv2.GaussianBlur(small, (0, 0), 2.5), (w, h), interpolation=cv2.INTER_LINEAR)
+    grey = cv2.cvtColor(cv2.cvtColor(bg, cv2.COLOR_RGB2GRAY), cv2.COLOR_GRAY2RGB)
+    bg = (cv2.addWeighted(bg, 0.35, grey, 0.65, 0).astype(np.float32) * 0.55).astype(np.uint8)
+    out = bg
+    if outline:
+        r = max(4, int(0.011 * w))
+        ring = cv2.dilate((m > 0.5).astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+        ring = cv2.GaussianBlur(ring.astype(np.float32), (0, 0), 1.2)
+        out = cv2.blendLinear(np.full_like(frame, 255), out, ring, 1.0 - ring)
+    return cv2.blendLinear(frame, out, m, 1.0 - m)
+
+
+def camera_roll(shot: np.ndarray, thumbs: list[np.ndarray], target: int, u: float, cols: int = 3,
+                light: bool = False) -> np.ndarray:
+    """The phone's camera roll: a grid of the trip's photos scrolls up fast and slows down (u 0..0.6), then the
+    cell holding this shot opens up to fill the screen (0.6..1), the shot already playing inside it."""
+    h, w = shot.shape[:2]
+    gap = max(2, w // 360)
+    cs = (w - gap * (cols - 1)) / cols
+    pitch = cs + gap
+    tr, tc = divmod(int(target), cols)
+    tr = max(tr, int(np.ceil((1.2 * h + h / 2 - cs / 2) / pitch)))   # far enough down to scroll past a screenful
+    rows = tr + int(h / pitch) + 2
+    land = tr * pitch + cs / 2 - h / 2   # scroll that centres the target row; it starts at the top of the roll
+    scroll = land * ease_out(min(1.0, u / 0.6))
+    out = np.full_like(shot, 250 if light else 6)
+    tile = max(2, int(round(cs)))
+    k = 0
+    for r_ in range(rows):
+        y = int(round(r_ * pitch - scroll))
+        if y >= h or y + tile <= 0:
+            k += cols
+            continue
+        for c_ in range(cols):
+            x = int(round(c_ * pitch))
+            im = None
+            if r_ == tr and c_ == tc:
+                im = _square(shot, tile)
+            elif thumbs:
+                im = cv2.resize(thumbs[k % len(thumbs)], (tile, tile), interpolation=cv2.INTER_AREA)
+                k += 1
+            if im is None:
+                continue
+            ya, yb, xb = max(0, y), min(h, y + tile), min(w, x + tile)
+            out[ya:yb, x:xb] = im[ya - y:yb - y, :xb - x]
+    if u <= 0.6:
+        return out
+    e = ease_in_out((u - 0.6) / 0.4)
+    x0, y0 = tc * pitch, tr * pitch - scroll
+    rx0, ry0 = x0 * (1 - e), y0 * (1 - e)
+    rx1, ry1 = (x0 + cs) * (1 - e) + w * e, (y0 + cs) * (1 - e) + h * e
+    rw, rh = max(2, int(rx1 - rx0)), max(2, int(ry1 - ry0))
+    sw, sh_ = shot.shape[1], shot.shape[0]
+    ar = rw / rh   # this rect's shape, cut from the middle of the shot
+    cw_, ch_ = (sw, int(sw / ar)) if sw / sh_ < ar else (int(sh_ * ar), sh_)
+    cx0, cy0 = (sw - cw_) // 2, (sh_ - ch_) // 2
+    pic = cv2.resize(shot[cy0:cy0 + ch_, cx0:cx0 + cw_], (rw, rh), interpolation=cv2.INTER_AREA)
+    fx0, fy0 = int(rx0), int(ry0)
+    ya, yb, xa, xb = max(0, fy0), min(h, fy0 + rh), max(0, fx0), min(w, fx0 + rw)
+    if yb > ya and xb > xa:
+        out[ya:yb, xa:xb] = pic[ya - fy0:yb - fy0, xa - fx0:xb - fx0]
+    return out
+
+
+def _square(img: np.ndarray, size: int) -> np.ndarray:
+    h, w = img.shape[:2]
+    s = min(h, w)
+    return cv2.resize(img[(h - s) // 2:(h - s) // 2 + s, (w - s) // 2:(w - s) // 2 + s], (size, size),
+                      interpolation=cv2.INTER_AREA)
+
+
 TRANSITIONS = {
     "push": t_push, "wipe": t_wipe, "clock": t_clock, "pixel": t_pixel, "burn": t_burn, "zoomblur": t_zoomblur,
     "shake": t_shake, "flip": t_flip, "blinds": t_blinds, "rgb": t_rgb, "ripple": t_ripple, "stretch": t_stretch,
-    "luma": t_luma,
+    "luma": t_luma, "film": t_film, "tear": t_tear, "cube": t_cube, "card": t_card, "dots": t_dots,
     "mirror": t_mirror, "polaroid": t_polaroid,
     "slats": t_slats, "stripes": t_stripes, "diamond": t_diamond, "frame": t_frame, "cells": t_cells,
     "split": t_split, "vsplit": t_vsplit, "iris": t_iris,
@@ -807,7 +1091,8 @@ NATURAL = {"cut": 0.0, "dissolve": 0.5, "fade": 0.5, "dip": 0.5, "blur": 0.45, "
            "split": 0.9, "vsplit": 0.9, "iris": 0.8, "slats": 0.8, "stripes": 0.8, "diamond": 0.8, "frame": 1.0, "cells": 1.0,
            "mirror": 0.9, "polaroid": 1.1,
            "push": 0.4, "wipe": 0.5, "clock": 0.6, "pixel": 0.4, "burn": 0.6, "zoomblur": 0.34, "shake": 0.26,
-           "flip": 0.5, "blinds": 0.6, "rgb": 0.22, "ripple": 0.7, "stretch": 0.3, "luma": 0.7}
+           "flip": 0.5, "blinds": 0.6, "rgb": 0.22, "ripple": 0.7, "stretch": 0.3, "luma": 0.7,
+           "film": 0.7, "tear": 0.6, "cube": 0.6, "card": 0.7, "dots": 0.6}
 
 
 def normalize(name: str | None) -> str | None:

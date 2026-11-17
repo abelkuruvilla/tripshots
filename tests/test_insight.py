@@ -132,3 +132,23 @@ def test_finding_footage_by_what_the_ai_saw(tmp_path, monkeypatch):
                     "bbb@0.000": {"caption": "A lake at dawn", "tags": ["lake"]}}, "fake")
     res = catalog.find(folders=["/f"], text="bisons")
     assert res["count"] == 1
+
+
+class BrokenAI(ai.Backend):
+    name = "broken"
+
+    def ask(self, prompt, images=None, max_tokens=4000):
+        raise ai.ReelError("the AI went away") if hasattr(ai, "ReelError") else RuntimeError("the AI went away")
+
+
+def test_asking_again_keeps_old_verdicts_until_replaced(tmp_path, monkeypatch):
+    """Analyse everything again used to delete every verdict first: a stopped run lost them."""
+    import tripshots.text as text
+    monkeypatch.setattr(text, "contact_sheets", lambda shots, d, **k: [(Path("sheet.jpg"), [s["id"] for s in shots])])
+    s = _shot(tmp_path, "S020")
+    lib.put_scores({lib.shot_key(s): {"v": 2, "score": 8, "caption": "a canyon"}}, "fake")
+    try:
+        ai.score_shots([s], BrokenAI(), tmp_path, rescore=True)
+    except Exception:
+        pass
+    assert lib.get_scores([lib.shot_key(s)])[lib.shot_key(s)]["caption"] == "a canyon"

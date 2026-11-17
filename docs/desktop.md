@@ -49,8 +49,12 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
   shots, planning, rendering, sound and checks), with what it understood and found, any question it asks, and
   **Open the reel** at the end.
 - **A reel** is an editor on one screen: the viewer, an inspector with tabs, and the timeline along the bottom.
-  Click a shot to jump to it; the swap button on a shot replaces it with one of the best shots of the same footage
-  without moving the cuts. **Render the changes** makes the new version. Every change can be undone (⌘Z / Ctrl+Z,
+  Click a shot to jump to it; the swap button on a shot replaces it without moving the cuts: **Suggested** shows the
+  best shots of the same footage, **All footage** every shot of it (search by what's in it, order by quality, when
+  filmed or file name). When the clip you choose is longer than the slot, you choose the part that plays: drag the
+  window along the clip's frames (it plays on a loop above), keep TripShots' pick (the sharpest, steadiest part), or
+  **Let AI choose** (the AI looks at frames across the whole clip, picks the moment for this place in the reel and
+  says why). The part can be anywhere in the file. **Render the changes** makes the new version. Every change can be undone (⌘Z / Ctrl+Z,
   ⇧⌘Z to redo), and removing something offers Undo right away.
   - **Your edit / Last render**: *Your edit* shows a still of the reel at the playhead as it stands now, with its
     words and colour as the render will make them (motion and transitions left out), so changes show at once.
@@ -91,7 +95,8 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
     picture in picture with its own lane on the timeline, where you drag it or its end; select it to place it in a
     corner or anywhere, size it and set its length), **Zoom and position** (set zoom and where the picture sits, then
     **Keyframe here**; the picture moves smoothly between keyframes, e.g. a slow push in onto a face), repeat,
-    replace, add a shot after it, remove it, its length, which part of the clip plays, speed and speed ramps, the
+    replace, add a shot after it, remove it, its length, which part of the clip plays (a slider, or **Choose the part on
+    the clip, or let AI choose**), speed and speed ramps, the
     transition into the next shot and an effect on the shot (pickers that draw each one on your own shots, filtered
     by energy; with no shot selected, **Choose effects with AI**: see [the effects library](effects.md)), framing (crop, pan, whole frame). **Sound**: where the song starts, the music
     level, its fade out and the beat punch. Space plays, ← → step a frame (⇧ a second). Later text moves with the

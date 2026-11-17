@@ -8,7 +8,7 @@
   import PipPanel from "./PipPanel.svelte";
   import Section from "../../lib/Section.svelte";
 
-  let { onpick, oninsert, onontop } = $props();
+  let { onpick, oninsert, onontop, onpart } = $props();
   const ramps = [[null, "None"], ["velocity", "Velocity"], ["slam", "Slam"], ["bullet", "Bullet"], ["rush", "Rush"], ["impact", "Impact"], ["surge", "Surge"]];
   const layouts = [["crop", "Crop to the subject"], ["pan", "Pan across"], ["blur_fill", "Whole frame, blurred behind"], ["fill", "Fill (already upright)"]];
   const nice = (id) => id.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -121,6 +121,8 @@
         <label for="ifr">Plays from <span class="hint">· {tc(from)} of the clip</span></label>
         <input id="ifr" type="range" min={s.clip[0]} max={Math.max(s.clip[0], s.clip[1] - s.dur * (s.speed || 1))} step="0.05"
                bind:value={from} onchange={() => op({ op: "slip", in: +from })} />
+        <button class="btn sm ghost part" onclick={() => onpart?.(s)} disabled={!!s.panel || !!s.ramp}>
+          <Icon name="scissors" size={14} /> Choose the part on the clip, or let AI choose</button>
       </div>
     {/if}
     <div class="field">
@@ -236,4 +238,5 @@
   .why { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
   input[type="range"] { margin-top: 8px; }
   kbd { height: 16px; min-width: 16px; font-size: 10px; }
+  .part { align-self: flex-start; margin-top: 4px; }
 </style>

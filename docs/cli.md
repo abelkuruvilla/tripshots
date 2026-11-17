@@ -17,7 +17,7 @@ Every command prints its result as JSON on stdout and its progress on stderr, so
 | [`post`](#post) | post a finished reel (now or at a set time) through Upload-Post; a dry run unless --send (needs UPLOAD_POST_KEY and UPLOAD_POST_USER) |
 | [`reels`](#reels) | your reels as projects: list (pinned first), pin, favorite, file in a collection, rename (every file of the reel moves), duplicate, delete (to the Trash) |
 | [`split-trip`](#split-trip) | one trip in parts (a day each, or a place each), each saved as a selection; --make cuts a reel from every part, filed in the trip's collection |
-| [`effects`](#effects) | the effects library: transitions, text motions and looks, shot effects, each with its energy, mood and what it suits (make --effects lets the AI pick from it) |
+| [`effects`](#effects) | the effects library: transitions, text motions and looks, shot effects, signature moves (photo wall, backdrop swap, ...), each with its energy, mood and what it suits (every make lets the AI pick from it) |
 | [`skills`](#skills) | agent skills that work next to TripShots (HyperFrames, Remotion, one-take, Lemo-Opuscar, Instagram agent): what they add, whether installed, how to install |
 | [`export`](#export) | hand the edit to Resolve / Premiere / Final Cut: EDL, OTIO, storyboard.md |
 | [`learn`](#learn) | learn a style from reference reels (URLs or files) |
@@ -454,10 +454,10 @@ options:
 ## effects
 
 ```text
-usage: tripshots effects [-h] [--json] [{transitions,text,shot}]
+usage: tripshots effects [-h] [--json] [{transitions,text,shot,moves}]
 
 positional arguments:
-  {transitions,text,shot}
+  {transitions,text,shot,moves}
                         only one part of it
 
 options:

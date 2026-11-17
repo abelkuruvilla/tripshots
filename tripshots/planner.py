@@ -994,7 +994,8 @@ def _open_on_face(segs: list[dict], shots: list[dict], style: dict, every: float
     return True
 
 
-def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: float) -> list[int]:
+def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: float,
+                   at: list[int] | None = None) -> list[int]:
     """The person stays, the world behind them changes (motion.backdrop: places, colour or both): a held shot of a
     person gets, on each beat, a picture of another place of the trip (or a flat colour from its own palette) behind
     them; its last beat is its real background again. The opening person shot gets the places, a later one colour."""
@@ -1012,7 +1013,8 @@ def plan_backdrops(segs: list[dict], shots: list[dict], style: dict, beat_len: f
         b = s.get("subject") or {}
         return (float(b.get("x1", 0)) - float(b.get("x0", 0))) * (float(b.get("y1", 0)) - float(b.get("y0", 0)))
     cand = [i for i, s in enumerate(segs) if s.get("people") and s.get("kind") == "video" and not s.get("panel")
-            and float(s["dur"]) >= 3 * every and not s.get("mosaic") and size(s) >= 0.03]
+            and float(s["dur"]) >= 3 * every and not s.get("mosaic") and size(s) >= 0.03
+            and (at is None or i in at)]   # (at: the slots the effects director chose)
     cand = sorted(cand, key=lambda i: -size(segs[i]))[:2]   # the person big in frame: the swap reads
     cand.sort()
     used = {s.get("shot_id") for s in segs}
@@ -1053,7 +1055,7 @@ def mark_stabilize(segs: list[dict], by_id: dict, style: dict) -> int:
     return n
 
 
-def plan_mosaic(segs: list[dict], shots: list[dict], style: dict) -> int | None:
+def plan_mosaic(segs: list[dict], shots: list[dict], style: dict, at: int | None = None) -> int | None:
     """The photo wall: one shot near the middle of the reel (one with a person, held at least 1.5 s) gets the
     cells round its subject filled with little pictures of other shots from the trip (motion.mosaic). The subject
     keeps its cells clear. Returns the slot, or None."""
@@ -1063,7 +1065,8 @@ def plan_mosaic(segs: list[dict], shots: list[dict], style: dict) -> int | None:
     cols = int(g.get("cols", 8)) if isinstance(g, dict) else 8
     c, r = grid_shape(CANVAS.w, CANVAS.h, cols)
     total = sum(float(s["dur"]) for s in segs)
-    cand = [i for i, s in enumerate(segs) if 0 < i < len(segs) - 1 and not s.get("panel") and float(s["dur"]) >= 1.5]
+    cand = [i for i, s in enumerate(segs) if 0 < i < len(segs) - 1 and not s.get("panel") and float(s["dur"]) >= 1.5
+            and not s.get("backdrop") and (at is None or i == at)]   # (at: the slot the effects director chose)
     if not cand:
         return None
     k = min(cand, key=lambda i: (not segs[i].get("people"), abs(float(segs[i]["out_start"]) + float(segs[i]["dur"]) / 2

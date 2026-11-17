@@ -159,3 +159,70 @@ def test_the_catalog_is_complete_and_the_pickers_draw_it(tmp_path):
     with Image.open(e) as im:
         assert im.size == (288, 256)
     assert server.fx_thumb(p, 1, "effect", "nope") is None
+
+
+def _people_plan(tmp_path, n=8):
+    """A reel with you in it: shot 4 a long clip of you big in frame, shot 3 a held photo of you."""
+    from PIL import Image
+    p, plan, by_id = _plan(tmp_path, n=n, trans=(None,) * n)
+    for i, s in enumerate(by_id.values()):
+        f = tmp_path / f"th{i}.jpg"
+        Image.new("RGB", (160, 90), (30 * i % 255, 120, 200)).save(f)
+        s["thumb"] = str(f)
+        s["ai"]["landmark"] = f"place {i}"
+    for i in (2, 3):
+        plan["segments"][i]["people"] = True
+    you = plan["segments"][3]
+    you.update({"kind": "video", "dur": 3.0, "subject": {"x0": 0.3, "y0": 0.2, "x1": 0.7, "y1": 0.9}})
+    t = 0.0
+    for sg in plan["segments"]:
+        sg["out_start"], t = t, t + float(sg["dur"])
+    plan["segments"][-2]["role"] = "peak"
+    shots = list(by_id.values()) + [{"id": f"X{i}", "thumb": by_id["S0"]["thumb"], "kind": "photo",
+                                     "ai": {"score": 6, "landmark": f"other {i}"}} for i in range(12)]
+    return plan, by_id, shots
+
+
+def test_signature_moves_come_without_a_style_asking(tmp_path):
+    """A reel made from just a song gets the photo wall, colour bloom, ... when the footage can carry them."""
+    plan, by_id, shots = _people_plan(tmp_path)
+    ai = FakeAI({"transitions": [], "texts": [], "effects": [],
+                 "moves": [{"id": "photo_wall", "shots": [1]},                  # shot 1 can't carry it: dropped
+                           {"id": "photo_wall", "shots": [3], "why": "you mid-reel"},
+                           {"id": "colour_bloom", "shots": [7, 1, 2]},           # at most two shots
+                           {"id": "silhouette", "shots": [4]},                   # a third kind: over the limit
+                           {"id": "teleport", "shots": [2]}]})
+    rec = fxlib.direct(plan, by_id, {"name": "beat-montage"}, ai, shots)
+    assert "SIGNATURE MOVES" in ai.prompts[0] and '"photo_wall": [3, 4]' in ai.prompts[0]
+    segs = plan["segments"]
+    assert segs[2].get("mosaic") and segs[2]["mosaic"]["cells"]
+    assert [i + 1 for i, s in enumerate(segs) if s.get("colour_in")] == [1, 7]
+    assert not any(s.get("silhouette") for s in segs)
+    assert [m["id"] for m in plan["moves"]] == ["photo_wall", "colour_bloom"]
+    assert any("photo wall" in c for c in rec["changes"])
+
+
+def test_moves_keep_to_the_shots_that_can_carry_them(tmp_path):
+    plan, by_id, shots = _people_plan(tmp_path)
+    ai = FakeAI({"moves": [{"id": "backdrop_places", "shots": [2]},              # a photo: no backdrop swap
+                           {"id": "silhouette", "shots": [1, 3, 4]},            # shot 1 has nobody in it
+                           {"id": "grid_lines"}]})
+    fxlib.direct(plan, by_id, {"name": "x"}, ai, shots)
+    segs = plan["segments"]
+    assert not any(s.get("backdrop") for s in segs)
+    assert [i + 1 for i, s in enumerate(segs) if s.get("silhouette")] == [3, 4] and plan["grid"]["cols"] == 8
+    # a style that already does a move isn't offered it again
+    plan2, by2, shots2 = _people_plan(tmp_path)
+    el = fxlib.eligible(plan2, {"motion": {"mosaic": True, "grid": {"cols": 8}}})
+    assert el["photo_wall"] == [] and "grid_lines" not in el
+
+
+def test_without_an_ai_one_move_by_rules_and_the_editor_chooses_again(tmp_path, monkeypatch):
+    plan, by_id, shots = _people_plan(tmp_path)
+    rec = fxlib.direct(plan, by_id, {"name": "x"}, None, shots)
+    assert rec["by"] == "rules" and plan["segments"][3].get("backdrop", {}).get("mode") == "places"
+    assert [s.get("trans_out") for s in plan["segments"]] == [None] * len(plan["segments"])   # transitions stand
+    assert fxlib.clear_moves(plan) == 1 and not plan["segments"][3].get("backdrop") and "moves" not in plan
+    plan["tempo"] = 80   # a slower song: the photo wall instead
+    fxlib.direct(plan, by_id, {"name": "x"}, None, shots)
+    assert any(s.get("mosaic") for s in plan["segments"])

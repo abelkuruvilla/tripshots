@@ -794,9 +794,10 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             for sg in segs:   # what it chose before goes; what you set by hand stays
                 if (sg.get("effect") or {}).get("auto"):
                     sg.pop("effect", None)
+            fxlib.clear_moves(plan)
             st = {**style, "effects": {**(style.get("effects") or {}), "use": "auto" if backend else "rules",
-                                       **{k: ed[k] for k in ("transitions", "text", "shots") if k in ed}}}
-            rec = fxlib.direct(plan, shots, st, backend)
+                                       **{k: ed[k] for k in ("transitions", "text", "shots", "moves") if k in ed}}}
+            rec = fxlib.direct(plan, shots, st, backend, list(shots.values()))
             done.append(f"effects chosen by {rec.get('by', 'rules')}: " + (", ".join(rec.get("changes") or []) or "no change"))
         elif op == "delete":
             i = _slot(plan, ed["segment"])

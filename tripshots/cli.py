@@ -841,9 +841,9 @@ def build_parser() -> argparse.ArgumentParser:
     st.set_defaults(fn=cmd_split_trip)
 
     fx = sub.add_parser("effects", help="the effects library: transitions, text motions and looks, shot effects, "
-                                        "each with its energy, mood and what it suits (make --effects lets the AI "
-                                        "pick from it)")
-    fx.add_argument("kind", nargs="?", choices=["transitions", "text", "shot"], help="only one part of it")
+                                        "signature moves (photo wall, backdrop swap, ...), each with its energy, "
+                                        "mood and what it suits (every make lets the AI pick from it)")
+    fx.add_argument("kind", nargs="?", choices=["transitions", "text", "shot", "moves"], help="only one part of it")
     fx.add_argument("--json", action="store_true")
     fx.set_defaults(fn=cmd_effects)
 

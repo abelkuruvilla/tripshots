@@ -508,7 +508,7 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         style["effects"] = {**(style.get("effects") or {}), "use": str(ex["effects"])}
     try:   # the effects director: transitions, text motion and looks, a shot effect, from the library (fxlib.py)
         from . import fxlib
-        fxlib.direct(plan, by_id, style, backend)
+        fxlib.direct(plan, by_id, style, backend, shots)
     except Exception as e:  # never costs the user the reel
         log(f"effects director skipped ({str(e)[:120]})")
     from . import grade as grade_mod

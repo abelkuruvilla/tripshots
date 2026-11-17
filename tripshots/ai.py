@@ -397,11 +397,9 @@ def score_shots(shots: list[dict], backend: Backend, work: Path, rescore: bool =
         v["duplicate_of"] = id_of.get(dup) if dup else None  # stored as shot key
         return v
 
-    if rescore:
-        n = lib.forget_scores(list(key_of.values()))
-        if n:
-            log(f"forgot {n} stored AI verdicts for these shots")
-    stored = lib.get_scores(list(key_of.values()))
+    # rescore: every shot is asked again, but the stored verdicts stay until each new one replaces it, so a run
+    # that is stopped part way leaves every shot with a verdict (deleting them first lost thousands)
+    stored = {} if rescore else lib.get_scores(list(key_of.values()))
     # make accepts any stored verdict; analyze (min_version=AI_VERSION) re-asks for older, thinner ones
     stored = {k: v for k, v in stored.items() if int(v.get("v", 1)) >= min_version}
     results = {i: to_run_ids(stored[k]) for i, k in key_of.items() if k in stored}

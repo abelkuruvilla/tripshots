@@ -296,3 +296,56 @@ def test_people_tracker_looks_again_after_missing_someone(monkeypatch):
     assert pt.follow(0, fr, 6) is None and pt.follow(0, fr, 12).mean() == 1.0
     assert pt.follow(0, fr, 14).mean() == 1.0                             # a frame without them keeps the last mask
     assert 0.4 < pt.follow(0, fr, 16).mean() < 0.5                        # smoothed over time
+
+
+def test_flash_zoom_punches_in_on_the_person_on_the_beats():
+    from tripshots import motion
+    zp = {"times": [0.5, 1.0, 1.5], "zooms": [1.2, 1.44, 1.0]}
+    assert motion.flash_zoom_at(zp, 0.3) == (1.0, 0.0, 0.0)                 # nothing before the first hit
+    z, fl, bl = motion.flash_zoom_at(zp, 0.5)
+    assert z == 1.0 and fl == 0.8 and bl > 0                                # the hit: full flash, the snap starts
+    assert motion.flash_zoom_at(zp, 0.8)[:2] == (1.2, 0.0)                  # landed, flash gone
+    assert motion.flash_zoom_at(zp, 1.2)[0] == 1.44 and motion.flash_zoom_at(zp, 1.8)[0] == 1.0   # ... and back out
+    assert 0.2 < motion.flash_zoom_at(zp, 0.49)[1] < 0.3                    # a frame of glow before the hit
+    # the person is on the right: the zoom keeps them in frame, centred on their head
+    fr = np.zeros((320, 180, 3), np.uint8)
+    fr[60:300, 120:160] = 200
+    mask = np.zeros((320, 180), np.float32)
+    mask[60:300, 120:160] = 1.0
+    x, y = motion.subject_point(mask, "face")
+    assert 0.69 < x < 0.86 and y < 0.3
+    assert motion.subject_point(mask, "person")[1] > 0.45 and motion.subject_point(None) is None
+    out = motion.flash_zoom(fr, (x, y), 1.5, 0.0, 0.0)
+    lit = np.nonzero(out[200, :, 0] > 100)[0]
+    assert len(lit) >= 55 and lit.min() < 100 < 120 < lit.max()      # bigger (40 -> 60 px) and moved in from the edge
+    warm = motion.flash_zoom(fr, (0.5, 0.5), 1.0, 0.8, 0.0, "warm")
+    assert warm[5, 5, 0] > warm[5, 5, 2] > 100               # a warm flash is warm
+
+
+def test_the_director_sets_up_the_flash_zoom_on_the_beats_before_the_cut(tmp_path):
+    plan, by_id, shots = _people_plan(tmp_path)
+    plan["tempo"], plan["beats"] = 120, [k * 0.5 for k in range(40)]
+    el = fxlib.eligible(plan, {}, by_id)
+    assert 4 in el["zoom"]
+    ai = FakeAI({"moves": [{"id": "flash_zoom", "shots": [4],
+                            "settings": {"hits": 3, "zoom": 3, "flash": "warm", "focus": "chin", "out": True}}]})
+    rec = fxlib.direct(plan, by_id, {"name": "x"}, ai, shots)
+    seg = plan["segments"][3]
+    zp = seg["zoompunch"]
+    a, b = fxlib._ends(seg, plan)
+    assert len(zp["times"]) == 3 and zp["times"] == sorted(zp["times"]) and a < zp["times"][0] and zp["times"][-1] <= b - 0.2
+    assert zp["zooms"] == [round(1.8 ** 0.5, 3), 1.8, 1.0]           # clipped to 1.8; out = back to the whole frame
+    assert zp["flash"] == "warm" and zp["focus"] == "face"            # (an unknown focus falls back)
+    assert any("flash zoom" in c for c in rec["changes"]) and "zoom 1.25-1.8" in ai.prompts[0]
+    assert fxlib.clear_moves(plan) == 1 and "zoompunch" not in seg
+
+
+def test_without_an_ai_the_drop_gets_the_flash_zoom(tmp_path):
+    plan, by_id, shots = _people_plan(tmp_path)
+    plan["tempo"], plan["beats"] = 128, [k * 60 / 128 for k in range(60)]
+    for s in plan["segments"]:
+        s["people"] = False
+    plan["segments"][4]["people"] = True
+    plan["segments"][4]["drop"] = True
+    moves = fxlib._rule_moves(plan, by_id, fxlib.eligible(plan, {}, by_id))
+    assert moves and moves[0]["id"] == "flash_zoom" and moves[0]["shots"] == [5]

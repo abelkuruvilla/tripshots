@@ -1144,6 +1144,77 @@ def keyframe_at(keys: list[dict], t: float) -> tuple[float, float, float]:
     return val(ks[-1])
 
 
+# ------------------------------------------------- flash zoom (a signature move)
+FLASH_TINTS = {"white": (255, 255, 255), "warm": (255, 226, 180), "cool": (214, 232, 255)}
+SNAP = 0.08   # seconds a zoom step takes to land
+
+
+def flash_zoom_at(zp: dict, t: float) -> tuple[float, float, float]:
+    """(zoom, flash 0..1, radial blur) at t seconds into a shot with segment `zoompunch` {times, zooms}: on each
+    hit the picture snaps to the next zoom (landing with a small overshoot), a flash peaks on the hit and fades over
+    about four frames, and the snap itself smears with a short radial blur."""
+    times, zooms = list(zp.get("times") or []), list(zp.get("zooms") or [])
+    z, flash, blur = 1.0, 0.0, 0.0
+    prev = 1.0
+    for tk, zk in zip(times, zooms):
+        if t < tk - 1 / 30:
+            break
+        if t < tk:   # one frame of glow just before the hit
+            flash = max(flash, 0.25)
+            break
+        u = (t - tk) / SNAP
+        if u < 1:
+            q = 1 - (1 - u) ** 3 + 0.12 * np.sin(np.pi * u)   # fast, a touch past, then settled
+            z = prev + (zk - prev) * q
+            blur = max(blur, 0.1 * (1 - u) * min(1.0, abs(zk - prev) * 3))
+        else:
+            z = zk
+        d = t - tk
+        if d < 0.14:
+            flash = max(flash, 0.8 * (1 - d / 0.14) ** 1.6)
+        prev = zk
+    return float(z), float(flash), float(blur)
+
+
+def flash_zoom(img: np.ndarray, focus: tuple[float, float], zoom: float, flash: float, blur: float,
+               tint: str = "white") -> np.ndarray:
+    """One frame of the flash zoom: zoomed onto `focus` (x, y in 0..1 of the frame), never past an edge, smeared
+    and flashed."""
+    h, w = img.shape[:2]
+    out = img
+    if zoom > 1.001:
+        lim = 0.5 - 0.5 / zoom
+        x = 0.5 + max(-lim, min(lim, focus[0] - 0.5))
+        y = 0.5 + max(-lim, min(lim, focus[1] - 0.5))
+        out = affine(out, zoom, 0.0, -(x - 0.5) * w * zoom, -(y - 0.5) * h * zoom)
+        if zoom > 1.25:   # a closer zoom is an upscale of the frame: crisp it back a little
+            soft = cv2.GaussianBlur(out, (0, 0), 1.2)
+            out = cv2.addWeighted(out, 1.5, soft, -0.5, 0)
+    if blur > 0.01:
+        out = zoom_blur(out, 1.0, blur)
+    if flash > 0.01:
+        col = np.empty_like(out)
+        col[:] = FLASH_TINTS.get(tint, FLASH_TINTS["white"])
+        out = cv2.addWeighted(out, 1 - flash, col, flash, 0)
+    return out
+
+
+def subject_point(mask: np.ndarray | None, focus: str = "face") -> tuple[float, float] | None:
+    """Where the person is in a frame, from their cut-out: their head (the top of the figure) or their middle."""
+    if mask is None:
+        return None
+    m = mask[::6, ::6] > 0.45
+    ys, xs = np.nonzero(m)
+    if len(xs) < 6:
+        return None
+    h, w = m.shape
+    y0, y1 = np.percentile(ys, 3), np.percentile(ys, 97)
+    top = ys <= y0 + 0.25 * (y1 - y0)   # the head and shoulders: centre x on them, not on a stride or an arm
+    if focus == "face" and top.sum() >= 3:
+        return float(xs[top].mean() / w), float((y0 + 0.13 * (y1 - y0)) / h)
+    return float(xs.mean() / w), float((y0 + y1) / 2 / h)
+
+
 def apply_keys(img: np.ndarray, keys: list[dict] | None, t: float) -> np.ndarray:
     """A shot's zoom and position keyframes on one frame (the picture never leaves an edge uncovered)."""
     if not keys:

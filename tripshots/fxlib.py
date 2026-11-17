@@ -142,6 +142,11 @@ MOVES = {
     "camera_roll": ("medium", "photo dump, 'my camera roll', personal",
                     "the reel opens on the phone's camera roll: a grid of the trip's photos scrolls and slows, then "
                     "one opens into the shot (shots listed under opener; settings seconds 0.8-1.6)"),
+    "flash_zoom": ("intense", "punchy, hype, 'look at this'",
+                   "on the beats the picture snaps closer to the person's face (or the subject) in steps, a flash on "
+                   "each hit, following them as they move: a build or a drop, an entrance, a reaction (shots "
+                   "listed under zoom; settings hits 2-4, zoom 1.25-1.8 = how close at the end, flash white|warm|"
+                   "cool|none, focus face|person, out = the last hit snaps back to the whole frame)"),
 }
 # what the director may set per move ("settings"): name -> (low, high) or choices; clipped into range
 MOVE_SETTINGS = {
@@ -152,6 +157,8 @@ MOVE_SETTINGS = {
     "colour_pop": {"amount": (0.5, 1.0)},
     "spotlight": {"amount": (0.4, 0.9)},
     "camera_roll": {"seconds": (0.8, 1.6), "light": (True, False)},
+    "flash_zoom": {"hits": (2, 4), "zoom": (1.25, 1.8), "flash": ("white", "warm", "cool", "none"),
+                   "focus": ("face", "person"), "out": (True, False)},
 }
 MAX_MOVES = 2   # kinds of move in one reel
 
@@ -221,6 +228,9 @@ def eligible(plan: dict, style: dict, by_id: dict | None = None) -> dict[str, li
                    and (i == 0 or (segs[i].get("place") and segs[i].get("place") != segs[i - 1].get("place")))],
         "isolate": [i + 1 for i in free if segs[i].get("people") and float(segs[i]["dur"]) >= 0.7
                     and _person_big(segs[i], by_id)],
+        # two beats or more to punch in on, and someone (or one clear subject) to punch in on
+        "zoom": [i + 1 for i in free if not segs[i].get("roll") and len(_hits(segs[i], plan)) >= 2
+                 and (segs[i].get("people") or _subject_size(segs[i]) >= 0.02)],
     }
     if not (plan.get("grid") or motion.get("grid")):
         out["grid_lines"] = ["whole reel"]   # needs no particular shot
@@ -283,7 +293,8 @@ Use one when the footage and the song suit it, so the reel has a memorable momen
 A move suits the reel's mood: the photo wall and grid for warm diaries, the backdrop swap for upbeat songs with
 you in frame, silhouettes and the spotlight on hits, colour bloom and colour pop for cinematic or tender moments,
 the freeze-frame intro to introduce the people on a beat, the clone trail for someone moving through a still
-frame, the camera roll to open a photo-dump or "my trip in pictures" reel. Choose its settings for this reel:
+frame, the camera roll to open a photo-dump or "my trip in pictures" reel, the flash zoom to punch in on a
+person on the hits of a build or a drop (warm flash on golden light, none on a calm song). Choose its settings for this reel:
 a short hold on a fast song, a longer one on a slow song; fewer clones in a short shot)
 {lib_mv}
 Shots that can carry each move: {eligible}
@@ -409,9 +420,9 @@ def _check(raw: dict, plan: dict, cuts: list[dict], cfg: dict) -> dict:
 MOVE_SLOTS = {"photo_wall": "photo_wall", "backdrop_places": "backdrop", "backdrop_colour": "backdrop",
               "silhouette": "people", "colour_bloom": "colour_bloom", "grid_lines": None,
               "freeze_intro": "freeze", "clone_trail": "clone", "colour_pop": "isolate", "spotlight": "isolate",
-              "camera_roll": "opener"}
+              "camera_roll": "opener", "flash_zoom": "zoom"}
 MOVE_MAX_SHOTS = {"photo_wall": 1, "backdrop_places": 1, "backdrop_colour": 1, "silhouette": 3, "colour_bloom": 2,
-                  "freeze_intro": 2, "clone_trail": 1, "colour_pop": 2, "spotlight": 1, "camera_roll": 1}
+                  "freeze_intro": 2, "clone_trail": 1, "colour_pop": 2, "spotlight": 1, "camera_roll": 1, "flash_zoom": 2}
 
 
 def _settings(mid: str, raw) -> dict:
@@ -423,6 +434,10 @@ def _settings(mid: str, raw) -> dict:
             continue
         if isinstance(rng[0], bool):
             out[k] = bool(v)
+            continue
+        if isinstance(rng[0], str):   # one of a few named choices
+            if str(v) in rng:
+                out[k] = str(v)
             continue
         try:
             out[k] = round(max(rng[0], min(rng[1], float(v))), 2)
@@ -556,6 +571,11 @@ def apply_moves(plan: dict, moves: list[dict], shots: list[dict] | None) -> list
             for i in at:
                 segs[i]["isolate"] = {"kind": kind, "amount": float(st.get("amount", 1.0 if kind == "pop" else 0.85))}
             done.append(f"move: {mid.replace('_', ' ')} on shot " + ", ".join(str(i + 1) for i in at))
+        elif mid == "flash_zoom":
+            got = [i for i in at if _zoompunch(segs[i], plan, st)]
+            if not got:
+                continue
+            done.append("move: flash zoom on shot " + ", ".join(str(i + 1) for i in got))
         elif mid == "camera_roll" and shots and at:
             k = plan_roll(segs, shots, at[0], beat)
             if k is None:
@@ -614,11 +634,43 @@ def _clones(seg: dict, plan: dict, beat: float, st: dict) -> bool:
     return True
 
 
+def _hits(seg: dict, plan: dict, gap: float = 0.28) -> list[float]:
+    """The beats a flash zoom can hit in a shot: clear of the transitions, not in the last moment before the cut,
+    at least `gap` apart (every other beat on a very fast song)."""
+    a, b = _ends(seg, plan)
+    out: list[float] = []
+    for t in _beats_in(seg, plan):
+        if a + 0.15 <= t <= b - 0.2 and (not out or t - out[-1] >= gap):
+            out.append(t)
+    return out
+
+
+def _zoompunch(seg: dict, plan: dict, st: dict) -> bool:
+    """Flash zoom: the last `hits` beats before the cut each snap the picture closer (it builds into the cut), the
+    zoom growing in even steps to `zoom`; with `out` the last hit snaps back to the whole frame instead."""
+    if seg.get("pose") or seg.get("clones") or seg.get("roll"):
+        return False   # (a stopped or opened picture is its own moment)
+    hits = _hits(seg, plan)
+    n = max(2, min(int(st.get("hits", 3)), len(hits)))
+    if len(hits) < 2:
+        return False
+    times = hits[-n:]
+    focus = str(st.get("focus") or ("face" if seg.get("people") else "person"))
+    top = float(st.get("zoom", 1.55 if focus == "face" else 1.4))
+    out = bool(st.get("out")) and n >= 3
+    steps = n - 1 if out else n
+    zooms = [round(top ** ((k + 1) / steps), 3) for k in range(steps)] + ([1.0] if out else [])
+    seg["zoompunch"] = {"times": [round(t, 3) for t in times], "zooms": zooms,
+                        "flash": str(st.get("flash", "white")), "focus": focus}
+    return True
+
+
 def clear_moves(plan: dict) -> int:
     """Take out the moves the director chose before (plan `moves`, auto), before it chooses again."""
     keys = {"photo_wall": "mosaic", "backdrop_places": "backdrop", "backdrop_colour": "backdrop",
             "silhouette": "silhouette", "colour_bloom": "colour_in", "freeze_intro": "pose", "clone_trail": "clones",
-            "colour_pop": "isolate", "spotlight": "isolate", "camera_roll": "roll"}
+            "colour_pop": "isolate", "spotlight": "isolate", "camera_roll": "roll",
+            "flash_zoom": "zoompunch"}
     segs = plan.get("segments") or []
     gone = 0
     for m in plan.pop("moves", None) or []:
@@ -633,12 +685,17 @@ def clear_moves(plan: dict) -> int:
 
 def _rule_moves(plan: dict, by_id: dict, elig: dict) -> list[dict]:
     """No AI: one move when the reel plainly has what it needs: you in frame on an upbeat song -> the backdrop
-    swap; a held shot of you mid-reel on a calmer one -> the photo wall; else colour bloom on the payoff."""
+    swap; you on its drop -> the flash zoom; a held shot of you mid-reel -> the photo wall; you on the payoff of a
+    fast song -> the freeze-frame intro; else colour bloom on the payoff."""
     segs = plan["segments"]
     tempo = float(plan.get("tempo") or 0)
     if elig.get("backdrop") and tempo >= 100:
         n = max(elig["backdrop"], key=lambda n: _subject_size(segs[n - 1]))
         return [{"id": "backdrop_places", "shots": [n], "why": "you in frame on an upbeat song"}]
+    drop = next((i + 1 for i, s in enumerate(segs) if s.get("drop") and i + 1 in (elig.get("zoom") or [])
+                 and s.get("people")), None)
+    if drop and tempo >= 100:
+        return [{"id": "flash_zoom", "shots": [drop], "why": "you on the drop of an upbeat song: punch in on the hits"}]
     if elig.get("photo_wall") and sum(float(s["dur"]) for s in segs) >= 12:
         mid = sum(float(s["dur"]) for s in segs) / 2
         n = min(elig["photo_wall"], key=lambda n: abs(float(segs[n - 1]["out_start"]) - mid))

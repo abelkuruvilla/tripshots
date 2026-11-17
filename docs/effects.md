@@ -11,7 +11,7 @@ shows each item drawn on your own shots.
 | Text motions | `hfx.py` | how a line comes in: rise, pull focus, film title, spread, typewriter, handwritten, decode, stamp, slam |
 | Text looks | `typo.py` (`LOOKS`) | how the letters are drawn: neon, glow, outline (hollow), offset (a hard copy behind in the accent colour) |
 | Shot effects | `vfx.py` | an effect on one whole shot: glow, dream, light leak, old film (`dust`), VHS, black and white, duotone, chromatic edges, beat flicker, mirror, handheld drift, tilt-shift |
-| Signature moves | `fxlib.MOVES` | the big trend ideas, each first made as a style from reference reels: the photo wall (the grid cells round you fill with the trip's other places), grid lines, the backdrop swap (places or flat colours behind you, a new one on each beat), the silhouette flash, colour bloom (black and white into colour), the freeze-frame intro (the moment stops, you outlined in white like a sticker, the world grey), the clone trail (copies of you left where you stood on earlier beats), colour pop (you in colour, the rest black and white), spotlight (the lights go down round you), the camera roll opener (the phone's photo grid scrolls and one picture opens into the shot) |
+| Signature moves | `fxlib.MOVES` | the big trend ideas, each first made as a style from reference reels: the photo wall (the grid cells round you fill with the trip's other places), grid lines, the backdrop swap (places or flat colours behind you, a new one on each beat), the silhouette flash, colour bloom (black and white into colour), the freeze-frame intro (the moment stops, you outlined in white like a sticker, the world grey), the clone trail (copies of you left where you stood on earlier beats), colour pop (you in colour, the rest black and white), spotlight (the lights go down round you), the camera roll opener (the phone's photo grid scrolls and one picture opens into the shot), the flash zoom (on the beats the picture snaps closer to the person's face in steps, a flash on each hit, following them as they move) |
 
 ### Where the trend moves come from
 
@@ -24,6 +24,7 @@ pages they come from), done automatically:
 | Clone trail | a locked-off shot; freeze the subject at intervals, mask each one, stack the masks over the moving clip | `clones` {times, alpha}: a pose kept on beats over the first two thirds; only a still camera and a person big in frame |
 | Colour pop, spotlight | black-and-white (or darkened) layer with the person masked out | `isolate` {kind pop/spotlight, amount}: the person followed every other frame, eased in |
 | Camera roll | a screen recording of the camera roll, keyframed zoom into one photo that becomes the clip | `roll` {cells, target, dur}: a grid of the trip's photos scrolls and slows, then the cell opens to full screen, on the opening shot or the first shot of a new place |
+| Flash zoom | keyframe a scale up onto the face on each beat (or cut to tighter crops), add a white flash frame or a flash overlay on each hit, re-centre the crop by hand as the person moves | `zoompunch` {times, zooms, flash, focus}: the last 2-4 beats before the cut, the zoom growing in even steps (or snapping back out on the last hit); the person's head is found with the cut-out every other frame and followed smoothly, else the shot's subject; a hit in the sound on each punch |
 | Film strip, paper tear, cube, card, dots | overlay packs and 3D transforms in CapCut and After Effects | `motion.t_film`, `t_tear`, `t_cube`, `t_card`, `t_dots` |
 
 The cut-out moves need a person big enough to cut out: the AI's shot size must not be wide (or the subject box
@@ -49,17 +50,20 @@ two, and up to two signature moves, with a reason for each one. TripShots checks
 - a move only goes on a shot that can carry it, and the AI is told which those are. The photo wall needs a held
   shot of a person mid-reel; the backdrop swap needs a clip of a person big in frame, held for at least three beats;
   the silhouette flash needs people; the freeze-frame intro, colour pop and spotlight need a person big in frame; the
-  clone trail also needs a still camera; the camera roll opens the reel or a new place. At most two kinds of move
+  clone trail also needs a still camera; the camera roll opens the reel or a new place; the flash zoom needs two
+  beats clear of the transitions and a person or one clear subject. At most two kinds of move
   are used (`effects.max_moves`). A move the style already does (the `grid-mosaic` style's wall, for example)
   isn't offered again.
 - the AI also sets each choice up for this reel, within limits: a transition's direction (push, whip, wipe, cube,
   film, tear, ...: `fxlib.TRANSITION_PARAMS`), and a move's settings (how many beats a freeze holds, how many clones,
-  how strong the colour pop or spotlight, how long the camera roll, the grid's size: `fxlib.MOVE_SETTINGS`). Values
+  how strong the colour pop or spotlight, how long the camera roll, the grid's size, the flash zoom's hits, how close it
+  gets, its flash colour and whether it aims at the face or the whole person: `fxlib.MOVE_SETTINGS`). Values
   out of range are clipped, unknown ones dropped.
 
 Without an AI, one move is still chosen by rules when the reel plainly has what it needs:
 - you in frame on an upbeat song get the backdrop swap;
 - a held shot of you mid-reel on a calmer song gets the photo wall;
+- you on the drop of an upbeat song (100 BPM or more) get the flash zoom;
 - you on the payoff of a fast song (110 BPM or more) get the freeze-frame intro;
 - otherwise the payoff blooms into colour.
 

@@ -702,6 +702,37 @@ class People:
         return last[1]
 
 
+def zoom_focus(seg: dict, focus: str = "face") -> tuple[float, float]:
+    """Where the flash zoom aims when the cut-out finds nobody: the planner's subject box as it sits in the frame
+    (a crop or pan centres it across, an upright clip or a photo keeps it where it is)."""
+    b = seg.get("subject") or {}
+    try:
+        x0, x1, y0, y1 = (float(b[k]) for k in ("x0", "x1", "y0", "y1"))
+    except (KeyError, TypeError, ValueError):
+        return 0.5, 0.42
+    x = (x0 + x1) / 2 if seg.get("layout") in ("fill", "kenburns", None) else 0.5
+    y = y0 + (0.15 if focus == "face" and seg.get("people") else 0.5) * (y1 - y0)
+    return x, y
+
+
+def _flash_zoom(fr: np.ndarray, seg: dict, t: float, people: "People", i: int, n: int, zfocus: dict) -> np.ndarray:
+    from .motion import flash_zoom, flash_zoom_at, subject_point
+    zp = seg["zoompunch"]
+    z, fl, bl = flash_zoom_at(zp, t)
+    if z <= 1.001 and fl <= 0.01:
+        return fr
+    focus = str(zp.get("focus", "face"))
+    pt = subject_point(people.follow(i, fr, n), focus) if seg.get("people") else None
+    last = zfocus.get(i)
+    if pt is None:
+        pt = last or zoom_focus(seg, focus)
+    elif last is not None:   # follow the person smoothly: a jumpy cut-out shouldn't shake the frame
+        pt = (0.8 * last[0] + 0.2 * pt[0], 0.8 * last[1] + 0.2 * pt[1])
+    zfocus[i] = pt
+    flash = str(zp.get("flash", "white"))
+    return flash_zoom(fr, pt, z, 0.0 if flash == "none" else fl, bl, flash)
+
+
 def _thumb_squares(paths: list, size: int = 360) -> list[np.ndarray]:
     out = []
     for path in paths or []:
@@ -971,6 +1002,14 @@ def still(plan: dict, t: float, out: Path, raw: bool = False, mask: str | None =
         from . import vfx
         frame = vfx.apply(np.ascontiguousarray(frame), seg["effect"], t - seg["out_start"],
                           [float(b) - seg["out_start"] for b in plan.get("beats") or []])
+    if seg.get("zoompunch") and not raw and not seg.get("panel"):   # the flash zoom's framing at t (no flash)
+        from .motion import flash_zoom, flash_zoom_at, subject_point
+        z, _, _ = flash_zoom_at(seg["zoompunch"], t - seg["out_start"])
+        if z > 1.001:
+            focus = str(seg["zoompunch"].get("focus", "face"))
+            frame = np.ascontiguousarray(frame)
+            pt = (subject_point(People().at(frame), focus) if seg.get("people") else None) or zoom_focus(seg, focus)
+            frame = flash_zoom(frame, pt, z, 0.0, 0.0)
     if mask:   # the editor's mask view: one region lit, the rest dimmed, no words
         from . import nodes
         Image.fromarray(nodes.mask_view(np.ascontiguousarray(frame), mask, seg)).save(out, quality=88)
@@ -1132,6 +1171,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
             if segs[i].get("keys"):  # the editor's zoom and position keyframes
                 from .motion import apply_keys
                 fr = apply_keys(fr, segs[i]["keys"], n / fps - segs[i]["out_start"])
+            if segs[i].get("zoompunch"):  # flash zoom: on the beats the picture snaps closer to the person
+                fr = _flash_zoom(fr, segs[i], n / fps - segs[i]["out_start"], people, i, n, zfocus)
             sc, ang, tx, ty = shot_motion(n / fps, segs[i], beats, mcfg)
             fr = affine(fr, sc, ang, tx, ty)
             k = pulse_amount(n / fps, segs[i], beats, mcfg)
@@ -1146,6 +1187,7 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         backdrop = Backdrops()
         people = People()
         clones: dict = {}   # each clone trail's captured poses
+        zfocus: dict = {}   # each flash zoom's point on the person, followed and smoothed
         poses: dict = {}    # each freeze-frame intro's styled still
         rolls: dict = {}    # each camera roll's little pictures
         walls: dict = {}  # each photo wall's little pictures, loaded once

@@ -173,6 +173,8 @@ def picture_checks(video: Path, plan: dict) -> list[tuple]:
         end = float(s["out_start"]) + float(s["dur"])
         if s.get("trans_out") in INTENDED:
             ok_win.append((end - 0.4, end + 0.4))
+        for tk in (s.get("zoompunch") or {}).get("times") or []:   # the flash zoom flashes on its hits
+            ok_win.append((float(s["out_start"]) + float(tk) - 0.1, float(s["out_start"]) + float(tk) + 0.3))
         if s.get("rgb") or s.get("shake"):
             ok_win.append((float(s["out_start"]) - 0.1, float(s["out_start"]) + 0.3))
     fz = plan.get("freeze") or {}

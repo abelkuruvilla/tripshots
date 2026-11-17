@@ -527,6 +527,8 @@ def build_cues(plan: dict, text_events: list[dict] | None = None) -> list[dict]:
             add(s["out_start"], "glitch", "colour-split cut", gain=-3)
         if s.get("pose"):   # the freeze-frame intro: a camera click as the moment stops
             add(s["out_start"] + float(s["pose"].get("at", 0)), "shutter", "freeze-frame intro")
+        for k, tk in enumerate((s.get("zoompunch") or {}).get("times") or []):   # flash zoom: a hit per punch
+            add(s["out_start"] + float(tk), "impact", "flash zoom", gain=-9 if k else -6)
         if s.get("roll"):   # the camera roll opening into the shot
             add(s["out_start"] + 0.6 * float(s["roll"].get("dur", 1.2)), "whoosh", "camera roll opens", gain=-4)
         if s.get("layout") == "popout":

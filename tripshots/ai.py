@@ -35,6 +35,16 @@ _AUTH_WORDS = ("not logged in", "please run /login", "invalid api key", "oauth t
 
 _LIMIT_WORDS = ("hit your session limit", "hit your usage limit", "hit your limit", "usage limit reached",
                 "session limit reached", "weekly limit", "limit will reset", "out of extra usage")
+# Claude Code words its limits several ways ("You've hit your 5-hour limit · resets 1:10am", "Opus weekly limit
+# reached", "Claude AI usage limit reached|1712345"): any "limit" that is hit, reached or resets is one
+_LIMIT_RE = re.compile(r"(hit|reached|exceeded|used up)\b[^.|\n]{0,40}\blimit|\blimit\b[^.|\n]{0,40}\b(reached|resets?|exceeded)"
+                       r"|\bresets? (at |on |in )?\d", re.I)
+
+
+def is_limit(msg: str) -> bool:
+    """Does an AI's refusal say its usage limit is spent (for now)?"""
+    m = (msg or "").lower()
+    return any(w in m for w in _LIMIT_WORDS) or bool(_LIMIT_RE.search(m))
 
 
 class AIAuthError(ReelError):
@@ -85,7 +95,7 @@ class ClaudeCLI(Backend):
         if proc.returncode != 0 or (isinstance(data, dict) and data.get("is_error")):
             msg = str(data.get("result")) if isinstance(data, dict) and data.get("result") else \
                 (proc.stderr or proc.stdout or "").strip()[-300:]
-            if any(w in msg.lower() for w in _LIMIT_WORDS):
+            if is_limit(msg):
                 self.broken, self.limited = f"the AI's usage limit is reached (Claude Code said: {msg.strip()[:120]})", True
                 raise AILimitError(self.broken)
             if any(w in msg.lower() for w in _AUTH_WORDS):
@@ -129,6 +139,9 @@ class AnthropicAPI(Backend):
             self.broken = f"{self.name}: the key was refused ({str(e)[:120]})"
             raise AIAuthError(self.broken)
         except anthropic.APIStatusError as e:
+            if is_limit(str(e)) or getattr(e, "status_code", None) == 402:   # (a key with no credit or quota left)
+                self.broken = f"{self.name}: the usage limit is reached ({str(e)[:140]})"
+                raise AILimitError(self.broken)
             if any(w in str(e).lower() for w in _AUTH_WORDS):
                 self.broken = f"{self.name}: {str(e)[:160]}"
                 raise AIAuthError(self.broken)
@@ -141,8 +154,10 @@ class Chain(Backend):
     no credit). Verdicts are stored under the name of the AI that actually gave them."""
 
     def __init__(self, backends: list[Backend]):
+        import threading
         self.backends = backends
         self.i = 0
+        self.lock = threading.Lock()   # scoring asks from several threads at once
 
     @property
     def name(self) -> str:
@@ -150,14 +165,19 @@ class Chain(Backend):
 
     def ask(self, prompt, images=None, max_tokens=4000):
         while True:
-            b = self.backends[self.i]
+            with self.lock:
+                k = self.i
+            b = self.backends[k]
             try:
                 return b.ask(prompt, images, max_tokens)
             except AIAuthError as e:
-                if self.i + 1 >= len(self.backends):
-                    raise
-                self.i += 1
-                log(f"{b.name} can't be used ({str(e)[:100]}); switching to {self.backends[self.i].name}")
+                with self.lock:
+                    if self.i != k:
+                        continue   # another thread already moved on from this one: ask the next AI
+                    if k + 1 >= len(self.backends):
+                        raise
+                    self.i = k + 1
+                log(f"{b.name} can't be used ({str(e)[:100]}); switching to {self.backends[k + 1].name}")
 
 
 def _minimax() -> AnthropicAPI:

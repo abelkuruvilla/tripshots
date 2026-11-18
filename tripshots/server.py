@@ -91,6 +91,7 @@ def list_reels(limit: int = 400) -> list[dict]:
 def reel_detail(plan: Path) -> dict:
     """A reel with its timeline: every slot's time, role, shot (with its thumbnail), transition, and the words."""
     from .clippick import file_length
+    from .fxlib import MOVE_NAMES, moves_on
     from .planedit import _shots
     p = read_json(plan)
     shots = _shots(p)
@@ -112,7 +113,8 @@ def reel_detail(plan: Path) -> dict:
                      "reverse": bool(s.get("reverse")), "effect": s.get("effect"), "log": s.get("log"),
                      "vibes": list(((sh.get("ai") or {}).get("vibes") or {}))[:3],
                      "size": (sh.get("ai") or {}).get("shot_size"), "angle": (sh.get("ai") or {}).get("angle"),
-                     "keys": s.get("keys") or []})
+                     "keys": s.get("keys") or [],
+                     "moves": [{"id": m, "name": MOVE_NAMES.get(m, m)} for m in moves_on(s)]})
     from .planedit import history, texts as plan_texts
     cap = _side(plan, ".caption.txt")
     music = p.get("music") or {}

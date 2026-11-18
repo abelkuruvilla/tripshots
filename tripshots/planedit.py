@@ -35,6 +35,7 @@ The timeline (expert mode; times snap to whole frames, later text moves with the
   {"op": "duplicate", "segment": 3}
   {"op": "effect", "segment": 3, "id": "glow", "amount": 0.5}   a video effect on a shot (vfx.py; id null removes)
   {"op": "auto_effects"}                                     let the effects director choose again (fxlib.py)
+  {"op": "remove_move", "segment": 3, "id": "flash_zoom"}    take a signature move off a shot
   {"op": "keyframe", "segment": 3, "t": 0.5, "zoom": 1.6, "x": 0.4, "y": 0.5, "ease": "out"}
       zoom 1.6x onto that point of the picture at 0.5 s into the slot (eased between keyframes; "remove": true
       drops the one at t, "clear": true all of them)
@@ -798,6 +799,12 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
                     pp["dur"] = _frames(max(0.5, min(float(ed.get("dur", pp["dur"])), total - pp["start"])), 4)
                 done.append(f"picture in picture {k + 1} changed")
             plan["pips"] = pips
+        elif op == "remove_move":   # take a signature move off a shot (fxlib.MOVES)
+            from . import fxlib
+            i = _slot(plan, ed["segment"])
+            if not fxlib.remove_move(plan, i + 1, str(ed.get("id"))):
+                raise ReelError(f"shot {i + 1} has no {ed.get('id')}")
+            done.append(f"shot {i + 1}: {fxlib.MOVE_NAMES.get(ed['id'], ed['id']).lower()} removed")
         elif op == "auto_effects":   # the effects director again (fxlib.direct): AI if there is one, else rules
             from . import fxlib
             from .ai import get_backend

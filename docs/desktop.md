@@ -98,7 +98,7 @@ it's used). On a Mac, install ffmpeg once with `brew install ffmpeg`; the Window
     replace, add a shot after it, remove it, its length, which part of the clip plays (a slider, or **Choose the part on
     the clip, or let AI choose**), speed and speed ramps, the
     transition into the next shot and an effect on the shot (pickers that draw each one on your own shots, filtered
-    by energy; with no shot selected, **Choose effects with AI**: see [the effects library](effects.md)), framing (crop, pan, whole frame). **Sound**: where the song starts, the music
+    by energy; **Choose effects with AI** for the whole reel, which lists what it changed and offers **Preview**, since transitions and moves only show in motion: see [the effects library](effects.md)); a shot's signature move (marked ✦ on the timeline) with **Remove**, framing (crop, pan, whole frame). **Sound**: where the song starts, the music
     level, its fade out and the beat punch. Space plays, ← → step a frame (⇧ a second). Later text moves with the
     cuts; subtitles and lyrics stay with the song.
 - **Styles** (⌘3): yours, then the built-in ones, each with **Make a reel**. **Learn a style** takes reel links

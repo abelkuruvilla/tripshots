@@ -665,12 +665,52 @@ def _zoompunch(seg: dict, plan: dict, st: dict) -> bool:
     return True
 
 
+# each move's segment key, and its name in the app
+SEG_KEYS = {"photo_wall": "mosaic", "backdrop_places": "backdrop", "backdrop_colour": "backdrop",
+            "silhouette": "silhouette", "colour_bloom": "colour_in", "freeze_intro": "pose", "clone_trail": "clones",
+            "colour_pop": "isolate", "spotlight": "isolate", "camera_roll": "roll", "flash_zoom": "zoompunch"}
+MOVE_NAMES = {"photo_wall": "Photo wall", "backdrop_places": "Backdrop swap (places)",
+              "backdrop_colour": "Backdrop swap (colours)", "silhouette": "Silhouette flash",
+              "colour_bloom": "Colour bloom", "freeze_intro": "Freeze-frame intro", "clone_trail": "Clone trail",
+              "colour_pop": "Colour pop", "spotlight": "Spotlight", "camera_roll": "Camera roll",
+              "flash_zoom": "Flash zoom", "grid_lines": "Grid lines"}
+
+
+def moves_on(seg: dict) -> list[str]:
+    """The signature moves a shot carries (whoever set them: the director, a style or you)."""
+    out = []
+    for mid, k in SEG_KEYS.items():
+        v = seg.get(k)
+        if not v:
+            continue
+        if k == "isolate" and (v.get("kind", "pop") == "pop") != (mid == "colour_pop"):
+            continue
+        if k == "backdrop" and ((v.get("mode") if isinstance(v, dict) else v) == "colour") != (mid == "backdrop_colour"):
+            continue
+        out.append(mid)
+    return out
+
+
+def remove_move(plan: dict, slot: int, mid: str) -> bool:
+    """Take one move off one shot (and out of the plan's record of the director's moves)."""
+    segs = plan.get("segments") or []
+    if not 0 < slot <= len(segs) or mid not in SEG_KEYS or mid not in moves_on(segs[slot - 1]):
+        return False
+    segs[slot - 1].pop(SEG_KEYS[mid], None)
+    kept = []
+    for m in plan.get("moves") or []:
+        if m.get("id") == mid and slot in (m.get("shots") or []):
+            m = {**m, "shots": [n for n in m["shots"] if n != slot]}
+            if not m["shots"]:
+                continue
+        kept.append(m)
+    plan["moves"] = kept
+    return True
+
+
 def clear_moves(plan: dict) -> int:
     """Take out the moves the director chose before (plan `moves`, auto), before it chooses again."""
-    keys = {"photo_wall": "mosaic", "backdrop_places": "backdrop", "backdrop_colour": "backdrop",
-            "silhouette": "silhouette", "colour_bloom": "colour_in", "freeze_intro": "pose", "clone_trail": "clones",
-            "colour_pop": "isolate", "spotlight": "isolate", "camera_roll": "roll",
-            "flash_zoom": "zoompunch"}
+    keys = SEG_KEYS
     segs = plan.get("segments") or []
     gone = 0
     for m in plan.pop("moves", None) or []:

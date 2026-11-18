@@ -2,13 +2,27 @@
   // Expert: the selected shot. Its length, which part of the clip plays, speed, transition, framing, and moving,
   // splitting, repeating, replacing or removing it. Every drag on the timeline has a button here too.
   import Icon from "../../lib/Icon.svelte";
-  import { tc } from "../../lib/store.svelte.js";
+  import { tc, toast } from "../../lib/store.svelte.js";
   import { ed, edit, frames, select } from "./editor.svelte.js";
   import FxPicker from "./FxPicker.svelte";
   import PipPanel from "./PipPanel.svelte";
   import Section from "../../lib/Section.svelte";
 
-  let { onpick, oninsert, onontop, onpart } = $props();
+  let { onpick, oninsert, onontop, onpart, onpreview } = $props();
+
+  // the effects director again; then say what it changed and offer to see it moving (the still shows only some of it)
+  let choosing = $state(false);
+  async function chooseEffects() {
+    choosing = true;
+    try {
+      const res = await edit({ op: "auto_effects" }, true);
+      const n = ed.reel?.effects?.changes?.length || 0;
+      if (res) toast(n ? `${n} effect${n === 1 ? "" : "s"} chosen. Transitions and moves show in motion: Preview to see them` : "No change: the reel already suits its effects",
+                     "ok", n && onpreview ? { label: "Preview", run: onpreview } : null);
+    } finally {
+      choosing = false;
+    }
+  }
   const ramps = [[null, "None"], ["velocity", "Velocity"], ["slam", "Slam"], ["bullet", "Bullet"], ["rush", "Rush"], ["impact", "Impact"], ["surge", "Surge"]];
   const layouts = [["crop", "Crop to the subject"], ["pan", "Pan across"], ["blur_fill", "Whole frame, blurred behind"], ["fill", "Fill (already upright)"]];
   const nice = (id) => id.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -60,6 +74,26 @@
   }
 </script>
 
+{#snippet reelFx()}
+  <Section id="shot-ai" title="Effects for the whole reel" open={!s} summary={reel?.effects ? (reel.effects.by === "ai" ? "chosen by AI" : "by rules") : ""}>
+    {#if reel?.effects?.summary}<p class="quiet small">{reel.effects.summary}</p>{/if}
+    <div class="row wrap">
+      <button class="btn sm" onclick={chooseEffects} disabled={ed.busy || choosing}
+              title="The AI picks transitions, text motion and looks, a shot effect or two and a signature move, for this reel's shots and music">
+        {#if choosing}<span class="spin"></span> Choosing{:else}<Icon name="sparkle" size={14} /> Choose effects with AI{/if}</button>
+      {#if reel?.effects?.changes?.length && onpreview}<button class="btn sm ghost" onclick={onpreview}><Icon name="play" size={14} /> Preview</button>{/if}
+    </div>
+    {#if reel?.effects?.changes?.length}
+      <ul class="why small">{#each reel.effects.changes.slice(0, 10) as c}<li>{c.replace(/^move: /, "")}</li>{/each}</ul>
+    {/if}
+    {#if reel?.effects?.why?.length}
+      <details class="small"><summary class="quiet">Why</summary>
+        <ul class="why quiet small">{#each reel.effects.why.slice(0, 8) as w}<li>{w}</li>{/each}</ul></details>
+    {/if}
+    <p class="quiet small">Transitions and moves show in motion: <b>Preview</b> or render to see them. The still above shows colour, effects and framing.</p>
+  </Section>
+{/snippet}
+
 {#if ed.sel?.kind === "pip"}
   <PipPanel />
 {:else if !s}
@@ -68,15 +102,7 @@
     <p>Select a shot on the timeline to edit it</p>
     <p class="quiet small">Drag a shot to move it, drag its edges to trim it</p>
   </div>
-  <Section id="shot-ai" title="Effects for the whole reel" open={true} summary={reel?.effects ? (reel.effects.by === "ai" ? "chosen by AI" : "by rules") : ""}>
-    {#if reel?.effects?.summary}<p class="quiet small">{reel.effects.summary}</p>{/if}
-    <button class="btn sm" onclick={() => edit({ op: "auto_effects" })} disabled={ed.busy}
-            title="The AI picks transitions, text motion and looks, and a shot effect or two, for this reel's shots and music">
-      <Icon name="sparkle" size={14} /> Choose effects with AI</button>
-    {#if reel?.effects?.why?.length}
-      <ul class="why quiet small">{#each reel.effects.why.slice(0, 6) as w}<li>{w}</li>{/each}</ul>
-    {/if}
-  </Section>
+  {@render reelFx()}
 {:else}
   <div class="head">
     <div class="row">
@@ -134,6 +160,19 @@
   </Section>
 
   {#if s.slot < reel.segments.length}
+    {#if s.moves?.length}
+      <Section id="shot-moves" title="Signature move" open={true} summary={s.moves.map((m) => m.name).join(", ")}>
+        {#each s.moves as m}
+          <div class="row">
+            <span class="sparkle"><Icon name="sparkle" size={14} /></span>
+            <span>{m.name}</span>
+            <div class="spacer"></div>
+            <button class="btn sm ghost" onclick={() => op({ op: "remove_move", id: m.id })}>Remove</button>
+          </div>
+        {/each}
+        <p class="quiet small">Shows in motion: Preview or render to see it.</p>
+      </Section>
+    {/if}
     <Section id="shot-transition" title="Transition" summary={s.transition ? nice(s.transition) : "Hard cut"}>
       <FxPicker kind="transition" at={s.slot} value={s.transition} none="Hard cut" onpick={(id) => op({ op: "transition", to: id })} />
       <p class="quiet small">Into the next shot. Hard cuts land on the beat; save transitions for a change of place or mood</p>
@@ -208,6 +247,7 @@
       <p class="quiet small">{s.people ? "The person stays; the world behind them changes on the beat, and the last beat is the real place again. Works best on a clip of you facing the camera, held still" : "Needs a clip with a person in it: the cut-out keeps only an upright figure"}</p>
     </Section>
   {/if}
+  {@render reelFx()}
 {/if}
 
 <style>
@@ -239,4 +279,6 @@
   input[type="range"] { margin-top: 8px; }
   kbd { height: 16px; min-width: 16px; font-size: 10px; }
   .part { align-self: flex-start; margin-top: 4px; }
+  .sparkle { color: var(--accent); display: grid; place-items: center; }
+  .row.wrap { flex-wrap: wrap; }
 </style>

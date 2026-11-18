@@ -190,3 +190,129 @@ def test_a_spent_claude_hands_over_to_minimax_once_even_from_several_threads(mon
         got = list(ex.map(lambda k: c.ask(f"sheet {k}"), range(3)))
     assert got == ["minimax says hi"] * 3 and c.name == "minimax" and len(calls) == 3 and mm.calls == 3
     assert c.ask("next") == "minimax says hi" and len(calls) == 3   # Claude isn't asked again this run
+
+
+_KEYS = ("ANTHROPIC_API_KEY", "MINIMAX_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "XAI_API_KEY",
+         "MISTRAL_API_KEY", "OPENROUTER_API_KEY", "DEEPSEEK_API_KEY", "TRIPSHOTS_OLLAMA_MODEL", "TRIPSHOTS_AI_ORDER",
+         "TRIPSHOTS_AI_OFF", "TRIPSHOTS_BACKEND", "TRIPSHOTS_OPENAI_MODEL", "CLAUDE_CODE_OAUTH_TOKEN")
+
+
+def _clean(monkeypatch):
+    for k in _KEYS:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(ai, "which", lambda name: None)   # no Claude Code here
+
+
+def test_automatic_follows_the_chosen_order_and_leaves_out_the_ones_switched_off(monkeypatch):
+    from tripshots import aiproviders as P
+    _clean(monkeypatch)
+    for k in ("OPENAI_API_KEY", "GEMINI_API_KEY", "DEEPSEEK_API_KEY", "MINIMAX_API_KEY"):
+        monkeypatch.setenv(k, "k")
+    b = ai.get_backend("auto")
+    assert [x.name for x in b.backends] == ["minimax", "openai", "gemini", "deepseek"]   # the default order
+    monkeypatch.setenv("TRIPSHOTS_AI_ORDER", "gemini,deepseek,bogus,openai")
+    monkeypatch.setenv("TRIPSHOTS_AI_OFF", "openai")
+    assert P.order()[:3] == ["gemini", "deepseek", "openai"] and len(P.order()) == len(P.PROVIDERS)
+    assert [x.name for x in ai.get_backend("auto").backends] == ["gemini", "deepseek", "minimax"]
+    assert ai.get_backend("openai").name == "openai"            # asked for by name: used even when off for automatic
+    monkeypatch.setenv("TRIPSHOTS_OLLAMA_MODEL", "qwen2.5vl")   # a local model needs no key, only a name
+    assert "ollama" in [x.name for x in ai.get_backend("auto").backends]
+    with pytest.raises(ai.ReelError):
+        ai.get_backend("nonsense")
+
+
+class _Resp:
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return json.dumps(self.body).encode()
+
+
+def _http(monkeypatch, answers, seen):
+    import io
+    import urllib.error
+    import urllib.request
+
+    def urlopen(req, timeout=None):
+        seen.append({"url": req.full_url, "body": json.loads(req.data), "auth": req.get_header("Authorization")})
+        code, body = answers.pop(0)
+        if code != 200:
+            raise urllib.error.HTTPError(req.full_url, code, "x", {}, io.BytesIO(json.dumps(body).encode()))
+        return _Resp(body)
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(ai.OpenAIChat, "RETRIES", (0.0, 0.0))
+
+
+def test_openai_style_services_get_pictures_and_hand_over_when_spent(monkeypatch, tmp_path):
+    _clean(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    img = tmp_path / "s.jpg"
+    img.write_bytes(b"\xff\xd8jpeg")
+    seen = []
+    ok = {"choices": [{"message": {"content": "fine"}}]}
+    _http(monkeypatch, [(429, {"error": {"message": "slow down"}}), (200, ok)], seen)
+    b = ai.make("openai")
+    assert b.ask("judge", [img], max_tokens=100) == "fine" and len(seen) == 2    # a busy answer is waited out
+    req = seen[0]
+    assert req["url"] == "https://api.openai.com/v1/chat/completions" and req["auth"] == "Bearer sk-test"
+    assert req["body"]["model"] == "gpt-5" and req["body"]["max_completion_tokens"] == 100 + 8000
+    parts = req["body"]["messages"][0]["content"]
+    assert parts[0]["text"] == "judge" and parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    # a spent quota hands over; a refused key too; neither is asked again
+    _http(monkeypatch, [(429, {"error": {"code": "insufficient_quota"}})], seen)
+    with pytest.raises(ai.AILimitError):
+        b.ask("x")
+    with pytest.raises(ai.AILimitError):
+        b.ask("x again")
+    monkeypatch.setenv("MISTRAL_API_KEY", "k")
+    m = ai.make("mistral")
+    _http(monkeypatch, [(401, {"message": "Unauthorized"})], seen)
+    with pytest.raises(ai.AIAuthError):
+        m.ask("x")
+    # in a chain the next AI carries on
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    _http(monkeypatch, [(402, {"error": "no credit"}), (200, ok)], seen)
+    c = ai.Chain([ai.make("mistral"), ai.make("gemini")])
+    assert c.ask("y") == "fine" and c.name == "gemini" and "generativelanguage" in seen[-1]["url"]
+
+
+def test_a_text_only_ai_lets_the_next_one_judge_pictures(monkeypatch, tmp_path):
+    img = tmp_path / "s.jpg"
+    img.write_bytes(b"x")
+    words, eyes = _B("deepseek"), _B("gemini")
+    words.vision = False
+    c = ai.Chain([words, eyes])
+    assert c.ask("caption please") == "deepseek says hi"
+    assert c.ask("judge", [img]) == "gemini says hi" and c.name == "gemini"
+    assert c.ask("caption again") == "deepseek says hi" and (words.calls, eyes.calls) == (2, 1)
+    blind = ai.Chain([words])
+    with pytest.raises(ai.ReelError, match="look at pictures"):
+        blind.ask("judge", [img])
+
+
+def test_the_app_saves_the_order_and_shows_every_ai(monkeypatch, tmp_path):
+    from tripshots import config, server
+    _clean(monkeypatch)
+    from tripshots import util
+    monkeypatch.setattr(util, "which", lambda name: None)
+    for k in ("TRIPSHOTS_AI_ORDER", "TRIPSHOTS_AI_OFF", "TRIPSHOTS_XAI_MODEL"):   # (written into the environment)
+        monkeypatch.setenv(k, "")
+    monkeypatch.setattr(config, "ENV_PATH", tmp_path / ".env")
+    monkeypatch.setattr(server, "status", lambda: {})
+    monkeypatch.setenv("XAI_API_KEY", "k")
+    server.save_settings({"ai_order": ["xai", "openai", "evil;rm"], "ai_off": ["openai"],
+                          "env": {"TRIPSHOTS_XAI_MODEL": "grok-4-fast"}})
+    env = (tmp_path / ".env").read_text()
+    assert "TRIPSHOTS_AI_ORDER=xai,openai\n" in env and "TRIPSHOTS_AI_OFF=openai" in env and "evil" not in env
+    st = server.ai_status()
+    assert st["every"][:2] == ["xai", "openai"] and st["order"] == ["xai"] and st["using"] == "xai"
+    x = st["providers"]["xai"]
+    assert x["model"] == "grok-4-fast" and x["state"] == "ready" and x["on"] and not st["providers"]["openai"]["on"]
+    assert "XAI_API_KEY" in server.SECRETS and server._shown("XAI_API_KEY") is True   # a key is never shown back

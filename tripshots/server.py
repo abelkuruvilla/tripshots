@@ -26,8 +26,12 @@ from . import __version__, jobs
 from .config import HOME, list_styles, load_env
 from .util import ReelError, read_json
 
-SECRETS = ("GEMINI_API_KEY", "ANTHROPIC_API_KEY", "MINIMAX_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY")
-SETTINGS = ("TRIPSHOTS_BACKEND", "TRIPSHOTS_MODEL", "TRIPSHOTS_COOKIES_BROWSER", "TRIPSHOTS_ENCODER") + SECRETS
+from .aiproviders import settings_keys as _ai_keys   # (standard library only)
+
+SECRETS = tuple(dict.fromkeys(("GEMINI_API_KEY", "ANTHROPIC_API_KEY", "MINIMAX_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
+                               "OPENAI_API_KEY") + _ai_keys()[0]))
+SETTINGS = tuple(dict.fromkeys(("TRIPSHOTS_BACKEND", "TRIPSHOTS_MODEL", "TRIPSHOTS_COOKIES_BROWSER",
+                                "TRIPSHOTS_ENCODER") + _ai_keys()[1] + SECRETS))
 PLAIN = re.compile(r"^[^\x00-\x1f]{0,4000}$")
 
 
@@ -323,13 +327,19 @@ def save_settings(body: dict) -> dict:
             upd[k] = v.strip()
     if body.get("backend") in BACKENDS:
         upd["TRIPSHOTS_BACKEND"] = body["backend"]
+    from .aiproviders import PROVIDERS
+    if isinstance(body.get("ai_order"), list):   # the order automatic tries the AIs in
+        upd["TRIPSHOTS_AI_ORDER"] = ",".join(dict.fromkeys(str(x) for x in body["ai_order"] if x in PROVIDERS))
+    if isinstance(body.get("ai_off"), list):     # set up, but left out of automatic
+        upd["TRIPSHOTS_AI_OFF"] = ",".join(dict.fromkeys(str(x) for x in body["ai_off"] if x in PROVIDERS))
     if upd:
         write_env(upd)  # (an empty value removes the setting)
     return status()
 
 
 # ------------------------------------------------------------------ AI setup
-BACKENDS = ("auto", "claude-cli", "minimax", "api", "none")
+from .aiproviders import PROVIDERS as _PROVIDERS
+BACKENDS = ("auto", "none", *_PROVIDERS)
 PING = "Reply with the single word OK."
 
 
@@ -362,12 +372,29 @@ def ai_status() -> dict:
         "gemini": {"state": "ready" if gem_key and sdk else ("no_sdk" if gem_key else "no_key"),
                    "model": os.environ.get("TRIPSHOTS_GEMINI_MODEL") or "gemini-flash-latest"},
     }
+    from . import aiproviders as P
+    off = P.off()
+    for pid, meta in P.PROVIDERS.items():   # every AI the app can set up, with its state and settings
+        if pid == "claude-cli":
+            state = c_state
+        elif meta.get("local"):
+            state = "ready" if P.configured(pid) else "no_model"
+        else:
+            state = "ready" if P.configured(pid) else "no_key"
+        providers[pid] = {**providers.get({"claude-cli": "claude", "api": "anthropic"}.get(pid, pid), {}),
+                          "id": pid, "name": meta["name"], "sub": meta["sub"], "state": state,
+                          "model": P.model(pid), "default_model": meta.get("model", ""),
+                          "key_env": meta.get("key_env"), "model_env": meta.get("model_env"),
+                          "base_env": meta.get("base_env"), "base": P.base(pid) if meta.get("base_env") else None,
+                          "vision": meta.get("vision", True), "local": bool(meta.get("local")), "site": meta.get("site"),
+                          "on": pid not in off}
+    providers["gemini"]["watch"] = "ready" if gem_key and sdk else ("no_sdk" if gem_key else "no_key")
     backend = (os.environ.get("TRIPSHOTS_BACKEND") or "auto").lower()
-    order = [n for n, ok in (("claude-cli", c_state == "ready"), ("minimax", providers["minimax"]["state"] == "ready"),
-                             ("api", providers["anthropic"]["state"] == "ready")) if ok]
+    every = P.order()
+    order = [n for n in every if n not in off and providers[n]["state"] == "ready"]
     using = None if backend == "none" else (order[0] if backend == "auto" and order else
-                                            backend if backend in order else None)
-    return {"backend": backend, "order": order, "using": using, "providers": providers}
+                                            backend if providers.get(backend, {}).get("state") == "ready" else None)
+    return {"backend": backend, "order": order, "every": every, "using": using, "providers": providers}
 
 
 def ai_test(provider: str) -> dict:
@@ -375,18 +402,9 @@ def ai_test(provider: str) -> dict:
     import time
     t = time.time()
     try:
-        if provider == "gemini":
-            from .watch import api_key
-            from google import genai
-            names = [m.name for m in genai.Client(api_key=api_key()).models.list()]
-            flash = [n for n in names if "flash" in n]
-            return {"ok": True, "message": f"Gemini answered: {len(names)} models available to this key"
-                                           + (f", including {flash[0].split('/')[-1]}" if flash else "")}
-        from .ai import AnthropicAPI, ClaudeCLI, _minimax
-        be = {"claude": ClaudeCLI, "minimax": _minimax, "anthropic": AnthropicAPI}.get(provider)
-        if be is None:
-            raise ReelError(f"unknown AI: {provider}")
-        reply = be().ask(PING, max_tokens=16).strip()
+        from .ai import make
+        pid = {"claude": "claude-cli", "anthropic": "api"}.get(provider, provider)
+        reply = make(pid).ask(PING, max_tokens=64).strip()
         return {"ok": True, "message": f"{provider} answered in {time.time() - t:.0f} s: {reply[:40]}"}
     except Exception as e:
         return {"ok": False, "message": " ".join(str(e).split())[:400] or type(e).__name__}

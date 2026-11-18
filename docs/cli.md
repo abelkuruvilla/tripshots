@@ -168,7 +168,9 @@ options:
                         target length in seconds
   -o, --out OUT         output .mp4 path
   -b, --backend BACKEND
-                        claude-cli | api | minimax | none (default: auto)
+                        auto (the order set in Settings) | none | claude-cli | api | minimax |
+                        openai | gemini | xai | mistral | openrouter | deepseek | ollama (default:
+                        auto)
   --hook HOOK           on-screen hook text (overrides style/AI)
   --location LOCATION   location label text (overrides GPS lookup)
   --no-location         no place names on screen: no location title, none in the hook, no numbered
@@ -379,7 +381,8 @@ options:
   --notes-json NOTES_JSON
                         notes as JSON [{"t": 12.3, "text": "..."}] (or a file holding it)
   --no-render           edit the plan only
-  --backend BACKEND     AI backend: auto|claude-cli|api|minimax|none
+  --backend BACKEND     AI backend: auto|none or one AI (claude-cli, api, minimax, openai, gemini,
+                        ...)
 ```
 
 ## post

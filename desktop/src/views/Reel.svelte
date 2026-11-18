@@ -413,7 +413,7 @@
           {/each}
         </div>
         <div class="pane" id="tabpanel" role="tabpanel" aria-labelledby={`tab-${ed.tab}`}>
-          {#if ed.tab === "shot"}<ShotPanel onpick={pick} oninsert={insertAfter} onontop={addOnTop} onpart={choosePart} />
+          {#if ed.tab === "shot"}<ShotPanel onpick={pick} oninsert={insertAfter} onontop={addOnTop} onpart={choosePart} onpreview={playEdit} />
           {:else if ed.tab === "text"}<TextPanel />
           {:else if ed.tab === "colour"}<ColourPanel />
           {:else if ed.tab === "sound"}<SoundPanel />

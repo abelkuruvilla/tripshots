@@ -156,6 +156,8 @@
                   onclick={() => !ed.expert && clickShot(s)}>
             {#if s.thumb}<img src={media(s.thumb)} alt="" loading="lazy" draggable="false" />{/if}
             {#if badge(s)}<span class="badge meta">{badge(s)}</span>{/if}
+            {#if s.moves?.length || s.effect}<span class="fxmark" title={[...(s.moves || []).map((m) => m.name), s.effect && `Effect: ${s.effect.id}`].filter(Boolean).join(" · ")}
+              aria-label={[...(s.moves || []).map((m) => m.name), s.effect && `effect ${s.effect.id}`].filter(Boolean).join(", ")}><Icon name="sparkle" size={10} />{s.moves?.length ? s.moves[0].name : ""}</span>{/if}
           </button>
           <button class="swapbtn" onclick={() => onpick(s)} aria-label={`Replace shot ${s.slot}`} title="Replace this shot"><Icon name="swap" size={14} /></button>
           {#if ed.expert}
@@ -213,6 +215,7 @@
   .slot.current .shot { box-shadow: inset 0 0 0 2px var(--accent); }
   .slot.sel .shot { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 2px var(--accent-soft); }
   .slot.lifted { opacity: 0.5; }
+  .fxmark { position: absolute; left: 4px; top: 4px; display: inline-flex; align-items: center; gap: 2px; max-width: calc(100% - 32px); padding: 0 4px; border-radius: 4px; background: rgba(15, 15, 16, 0.72); color: var(--accent); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .badge { position: absolute; left: 4px; bottom: 4px; padding: 0 4px; border-radius: 4px; background: rgba(15, 15, 16, 0.72); color: #ededed; font-size: 10px; }
   .trans { position: absolute; right: 2px; bottom: -16px; font-size: 10px; color: var(--accent); white-space: nowrap; overflow: hidden; max-width: 100%; }
   .swapbtn {

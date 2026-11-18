@@ -349,3 +349,17 @@ def test_without_an_ai_the_drop_gets_the_flash_zoom(tmp_path):
     plan["segments"][4]["drop"] = True
     moves = fxlib._rule_moves(plan, by_id, fxlib.eligible(plan, {}, by_id))
     assert moves and moves[0]["id"] == "flash_zoom" and moves[0]["shots"] == [5]
+
+
+def test_the_editor_sees_each_shots_move_and_can_take_it_off(tmp_path):
+    plan, by_id, shots = _people_plan(tmp_path)
+    plan["tempo"], plan["beats"] = 120, [k * 0.5 for k in range(40)]
+    by_id["S2"]["ai"]["shot_size"] = "medium"
+    ai = FakeAI({"moves": [{"id": "freeze_intro", "shots": [4]}, {"id": "spotlight", "shots": [3]}]})
+    fxlib.direct(plan, by_id, {"name": "x"}, ai, shots)
+    segs = plan["segments"]
+    assert fxlib.moves_on(segs[3]) == ["freeze_intro"] and fxlib.moves_on(segs[2]) == ["spotlight"]
+    assert fxlib.moves_on(segs[0]) == []
+    assert not fxlib.remove_move(plan, 4, "spotlight")                  # not on that shot
+    assert fxlib.remove_move(plan, 4, "freeze_intro") and "pose" not in segs[3]
+    assert [m["id"] for m in plan["moves"]] == ["spotlight"]            # the record keeps the other one

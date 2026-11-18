@@ -123,6 +123,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 - **Footage with titles already on it** (an exported edit, a screen recording, a saved reel) is recognised by the AI (`issues: burned-in-text`) and kept out of reels, where the old words would sit under the new ones.
 
 ### Changed
+- **Projects looks like the rest of the app.** The library and collections column now matches the main sidebar: rows at full height (they were squashed), the same selected state instead of an orange tint, sentence-case headings instead of small capitals, and drawn More icons instead of ⋯ characters. Cards show the shape and date in one line, with the collection in the tooltip, so nothing gets cut off. A card's menu is no longer hidden behind the sidebar, the title stays whole on a small window, and the search field's clear button is in the app's own colours.
 - **The desktop app, redesigned** (with the unslop and ui-ux-pro-max skills):
   - **Make** replaces New reel and Ask: describe the reel or choose everything yourself, and the job's progress shows on the same page in named steps, with the question it asks and Open the reel.
   - **Before and after** in the Colour tab splits the viewer between the shot as filmed and your edit, with a divider you drag or move with the arrow keys.

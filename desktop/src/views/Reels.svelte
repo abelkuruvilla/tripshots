@@ -101,7 +101,7 @@
       {#each [["all", "All projects", "film", () => true], ["pinned", "Pinned", "pin", (r) => r.pinned], ["favorites", "Favourites", "heart", (r) => r.favorite],
               ["plans", "Plans to render", "layers", (r) => !r.rendered], ["edited", "Edited", "sliders", (r) => r.stale]] as [id, label, icon, f]}
         <button class="item" class:on={view === id} onclick={() => (view = id)}>
-          <Icon name={icon} size={15} /><span class="ellipsis">{label}</span><span class="n meta">{count(f)}</span>
+          <Icon name={icon} /><span class="ellipsis">{label}</span><span class="meta">{count(f)}</span>
         </button>
       {/each}
     </div>
@@ -112,9 +112,9 @@
         <div class="citem" class:over={over === c} role="listitem"
              ondragover={(e) => (e.preventDefault(), (over = c))} ondragleave={() => over === c && (over = null)} ondrop={(e) => drop(e, c)}>
           <button class="item" class:on={view === "c:" + c} onclick={() => (view = "c:" + c)}>
-            <Icon name="folder" size={15} /><span class="ellipsis">{c}</span><span class="n meta">{count((r) => r.collection === c)}</span>
+            <Icon name="folder" /><span class="ellipsis">{c}</span><span class="meta">{count((r) => r.collection === c)}</span>
           </button>
-          <button class="cmore" onclick={() => (colMenu = colMenu === c ? null : c)} aria-label={`More for ${c}`}>⋯</button>
+          <button class="cmore" onclick={() => (colMenu = colMenu === c ? null : c)} aria-label={`More for ${c}`} aria-expanded={colMenu === c}><Icon name="more" size={14} /></button>
           {#if colMenu === c}
             <div class="menu surface cmenu" role="menu">
               <button role="menuitem" onclick={() => ((colMenu = null), (ask = { kind: "renamecol", name: c, value: c }))}>Rename…</button>
@@ -132,7 +132,7 @@
       <div class="group">
         {#each folders as f (f)}
           <button class="item" class:on={view === "f:" + f} onclick={() => (view = "f:" + f)} title={f}>
-            <Icon name="folder" size={15} /><span class="ellipsis">{short(f)}</span><span class="n meta">{count((r) => r.folder === f)}</span>
+            <Icon name="folder" /><span class="ellipsis">{short(f)}</span><span class="meta">{count((r) => r.folder === f)}</span>
           </button>
         {/each}
       </div>
@@ -142,7 +142,7 @@
   <div class="main page">
     <div class="page-head">
       <h1 class="ellipsis">{title}</h1>
-      <span class="meta">{shown.length}</span>
+      <span class="meta total">{shown.length}</span>
       <div class="spacer"></div>
       <label class="search">
         <Icon name="search" />
@@ -156,7 +156,7 @@
         {#each [["any", "Any shape"], ["upright", "Upright"], ["wide", "Wide"]] as [id, label]}<button role="radio" aria-checked={shape === id} onclick={() => (shape = id)}>{label}</button>{/each}
       </div>
       <div class="spacer"></div>
-      <label class="sortl meta" for="psort">Sort</label>
+      <label class="sortl" for="psort">Sort</label>
       <select id="psort" class="sort" bind:value={sort}>
         <option value="recent">Recent</option><option value="name">Name</option><option value="length">Length</option>
       </select>
@@ -177,7 +177,7 @@
       </div>
     {:else if !shown.length}
       <div class="empty">
-        <p>{q ? `Nothing matches “${q}”` : view.startsWith("c:") ? "No reels in this collection yet: drag one onto it in the sidebar, or use a reel's ⋯ menu" : "Nothing here"}</p>
+        <p>{q ? `Nothing matches “${q}”` : view.startsWith("c:") ? "No reels in this collection yet: drag one onto it in the sidebar, or use a reel's More menu" : "Nothing here"}</p>
         {#if q || view !== "all"}<button class="btn" onclick={() => ((q = ""), (view = "all"), (shape = "any"))}>Show all projects</button>{/if}
       </div>
     {/if}
@@ -187,21 +187,21 @@
         <div class="card" class:wide={r.width > r.height} class:dragging={dragging === r.plan} draggable="true" role="listitem"
              ondragstart={(e) => ((dragging = r.plan), e.dataTransfer.setData("text/plain", r.plan), (e.dataTransfer.effectAllowed = "move"))}
              ondragend={() => ((dragging = null), (over = null))}>
-          <button class="tile" onclick={() => openReel(r.plan)} aria-label={`Open ${r.name}`}>
+          <button class="tile" onclick={() => openReel(r.plan)} aria-label={`Open ${r.name}`} title={r.collection ? `${r.name}, in ${r.collection}` : r.name}>
             <div class="thumb">
-              {#if r.cover || r.storyboard}<img loading="lazy" src={media(r.cover || r.storyboard, r.modified)} alt="" draggable="false" />{/if}
+              {#if r.cover || r.storyboard}<img loading="lazy" src={media(r.cover || r.storyboard, r.modified)} alt="" draggable="false" onerror={(e) => (e.currentTarget.style.visibility = "hidden")} />{/if}
               <span class="play" aria-hidden="true"><Icon name="play" size={18} /></span>
               {#if !r.rendered}<span class="tag">Plan</span>{:else if r.stale}<span class="tag">Edited</span>{/if}
               <span class="tcbox tc">{tc(r.duration)}</span>
             </div>
             <div class="name ellipsis">{r.name}</div>
-            <div class="meta ellipsis">{[r.collection, r.width > r.height ? "16:9" : "9:16", ago(r.modified)].filter(Boolean).join(" · ")}</div>
+            <div class="meta ellipsis">{r.width > r.height ? "16:9" : "9:16"} · {ago(r.modified)}</div>
           </button>
           <div class="quick" class:shown={r.pinned || r.favorite}>
             <button class="qb" class:on={r.pinned} onclick={() => act(r, r.pinned ? "unpin" : "pin")} aria-label={r.pinned ? "Unpin" : "Pin"} title={r.pinned ? "Unpin" : "Pin to the top"}><Icon name="pin" size={14} /></button>
             <button class="qb" class:on={r.favorite} onclick={() => act(r, r.favorite ? "unfavorite" : "favorite")} aria-label={r.favorite ? "Not a favourite" : "Favourite"} title="Favourite"><Icon name="heart" size={14} /></button>
           </div>
-          <button class="more" onclick={() => (menu = menu === r.plan ? null : r.plan)} aria-label={`More for ${r.name}`} aria-expanded={menu === r.plan}>⋯</button>
+          <button class="more" onclick={() => (menu = menu === r.plan ? null : r.plan)} aria-label={`More for ${r.name}`} aria-expanded={menu === r.plan}><Icon name="more" size={14} /></button>
           {#if menu === r.plan}
             <div class="menu surface" role="menu">
               <button role="menuitem" onclick={() => openReel(r.plan)}>Open</button>
@@ -248,32 +248,39 @@
 
 <style>
   .projects { height: 100%; display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 0; }
-  .side { border-right: 1px solid var(--line); padding: 48px 12px 24px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
-  .group { display: flex; flex-direction: column; gap: 1px; }
-  .ghead { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 4px; padding: 0 4px 0 10px;
-           font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
-  .item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-sm);
-          background: transparent; color: var(--text-2); font-size: 13px; text-align: left; }
+  /* the second column follows the app's own sidebar: same row height, radius, icon column and selected state */
+  .side { border-right: 1px solid var(--line); padding: 48px 12px 24px; overflow: auto; display: flex; flex-direction: column; }
+  .group { display: flex; flex-direction: column; gap: 2px; }
+  .ghead { display: flex; align-items: center; justify-content: space-between; height: 28px; margin: 24px 0 4px; padding: 0 0 0 8px;
+           font-size: 12px; font-weight: 500; color: var(--text-3); }
+  .item { min-width: 0; width: 100%; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 8px; border: 0; border-radius: var(--r-ctl);
+          background: transparent; color: var(--text-2); font-size: 13px; text-align: left;
+          transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
   .item:hover { background: var(--raised); color: var(--text); }
-  .item.on { background: var(--accent-soft); color: var(--text); font-weight: 500; }
+  .item.on { background: var(--card); color: var(--text); font-weight: 500; box-shadow: inset 0 0 0 1px var(--line), var(--highlight); }
   .item .ellipsis { flex: 1; min-width: 0; }
-  .n { font-size: 11px; }
-  .citem { position: relative; display: flex; align-items: center; border-radius: var(--r-sm); }
+  .citem { position: relative; display: flex; align-items: center; border-radius: var(--r-ctl); }
+  .citem .item { flex: 1; }
   .citem.over { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
-  .cmore { width: 24px; height: 24px; border: 0; background: transparent; color: var(--text-3); opacity: 0; border-radius: var(--r-sm); }
-  .citem:hover .cmore, .cmore:focus-visible { opacity: 1; }
-  .cmenu { left: 24px; right: auto; top: 30px; }
-  .hint { padding: 4px 10px; margin: 0; }
+  .cmore { position: absolute; right: 4px; width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm);
+           background: var(--raised); color: var(--text-2); opacity: 0; transition: opacity var(--fast) var(--ease); }
+  .cmore:hover { color: var(--text); }
+  .citem:hover .cmore, .cmore:focus-visible, .cmore[aria-expanded="true"] { opacity: 1; }
+  .citem:hover .item .meta, .citem:has(.cmore[aria-expanded="true"]) .item .meta { visibility: hidden; }
+  .cmenu { left: 24px; right: auto; top: 36px; }
+  .hint { padding: 4px 8px; margin: 0; }
   .main { min-width: 0; }
   .search {
-    display: flex; align-items: center; gap: 8px; width: 220px; height: 36px; margin: 0; padding: 0 12px;
+    display: flex; align-items: center; gap: 8px; flex: 0 4 220px; min-width: 120px; height: 36px; margin: 0; padding: 0 12px;
     background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); color: var(--text-3); font-weight: 400;
   }
   .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .search input { border: 0; padding: 0; min-height: 0; height: 34px; background: transparent; box-shadow: none; color: var(--text); }
   .search input:focus-visible { box-shadow: none; }
-  .bar { margin: 12px 0 28px; gap: 8px; }
-  .sortl { margin: 0; }
+  .page-head h1 { flex: none; max-width: 45%; }
+  .page-head .total { flex: none; align-self: flex-end; margin-bottom: 6px; }
+  .bar { margin: 16px 0 24px; gap: 8px; }
+  .sortl { margin: 0 4px 0 0; font-size: 13px; font-weight: 400; color: var(--text-3); }
   .sort { width: auto; min-height: 32px; height: 32px; padding: 0 28px 0 10px; }
   .notice { margin: 0 0 24px; }
   /* fixed columns so an upright reel is one column and a wide one two, at the same height */
@@ -292,6 +299,7 @@
   .tag { position: absolute; left: 8px; bottom: 8px; font-size: 11px; line-height: 16px; padding: 2px 6px; border-radius: 4px; background: rgba(15, 15, 16, 0.72); color: #ededed; font-weight: 500; }
   .tcbox { position: absolute; right: 8px; bottom: 8px; font-size: 11px; line-height: 16px; padding: 2px 6px; border-radius: 4px; background: rgba(15, 15, 16, 0.72); color: #ededed; }
   .name { font-weight: 500; }
+  .tile .meta { margin-top: 2px; }
   .quick { position: absolute; left: 8px; top: 8px; display: flex; gap: 4px; opacity: 0; transition: opacity var(--fast) var(--ease); }
   .card:hover .quick, .quick.shown, .quick:focus-within { opacity: 1; }
   .qb { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: rgba(15, 15, 16, 0.72); color: #cfcfcf; }
@@ -299,15 +307,17 @@
   .qb.on { color: var(--accent); }
   .quick.shown .qb:not(.on) { display: none; }
   .card:hover .quick.shown .qb { display: grid; }
-  .more { position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; border: 0; border-radius: var(--r-sm);
+  .more { position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm);
           background: rgba(15, 15, 16, 0.72); color: #ededed; opacity: 0; transition: opacity var(--fast) var(--ease); }
   .card:hover .more, .more:focus-visible, .more[aria-expanded="true"] { opacity: 1; }
-  .menu { position: absolute; right: 8px; top: 40px; z-index: 20; display: flex; flex-direction: column; min-width: 200px; padding: 4px; box-shadow: var(--float); }
-  .menu button { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: var(--r-sm); color: var(--text); font-size: 13px; }
+  /* opens from the card's left edge, so the first column's menu isn't clipped by the sidebar */
+  .menu { position: absolute; left: 8px; top: 40px; z-index: 20; display: flex; flex-direction: column; min-width: 200px; max-width: 280px; padding: 4px; box-shadow: var(--float);
+          animation: rise var(--menu) var(--ease); }
+  .menu button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: var(--r-sm); color: var(--text); font-size: 13px; }
   .menu button:hover { background: var(--raised); }
   .menu .danger { color: var(--err); }
   .scrim { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 50; }
   .dialog { width: min(440px, 92vw); padding: 24px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--float); }
   .dialog .foot { gap: 8px; }
-  @media (max-width: 960px) { .projects { grid-template-columns: 180px minmax(0, 1fr); } }
+  @media (max-width: 1120px) { .projects { grid-template-columns: 184px minmax(0, 1fr); } }
 </style>

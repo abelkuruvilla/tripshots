@@ -15,6 +15,7 @@ ops:
                                                          hit = seconds into the slot; "points": [[0,1],[0.4,0.3],[1,1]]
                                                          for a custom curve; "ramp": null removes it
   {"op": "frame", "segment": 4, "subject_x": 0.3, "layout": "crop"}   reframe (0 = left, 1 = right)
+  {"op": "frame", "segment": 4, "auto": true}                    framing back to automatic
   {"op": "set", "path": "motion.beat_punch", "value": 0.04}          anything else, by dotted path
 
 On-screen text, by its number in plan["overlays"] (from 1; `texts` lists them):
@@ -502,9 +503,15 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             if segs[i].get("panel"):
                 raise ReelError(f"slot {i + 1} is a split screen: to show one shot full screen there, swap it "
                                 "(op swap with a shot id)")
+            if ed.get("auto"):   # back to automatic: the render places the window on what plays (compose.py)
+                segs[i].pop("frame_by", None)
+                done.append(f"slot {i + 1} framed automatically")
+                continue
             for k in ("subject_x", "layout", "pan_from", "pan_to"):
                 if k in ed:
                     segs[i][k] = ed[k]
+            if "subject_x" in ed:   # placed by hand: the automatic framing leaves it where it is
+                segs[i]["frame_by"] = "hand"
             if "subject_x" in ed and isinstance(segs[i].get("subject"), dict):
                 sb = segs[i]["subject"]
                 w = sb.get("x1", 0.6) - sb.get("x0", 0.4)

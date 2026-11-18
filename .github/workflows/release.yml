@@ -35,7 +35,7 @@ env:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.v.outputs.version }}
       release_id: ${{ steps.rel.outputs.id }}
@@ -151,7 +151,7 @@ jobs:
             [ -f "$f" ] && npx --yes @tauri-apps/cli@2 signer sign "$f"
           done
           ls -la out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: engine-${{ matrix.platform }}
           path: out/*
@@ -159,12 +159,12 @@ jobs:
 
   engine-manifest:
     needs: [prepare, engine]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: engine-*
           path: artifacts
@@ -248,7 +248,7 @@ jobs:
 
   publish:
     needs: [prepare, engine-manifest, app]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: publish the release
         env:

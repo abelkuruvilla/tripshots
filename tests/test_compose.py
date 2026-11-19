@@ -4,7 +4,7 @@ import json
 import numpy as np
 
 from tripshots import compose
-from tests.conftest import ff
+from conftest import ff, needs_ffmpeg
 
 
 def _person(cx, w=0.05, yaw=0.0, y=0.3):
@@ -65,6 +65,7 @@ def test_a_passer_by_in_one_frame_is_not_the_subject():
     assert compose.decide(samples, CW, 1.0, 2.0) is None
 
 
+@needs_ffmpeg
 def test_the_window_that_plays_is_what_gets_looked_at(tmp_path, monkeypatch):
     # a white square moves left to right; the clip is cut 0.5-1.5 s, where it is on the right
     src = tmp_path / "walk.mp4"

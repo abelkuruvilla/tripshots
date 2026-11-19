@@ -8,6 +8,7 @@ name: release
 #   tripshots-engine-<v>-<platform>.tar.gz|zip (+ .sig)   the engine the app downloads on first run / updates
 #   engine.json                                          the manifest the app reads (releases/latest/download/)
 #   TripShots_<v>_*.dmg / .msi / .exe / .deb / .rpm / .AppImage, latest.json (the app's own updates)
+#   TripShots-mac.dmg, -windows-setup.exe, -windows.msi, -linux.AppImage/.deb/.rpm  the same, names without the version
 #
 # Secrets: TAURI_SIGNING_PRIVATE_KEY (contents of ~/.tauri/tripshots.key), TAURI_SIGNING_PRIVATE_KEY_PASSWORD.
 # Optional, macOS app signing + notarisation: APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD,
@@ -250,6 +251,26 @@ jobs:
     needs: [prepare, engine-manifest, app]
     runs-on: ubuntu-24.04
     steps:
+      # the installers again under names without the version, so .../releases/latest/download/TripShots-mac.dmg
+      # always gives the newest one (links that never change, e.g. for tripshots.app)
+      - name: installers under fixed names
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir fixed && cd fixed
+          get() {
+            gh release download "$TAG" --repo ${{ github.repository }} --pattern "$1" --output "$2" --clobber \
+              || echo "::warning::no $1 in the release"
+          }
+          get 'TripShots_*_aarch64.dmg' TripShots-mac.dmg
+          get 'TripShots_*_x64-setup.exe' TripShots-windows-setup.exe
+          get 'TripShots_*_x64_en-US.msi' TripShots-windows.msi
+          get 'TripShots_*_amd64.AppImage' TripShots-linux.AppImage
+          get 'TripShots_*_amd64.deb' TripShots-linux.deb
+          get 'TripShots-*.x86_64.rpm' TripShots-linux.rpm
+          if ls TripShots-* >/dev/null 2>&1; then
+            gh release upload "$TAG" TripShots-* --repo ${{ github.repository }} --clobber
+          fi
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -15,3 +15,6 @@ reels/
 *.mov
 !tests/**/*.mp4
 .DS_Store
+
+# the site's hero clip
+!site/media/*.mp4

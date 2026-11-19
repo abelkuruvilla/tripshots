@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TripShots: your trip, cut to the beat</title>
+  <meta name="description" content="TripShots turns your own travel clips and photos into beat-synced Instagram Reels. It picks the best shots, cuts them on the beat, grades the colour and adds the words. Free and open source for Mac, Windows and Linux.">
+  <meta name="theme-color" content="#0f0f10">
+  <link rel="canonical" href="https://tripshots.app/">
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://tripshots.app/">
+  <meta property="og:title" content="TripShots: your trip, cut to the beat">
+  <meta property="og:description" content="Turn your own travel footage into beat-synced Instagram Reels. Free and open source for Mac, Windows and Linux.">
+  <meta property="og:image" content="https://tripshots.app/media/reel.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preload" href="fonts/instrument-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script src="download.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap top-in">
+      <a class="brand" href="#" aria-label="TripShots home">
+        <img src="images/logo.png" width="28" height="28" alt="">
+        <span>TripShots</span>
+      </a>
+      <nav aria-label="Main">
+        <a href="#how">How it works</a>
+        <a href="#app">The app</a>
+        <a href="#cli">Command line</a>
+        <a href="https://github.com/abelkuruvilla/tripshots" class="gh">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          <span>GitHub</span>
+        </a>
+        <a href="#download" class="btn btn-small">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="wrap hero-in">
+        <div class="hero-copy">
+          <p class="tc" aria-hidden="true">00:00:00:00</p>
+          <h1>Your trip, cut&nbsp;to the&nbsp;beat.</h1>
+          <p class="lede">TripShots turns your own travel clips and photos into Instagram Reels. It finds the strongest shots, cuts them on the beat of your song, grades the colour and adds the words. Nothing is generated: every frame is yours.</p>
+          <div class="cta">
+            <a class="btn btn-big js-dl" href="https://github.com/abelkuruvilla/tripshots/releases/latest">
+              <span class="js-dl-label">Download TripShots</span>
+            </a>
+            <a class="btn btn-ghost" href="https://github.com/abelkuruvilla/tripshots">View on GitHub</a>
+          </div>
+          <p class="fine js-dl-note">Free and open source. For Mac with Apple Silicon, Windows and Linux.</p>
+        </div>
+        <figure class="hero-reel">
+          <div class="frame">
+            <video src="media/reel.mp4" poster="media/reel.jpg" autoplay muted loop playsinline preload="metadata" aria-label="A road trip reel made with TripShots: a road through the redwoods, a river canyon and the coast"></video>
+          </div>
+          <figcaption><span class="tc">OUT WEST 2026</span> A road trip reel, made from the footage alone.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="how" class="band">
+      <div class="wrap">
+        <h2>From a folder of footage to a reel you can post</h2>
+        <ol class="steps">
+          <li>
+            <span class="tc">01</span>
+            <h3>Point it at your trip</h3>
+            <p>A folder on your SSD, your phone's photos or a drone card. Or just say it: <em>&ldquo;a reel about my days in Yellowstone&rdquo;</em>. It finds footage by place, date or who's in it.</p>
+          </li>
+          <li>
+            <span class="tc">02</span>
+            <h3>Pick a sound</h3>
+            <p>A song file or the link to a reel whose sound you like. TripShots reads its beats, its quiet parts and its drop.</p>
+          </li>
+          <li>
+            <span class="tc">03</span>
+            <h3>It edits like a person would</h3>
+            <p>A hook in the first second, a build, the best shot on the drop. Colour, text, transitions, sound effects and a route map, all from your footage.</p>
+          </li>
+          <li>
+            <span class="tc">04</span>
+            <h3>Change anything, then post</h3>
+            <p>Swap a shot, change the words, try another look. You get the reel, a cover, a caption with hashtags and the edit for Resolve or Premiere.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="app" class="app">
+      <div class="wrap">
+        <h2>The desktop app</h2>
+        <p class="sub">A small native app with light and dark themes. The engine downloads once on first launch, checked against TripShots' signature, and keeps itself up to date.</p>
+
+        <div class="feature">
+          <img src="images/reels.jpg" width="1600" height="1000" loading="lazy" alt="The Reels screen: every reel you've made, grouped by folder, upright and wide side by side">
+          <div>
+            <h3>Every reel, in one place</h3>
+            <p>Your reels grouped by folder, upright and wide side by side. Pin the good ones, gather a trip into a collection and see what's being made right now.</p>
+          </div>
+        </div>
+
+        <div class="feature flip">
+          <img src="images/reel.jpg" width="1600" height="1000" loading="lazy" alt="The editor: the viewer, the Shot tab with timing and transition, and the timeline with the beats">
+          <div>
+            <h3>An editor on one screen</h3>
+            <p>The viewer, the timeline with the beats, and the shot's timing, speed, transition and framing. Lengths snap to the beat, and every change can be undone.</p>
+          </div>
+        </div>
+
+        <div class="pair">
+          <figure>
+            <img src="images/text.jpg" width="1600" height="1000" loading="lazy" alt="The Text tab: a line's words, timing, font shown in its own face, size and colour">
+            <figcaption><strong>Words on screen.</strong> Font, size, colour, place and animation for every line.</figcaption>
+          </figure>
+          <figure>
+            <img src="images/colour.jpg" width="1600" height="1000" loading="lazy" alt="The Colour tab: each look shown on the shot itself, and the viewer split between the shot as filmed and the graded edit">
+            <figcaption><strong>Colour, before and after.</strong> Each look previewed on your own shot.</figcaption>
+          </figure>
+        </div>
+
+        <div class="feature">
+          <img src="images/make.jpg" width="1600" height="1000" loading="lazy" alt="Make: describe the reel in a sentence, or choose the footage, sound and style yourself">
+          <div>
+            <h3>Describe it, or choose it yourself</h3>
+            <p>Write one sentence and TripShots picks the footage, a style and a sound. Or choose the footage, sound, style, shape and how many versions to make, and watch it work step by step.</p>
+          </div>
+        </div>
+
+        <div class="feature flip">
+          <img src="images/ai.jpg" width="1600" height="1000" loading="lazy" alt="Settings, AI: status, steps and a Test button for each AI">
+          <div>
+            <h3>Bring the AI you already have</h3>
+            <p>Your Claude Pro or Max plan, or a key for the Claude API, OpenAI, Gemini, MiniMax, Mistral, Grok, DeepSeek or OpenRouter, or a local model in Ollama. Setup takes a minute, with a Test button for each one.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <h2>What it does for you</h2>
+        <ul class="grid">
+          <li><h3>Learns from reels you like</h3><p>Give it links to reels and it learns each one's cuts, picture shape, words and lettering, then follows that recipe with your footage.</p></li>
+          <li><h3>Finds your footage</h3><p>By place, matched by GPS inside the park's real outline, by dates, or by who's in it, with face recognition that runs on your computer.</p></li>
+          <li><h3>Tells a story</h3><p>A hook, a build, a payoff on the drop and an ending that loops. A critic checks the plan before anything renders.</p></li>
+          <li><h3>Looks finished</h3><p>Colour grading per shot, titles behind the skyline, speed ramps, freeze frames, split screens and animated route maps.</p></li>
+          <li><h3>Sounds finished</h3><p>Real sound effects and ambience timed to every cut and title, from openly licensed libraries.</p></li>
+          <li><h3>Remembers your footage</h3><p>Each file is judged once, so the next reel from the same trip is quick and uses different shots.</p></li>
+          <li><h3>Works with AI agents</h3><p>An MCP server for Claude and any MCP agent, plus an agent skill and <code>tripshots ask</code>.</p></li>
+          <li><h3>Hands off cleanly</h3><p>Open the edit in DaVinci Resolve or Premiere, or finish it in Instagram's Edits with the song left to add there.</p></li>
+          <li><h3>Stays on your computer</h3><p>Your footage is read where it is, never uploaded. The AI you choose sees small stills, and usage counts stay off unless you say yes. <a href="https://github.com/abelkuruvilla/tripshots/blob/main/docs/privacy.md">Every outside service</a> is listed.</p></li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="cli" class="cli">
+      <div class="wrap cli-in">
+        <div>
+          <h2>Prefer the terminal?</h2>
+          <p>Everything in the app is a command too, with a terminal app of its own. Plan a reel, look at the storyboard, then render it.</p>
+          <p><a href="https://github.com/abelkuruvilla/tripshots/blob/main/docs/getting-started.md">Getting started</a> · <a href="https://github.com/abelkuruvilla/tripshots/blob/main/docs/cli.md">Every command</a> · <a href="https://github.com/abelkuruvilla/tripshots/blob/main/docs/agents.md">AI agents</a></p>
+        </div>
+        <pre class="term" aria-label="Terminal commands"><code><span class="c"># macOS: ffmpeg, Python 3.12 and TripShots</span>
+git clone https://github.com/abelkuruvilla/tripshots
+cd tripshots && ./install.sh
+
+<span class="c"># plan a reel and its storyboard, then render</span>
+tripshots make ~/Pictures/Banff -m song.mp3 --dry-run
+tripshots render reels/Banff-*.plan.json
+
+<span class="c"># or just ask</span>
+tripshots ask "a reel about my days in Yellowstone"</code></pre>
+      </div>
+    </section>
+
+    <section id="download" class="download">
+      <div class="wrap">
+        <h2>Download TripShots</h2>
+        <p class="sub js-version">The latest release, for every system.</p>
+        <div class="platforms">
+          <div class="platform" data-os="mac">
+            <h3>Mac</h3>
+            <p class="req">Apple Silicon (M1 or newer), macOS 11 or later</p>
+            <a class="btn" data-asset="mac" href="https://github.com/abelkuruvilla/tripshots/releases/latest">Download .dmg</a>
+            <p class="note">Also needs ffmpeg: <code>brew install ffmpeg</code>. If macOS won't open it, allow it in System Settings &gt; Privacy &amp; Security.</p>
+          </div>
+          <div class="platform" data-os="windows">
+            <h3>Windows</h3>
+            <p class="req">Windows 10 or 11, 64-bit</p>
+            <a class="btn" data-asset="exe" href="https://github.com/abelkuruvilla/tripshots/releases/latest">Download installer</a>
+            <p class="alt"><a data-asset="msi" href="https://github.com/abelkuruvilla/tripshots/releases/latest">.msi</a></p>
+            <p class="note">If SmartScreen warns you, choose More info, then Run anyway.</p>
+          </div>
+          <div class="platform" data-os="linux">
+            <h3>Linux</h3>
+            <p class="req">64-bit (x86_64)</p>
+            <a class="btn" data-asset="appimage" href="https://github.com/abelkuruvilla/tripshots/releases/latest">Download .AppImage</a>
+            <p class="alt"><a data-asset="deb" href="https://github.com/abelkuruvilla/tripshots/releases/latest">.deb</a> · <a data-asset="rpm" href="https://github.com/abelkuruvilla/tripshots/releases/latest">.rpm</a></p>
+          </div>
+        </div>
+        <p class="fine">All files and release notes are on <a href="https://github.com/abelkuruvilla/tripshots/releases/latest">GitHub Releases</a>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <p><img src="images/logo.png" width="20" height="20" alt=""> TripShots · MIT licence</p>
+      <p>
+        <a href="https://github.com/abelkuruvilla/tripshots">GitHub</a>
+        <a href="https://github.com/abelkuruvilla/tripshots/tree/main/docs">Docs</a>
+        <a href="https://github.com/abelkuruvilla/tripshots/blob/main/docs/privacy.md">Privacy</a>
+        <a href="https://github.com/abelkuruvilla/tripshots/blob/main/CHANGELOG.md">Changes</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

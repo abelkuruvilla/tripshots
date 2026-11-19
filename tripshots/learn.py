@@ -348,8 +348,11 @@ Reply with ONLY JSON:
           "position": "upper|center|lower", "look": "caps|script|sans|serif|mono",
           "size": "small|medium|large", "width": "narrow|normal|wide", "color": "<one or two words>",
           "per_word": true|false}},
+ "page": "none|print|route",
  "why": "<one or two sentences: what makes this reel catch and hold the eye, written as an instruction to an editor>"}}
 - open: what the first shot shows. people: how people appear in most shots.
+- page: print = the shots are shown as photo prints on a plain page (a word above, small captions under); route =
+  each shot sits above a map of the trip's route with a pin on the current stop; none = the shots fill the frame.
 - footage: video = the shots move (camera or subject); photos = stills (the same framing, at most a slow zoom).
 - text.kind: lyrics = the song's words on screen as they are sung (per_word true when only one or two words show
   at a time and change from tile to tile); tease = a line held over the opening that the rest of the reel answers
@@ -649,9 +652,9 @@ def learn(refs: list[str], name: str, backend_name: str | None, cookies_browser:
         from collections import Counter
         ez = Counter(e for c in cams for e in c.get("eases") or [])
         if sum(ez.values()) >= 3:
-            name, k = ez.most_common(1)[0]
+            curve, k = ez.most_common(1)[0]   # (not `name`: that is the style's own name, used below)
             if k >= 0.4 * sum(ez.values()):
-                style["motion"]["ease"] = name
+                style["motion"]["ease"] = curve
     # how the references hold attention: their own rhythm over time, opening, payoff, shot mix
     prof = attention_profile(measures)
     seen = style.get("attention") if isinstance(style.get("attention"), dict) else {}

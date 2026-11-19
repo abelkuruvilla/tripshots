@@ -45,7 +45,7 @@ def cmd_make(a):
                        "speed_up": a.speed_up, "drop_speed": a.drop_speed, "smooth": a.slowmo_smooth,
                        "format": a.format, "arc": a.arc, "captions": a.captions, "critic": a.critic,
                        "parallax": a.parallax, "recipe": a.recipe, "orientation": a.orientation, "fresh": a.fresh, "effects": a.effects,
-                       "light": a.light, "stabilize": a.stabilize, "text_motion": a.text_motion, "name": a._label},
+                       "page": a.page, "light": a.light, "stabilize": a.stabilize, "text_motion": a.text_motion, "name": a._label},
                look=a.look, grade_strength=a.grade_strength, route_map=a.route_map, sound=sound_args(a))
     print(json.dumps(res, indent=2))
 
@@ -694,6 +694,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the effects director (fxlib.py): auto (default) lets the AI pick transitions, text motion and "
                         "looks and a shot effect or two from the effects library; rules picks by the music's energy "
                         "without an AI; off keeps the style's own choices")
+    m.add_argument("--page", choices=["auto", "print", "route", "off"],
+                   help="set every shot on a page: print (each shot a photographic print on paper, a word above, "
+                        "where and when under it), route (each shot in a window over the trip's route map, a pin on "
+                        "where it was filmed), off; auto (default) lets the effects director offer them")
     m.add_argument("--fresh", choices=["on", "off"],
                    help="on (default): shots your earlier reels of this footage showed are marked down, and this "
                         "reel opens and ends on something else; off: the best shots, whatever was posted before")

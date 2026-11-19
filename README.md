@@ -11,7 +11,7 @@ effects, and renders a reel ready to post: upright 1080×1920, or a real 1920×1
 Nothing is generated: every frame is your own footage. Use it as a desktop app for macOS, Windows and Linux, from the
 command line, or through an AI agent.
 
-![The TripShots desktop app: your reels, newest first](docs/images/desktop-reels.jpg)
+![The TripShots desktop app: your projects, newest first, with pinned, favourites, collections and folders](docs/images/desktop-reels.jpg)
 
 ```
 your footage ─► find shots ─► AI judges each shot ─► beats of the song ─► edit plan ─► 1080×1920 reel
@@ -26,8 +26,9 @@ your footage ─► find shots ─► AI judges each shot ─► beats of the so
 - **Ask for footage the way you'd describe it:** by place ("Yellowstone National Park", matched by GPS inside its real outline), dates, or who's in it ("the pictures I'm in", "Lisbon with mom"), using face recognition that runs on your computer.
 - **Works with AI agents:** an [MCP server](docs/agents.md) for Claude Code, Claude Desktop, OpenClaw and any MCP agent, plus a portable [agent skill](skills/tripshots/SKILL.md) and `tripshots ask "…"`.
 - **Tells a story, not a slideshow:** every reel gets a hook in the first second, a build, a payoff on the drop and a looping ending; formats (POV, numbered places, Day N, reveal), cuts that follow dialogue and lyrics, match cuts, photos in depth, and a critic that checks the plan before rendering ([how](docs/storytelling.md)).
-- **Edits like a person would:** an AI (your Claude subscription, or a key for the Claude API, MiniMax, OpenAI, Gemini, Grok, Mistral, OpenRouter or DeepSeek, or a local Ollama model) judges every shot; cuts land on the beat; strong shots go on strong beats; landscape footage is reframed to 9:16 around the subject.
+- **Edits like a person would:** an AI (your Claude subscription, or a key for the Claude API, MiniMax, OpenAI, Gemini, Grok, Mistral, OpenRouter or DeepSeek, or a local Ollama model, tried in the order you set) judges every shot; cuts land on the beat; strong shots go on strong beats; wide footage is cropped to 9:16 from the frames that actually play, keeping people whole with room in front of them.
 - **Looks finished:** per-shot colour grading, transitions on the beat, animated text, titles behind the skyline, split screens, speed ramps, freeze-frames, animated route maps, real sound effects and ambience.
+- **Knows the trends:** an effects director picks transitions, text motion and the big trend moves for each reel (the flash zoom, freeze-frame intro, clone trail, colour pop, photo wall, backdrop swap, camera roll opener), and two page layouts: your shots as prints on paper, or a clip per place over the trip's route map ([the effects library](docs/effects.md)).
 - **Yours to change:** every reel is a readable `plan.json` with a storyboard. Swap a shot, change the hook, re-render; or open it in DaVinci Resolve / Premiere (EDL, OpenTimelineIO).
 - **Finish in Instagram's Edits:** hand the reel to the Edits Mac app with the hard parts baked in and the text, sound effects and song left editable, so you post with Instagram's licensed music ([how](docs/edits.md)).
 - **Analyses footage on its own:** `tripshots analyze` describes every photo and clip (caption, tags, subjects, scene, light, people, text, landmark, aesthetic, focus, colours, near-duplicates, camera, place, trip) into documented JSON that reels, other apps (collages, albums) and other AI tasks reuse ([format](docs/analysis.md)).
@@ -38,16 +39,21 @@ your footage ─► find shots ─► AI judges each shot ─► beats of the so
 A small native app (no bundled browser; about 5 MB) with light and dark themes. The engine that analyses footage and
 renders reels downloads once on first launch, checked against TripShots' signature, and keeps itself up to date.
 
-![A reel in the desktop app's editor, in Expert mode: the viewer showing your edit, the Shot tab with timing and transition, and the timeline with the beats](docs/images/desktop-reel.jpg)
+![A reel in the desktop app's editor, in Expert mode: a clip per place over the route map in the viewer, the Shot tab with the shot's tools, timing and its page words, and the timeline](docs/images/desktop-reel.jpg)
 
-- **Reels:** every reel you've made, grouped by folder, upright and wide side by side.
+- **Projects:** every reel you've made, upright and wide side by side, with pinned, favourites, collections, folders,
+  search and sort; rename, duplicate or move one to the Trash.
 - **Make:** describe the reel ("a reel with all my drone footage") and TripShots finds the footage, picks a style
   and a sound and makes it, or choose the footage, sound, style, shape and versions yourself; progress shows step
   by step.
-- **A reel:** an editor on one screen: the viewer, tabs for the words on screen (font, size, colour, place,
-  animation), the colour (looks previewed on your own shot, per-shot corrections) and the post (a caption
-  written for reach, hashtags, keywords, alt text), and the timeline. **Expert** adds shot-by-shot editing:
-  lengths on the beat, order, splits, speed, transitions, framing and the music.
+- **A reel:** an editor on one screen: the viewer (a still of your edit, a quick motion **Preview**, or the last
+  render), tabs for the words on screen (font, size, colour, place, animation), the colour (looks previewed on your
+  own shot, per-shot corrections, before and after), notes to change it in your own words, the post (a caption
+  written for reach, hashtags, keywords, alt text) and a carousel post, and the timeline. **Expert** adds
+  shot-by-shot editing: replace a shot with any clip and choose the part that plays (or let the AI choose), lengths
+  on the beat, order, splits, freeze, reverse, speed and ramps, transitions, effects and signature moves, zoom
+  keyframes, a shot on top, framing, steadiness, the page layout and the music. **Choose effects with AI** picks
+  them for the whole reel and says what it changed.
 - **Styles:** yours and the built-in ones, each a click from a new reel; learn one from reel links.
 - **Activity:** everything being made, rendered or learned, with its state, its steps and its log, including jobs
   started from the command line or an AI agent.
@@ -56,16 +62,23 @@ renders reels downloads once on first launch, checked against TripShots' signatu
 |---|---|
 | ![The Text tab: a line's words, timing, font shown in its own face, size and colour, with the preview of the edit](docs/images/desktop-text.jpg) | ![The Colour tab: each look shown on the shot itself, and the viewer split between the shot as filmed and the graded edit](docs/images/desktop-colour.jpg) |
 
-![Make: describe the reel in a sentence, or choose the footage, sound and style yourself](docs/images/desktop-make.jpg)
-- **Settings:** footage, reels and music folders, the browser to borrow your Instagram login from, light or dark,
-  updates, the `tripshots` command for your terminal, and a one-click connection to Claude (MCP).
+**Page layouts**, the newest trend formats: above, a clip per place over the trip's route; below, every shot as a print
+on paper. Switch them on in the Shot tab's **Page layout**, in Make, or let the effects director offer them.
 
-**Setting up the AI** takes a minute in Settings > AI: step-by-step instructions for each AI, with buttons that open
-the right page or a Terminal, a key field, and a **Test** that sends one short message. Claude uses your Pro or Max
-plan (install Claude Code and log in, no key); MiniMax and the Claude API take a key; Gemini is an optional free key
-that lets TripShots watch your clips and hear dialogue.
+![The Page layout section: every shot set as a print on white paper, a word above it and where and when under it](docs/images/desktop-pages.jpg)
 
-![Settings > AI: status, steps and a Test for Claude, MiniMax, Gemini and the Claude API](docs/images/desktop-ai.png)
+![Make: describe the reel in a sentence, or choose the footage, sound, style, shape, light, pages and versions yourself](docs/images/desktop-make.jpg)
+- **Settings:** your AIs, footage, reels and music folders, footage analysis, the browser to borrow your Instagram
+  login from, light or dark, updates, the `tripshots` command for your terminal, a one-click connection to Claude
+  (MCP), and privacy (anonymous usage counts and crash reports only with a yes, and **Report a problem**).
+
+**Setting up the AI** takes a minute in Settings > AI: ten AIs in one list, each with its steps, a key field, its
+model and a **Test** that sends one short message. Automatic tries them in the list's order and moves to the next
+when one runs out or stops working; the arrows change the order and a switch leaves one out. Claude uses your Pro or
+Max plan (install Claude Code and log in, no key); the others take a key (Gemini has a free tier, and also lets
+TripShots watch your clips and hear dialogue), or run on your own computer (Ollama).
+
+![Settings > AI: Claude, the Claude API, MiniMax, OpenAI, Gemini, Grok, Mistral, OpenRouter, DeepSeek and Ollama in the order Automatic tries them](docs/images/desktop-ai.jpg)
 
 **Install:** download the installer for your computer from the
 [latest release](https://github.com/abelkuruvilla/tripshots/releases/latest): `.dmg` (Mac with Apple Silicon),
@@ -136,7 +149,8 @@ The app brings its own engine.
 **Command line:** Python 3.10+ and ffmpeg 6+. macOS is the main target; Linux works; Windows is untested.
 
 Both: (recommended) an AI: [Claude Code](https://docs.claude.com/en/docs/claude-code) logged in with a Claude
-subscription, a MiniMax key, or an Anthropic API key. Without one, TripShots still works on technical measures alone.
+subscription, or a key for the Claude API, MiniMax, OpenAI, Gemini, Grok, Mistral, OpenRouter or DeepSeek, or a model
+running in Ollama. Without one, TripShots still works on technical measures alone.
 Node.js 22+ only for route maps.
 
 ## Privacy

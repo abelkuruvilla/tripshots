@@ -62,14 +62,14 @@ usage: tripshots make [-h] [-m MUSIC]
                       [--parallax {auto,on,off}] [--recipe auto|off|N]
                       [--orientation {auto,vertical,horizontal,4:3,4:5,1:1,sideways}]
                       [--stabilize {auto,on,off}] [--light {golden,sunset,blue,day,night,any}]
-                      [--effects {auto,ai,rules,off}] [--fresh {on,off}] [--loop | --no-loop]
-                      [--min-score N] [--look LOOK] [--grade-strength 0-1] [--variants N]
-                      [--route-map {intro,tracker,both,off}] [--allow-similar] [--music-start SEC]
-                      [--upload-copy | --no-upload-copy] [--cookies-from-browser BROWSER]
-                      [--cookies FILE] [--sfx {on,off}] [--ambience {on,off}]
-                      [--clip-sound {auto,on,off}] [--sfx-level DB] [--sfx-licenses LIST]
-                      [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND] [--hook HOOK]
-                      [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
+                      [--effects {auto,ai,rules,off}] [--page {auto,print,route,off}]
+                      [--fresh {on,off}] [--loop | --no-loop] [--min-score N] [--look LOOK]
+                      [--grade-strength 0-1] [--variants N] [--route-map {intro,tracker,both,off}]
+                      [--allow-similar] [--music-start SEC] [--upload-copy | --no-upload-copy]
+                      [--cookies-from-browser BROWSER] [--cookies FILE] [--sfx {on,off}]
+                      [--ambience {on,off}] [--clip-sound {auto,on,off}] [--sfx-level DB]
+                      [--sfx-licenses LIST] [-s STYLE] [-d DURATION] [-o OUT] [-b BACKEND]
+                      [--hook HOOK] [--location LOCATION] [--no-location] [--dry-run] [-j WORKERS]
                       [--exclude GLOB] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--no-recursive]
                       [--include-live-photos] [--watch {auto,gemini,off}] [--rescore]
                       [--encoder {auto,hardware,software,videotoolbox,nvenc,qsv}]
@@ -141,6 +141,11 @@ options:
                         transitions, text motion and looks and a shot effect or two from the
                         effects library; rules picks by the music's energy without an AI; off
                         keeps the style's own choices
+  --page {auto,print,route,off}
+                        set every shot on a page: print (each shot a photographic print on paper,
+                        a word above, where and when under it), route (each shot in a window over
+                        the trip's route map, a pin on where it was filmed), off; auto (default)
+                        lets the effects director offer them
   --fresh {on,off}      on (default): shots your earlier reels of this footage showed are marked
                         down, and this reel opens and ends on something else; off: the best shots,
                         whatever was posted before

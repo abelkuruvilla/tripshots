@@ -114,7 +114,8 @@ def reel_detail(plan: Path) -> dict:
                      "vibes": list(((sh.get("ai") or {}).get("vibes") or {}))[:3],
                      "size": (sh.get("ai") or {}).get("shot_size"), "angle": (sh.get("ai") or {}).get("angle"),
                      "keys": s.get("keys") or [],
-                     "moves": [{"id": m, "name": MOVE_NAMES.get(m, m)} for m in moves_on(s)]})
+                     "moves": [{"id": m, "name": MOVE_NAMES.get(m, m)} for m in moves_on(s)],
+                     "page": {k: v for k, v in (s.get("page") or {}).items() if k != "held"} or None})
     from .planedit import history, texts as plan_texts
     cap = _side(plan, ".caption.txt")
     music = p.get("music") or {}
@@ -129,6 +130,7 @@ def reel_detail(plan: Path) -> dict:
             "beat_punch": (p.get("motion") or {}).get("beat_punch"),
             "sound_sheet": _side(plan, ".sound.jpg"), "grade": _side(plan, ".grade.jpg"),
             "draft": _draft(plan), "effects": p.get("effects"),
+            "page": {k: (p.get("page") or {}).get(k) for k in ("kind", "paper", "theme")} if p.get("page") else None,
             "pips": [{"index": k + 1, **{x: q.get(x) for x in ("shot_id", "kind", "start", "dur", "x", "y", "scale", "thumb")}}
                      for k, q in enumerate(p.get("pips") or [])]}
 

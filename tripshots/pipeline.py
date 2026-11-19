@@ -511,6 +511,15 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         fxlib.direct(plan, by_id, style, backend, shots)
     except Exception as e:  # never costs the user the reel
         log(f"effects director skipped ({str(e)[:120]})")
+    page = str(ex.get("page") or (style.get("page") or {}).get("kind") or "auto")
+    if page in ("print", "route", "off"):   # pages asked for (make --page, style `page`), or none at all
+        from . import pages
+        if page == "off":
+            if pages.clear(plan):
+                plan["moves"] = [m for m in plan.get("moves") or [] if m.get("id") not in ("gallery_print", "route_split")]
+        else:
+            for c in pages.apply(plan, by_id, shots, page, style.get("page") or {}):
+                log(c)
     from . import grade as grade_mod
     grade_img = None
     try:

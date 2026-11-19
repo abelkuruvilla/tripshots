@@ -19,6 +19,7 @@
   let style = $state(app.prefill?.style || "");
   let name = $state("");
   let orientation = $state("auto");
+  let page = $state("auto");
   let light = $state("any");
   let variants = $state(1);
   let hook = $state("");
@@ -106,7 +107,8 @@
   function make() {
     if (!sources.length) return toast("Add a folder of photos and clips first", "error");
     run("make", { sources, music: sound.trim() || null, style: style || null, name: name.trim() || null,
-                  orientation, light: light === "any" ? null : light, variants, dry_run: planOnly,
+                  orientation, light: light === "any" ? null : light, page: page === "auto" ? null : page,
+                  variants, dry_run: planOnly,
                   hook: hook.trim() || null }, name.trim() || "New reel");
   }
   async function add(directory) {
@@ -245,6 +247,15 @@
             <select id="mk-light" bind:value={light}>
               {#each [["any", "Any light"], ["golden", "Golden hour and sunset"], ["sunset", "Sunset"], ["blue", "Blue hour"],
                       ["day", "Daylight"], ["night", "Night"]] as [id, label]}
+                <option value={id}>{label}</option>
+              {/each}
+            </select>
+          </div>
+          <div class="field">
+            <label class="lbl" for="mk-page">Pages <span class="hint">· a trend layout</span></label>
+            <select id="mk-page" bind:value={page}>
+              {#each [["auto", "Automatic (the AI may offer one)"], ["off", "Full screen"], ["print", "Prints on paper"],
+                      ["route", "A clip per place, over the route map"]] as [id, label]}
                 <option value={id}>{label}</option>
               {/each}
             </select>

@@ -59,7 +59,8 @@ A tag is the whole release; nothing is run or committed locally. Any of these st
 `release.yml` takes the version from the tag and writes it into the engine and the app inside CI
 (`tools/set_version.py`), builds and smoke-tests the engine on 3 runners, signs and uploads it with `engine.json`,
 builds the app (.dmg for Apple Silicon, .msi/.exe, .deb/.rpm/.AppImage) with `latest.json` for app
-updates, and publishes the release with generated notes. About 30 minutes. Re-running it for the same version
+updates, adds copies of the installers under names without the version (`TripShots-mac.dmg`, ...; links that never
+change, used by [tripshots.app](../site/README.md)), and publishes the release with generated notes. About 30 minutes. Re-running it for the same version
 rebuilds and replaces the files. An engine `X.Y.Z` declares `min_app: X.Y.0`, so patch releases of either side work
 together; change the minor version when the engine API changes.
 

@@ -9,7 +9,7 @@ right footage, picks the strongest shots, cuts them on the beat, grades the colo
 effects, and renders a reel ready to post: upright 1080×1920, or a real 1920×1080 when your footage is wide.
 
 Nothing is generated: every frame is your own footage. Use it as a desktop app for macOS, Windows and Linux, from the
-command line, or through an AI agent.
+command line, or through an AI agent. Website and downloads: **[tripshots.app](https://tripshots.app)**.
 
 ![The TripShots desktop app: your projects, newest first, with pinned, favourites, collections and folders](docs/images/desktop-reels.jpg)
 
@@ -80,7 +80,7 @@ TripShots watch your clips and hear dialogue), or run on your own computer (Olla
 
 ![Settings > AI: Claude, the Claude API, MiniMax, OpenAI, Gemini, Grok, Mistral, OpenRouter, DeepSeek and Ollama in the order Automatic tries them](docs/images/desktop-ai.jpg)
 
-**Install:** download the installer for your computer from the
+**Install:** download the installer for your computer from [tripshots.app](https://tripshots.app) or the
 [latest release](https://github.com/abelkuruvilla/tripshots/releases/latest): `.dmg` (Mac with Apple Silicon),
 `.msi`/`.exe` (Windows), `.deb`/`.rpm`/`.AppImage` (Linux). On a Mac, also `brew install ffmpeg`. More in
 [docs/desktop.md](docs/desktop.md); building and releasing in [desktop/README.md](desktop/README.md).

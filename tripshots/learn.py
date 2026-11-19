@@ -649,9 +649,9 @@ def learn(refs: list[str], name: str, backend_name: str | None, cookies_browser:
         from collections import Counter
         ez = Counter(e for c in cams for e in c.get("eases") or [])
         if sum(ez.values()) >= 3:
-            name, k = ez.most_common(1)[0]
+            curve, k = ez.most_common(1)[0]   # (not `name`: that is the style's own name, used below)
             if k >= 0.4 * sum(ez.values()):
-                style["motion"]["ease"] = name
+                style["motion"]["ease"] = curve
     # how the references hold attention: their own rhythm over time, opening, payoff, shot mix
     prof = attention_profile(measures)
     seen = style.get("attention") if isinstance(style.get("attention"), dict) else {}

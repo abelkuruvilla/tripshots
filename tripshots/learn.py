@@ -348,8 +348,11 @@ Reply with ONLY JSON:
           "position": "upper|center|lower", "look": "caps|script|sans|serif|mono",
           "size": "small|medium|large", "width": "narrow|normal|wide", "color": "<one or two words>",
           "per_word": true|false}},
+ "page": "none|print|route",
  "why": "<one or two sentences: what makes this reel catch and hold the eye, written as an instruction to an editor>"}}
 - open: what the first shot shows. people: how people appear in most shots.
+- page: print = the shots are shown as photo prints on a plain page (a word above, small captions under); route =
+  each shot sits above a map of the trip's route with a pin on the current stop; none = the shots fill the frame.
 - footage: video = the shots move (camera or subject); photos = stills (the same framing, at most a slow zoom).
 - text.kind: lyrics = the song's words on screen as they are sung (per_word true when only one or two words show
   at a time and change from tile to tile); tease = a line held over the opening that the rest of the reel answers

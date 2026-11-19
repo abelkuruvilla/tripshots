@@ -148,3 +148,14 @@ def ff_frame(path):
     buf = subprocess.run(ffmpeg_base() + ["-i", str(path), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                          capture_output=True).stdout
     return np.frombuffer(buf[:1080 * 1920 * 3], np.uint8).reshape(1920, 1080, 3)
+
+
+def test_a_reference_that_set_its_shots_on_pages_teaches_its_recipe_to():
+    from tripshots import recipes
+    m = {"shot_lens": [1.0] * 8, "duration": 8.0, "tempo": 120, "aspect": 0.5625}
+    r = recipes.build(m, {"format": "montage", "page": "print", "text": {"kind": "none"}}, "ref.mp4", 1)
+    assert r["page"] == "print"
+    assert "page" not in recipes.build(m, {"page": "collage"}, "ref.mp4", 2)
+    style = {}
+    recipes.apply(style, r)
+    assert style["page"] == {"kind": "print"}

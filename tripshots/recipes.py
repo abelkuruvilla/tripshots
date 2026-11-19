@@ -121,7 +121,8 @@ def build(measure: dict, card: dict | None, source: str, idx: int, unread: bool 
            "shots": lens, "structure": name, "turn": turn, "frame": frame_name(measure.get("aspect")),
            "format": fmt if fmt in FORMATS else "montage", "open": opn if opn in OPENS else None,
            "people": str(card.get("people") or "").lower() or None, "text": _text(card.get("text"), dur),
-           "why": " ".join(str(card.get("why") or "").split())[:240], "unread": True if unread else None}
+           "why": " ".join(str(card.get("why") or "").split())[:240], "unread": True if unread else None,
+           "page": pg if (pg := str(card.get("page") or "").lower()) in ("print", "route") else None}
     if rec["text"]["kind"] == "lyrics" and name != "hold_burst" and not rec["text"]["per_word"]:
         rec["text"]["kind"] = "subtitles"  # lyric lines under an even edit are subtitles
     ex = card.get("_exact")
@@ -258,6 +259,8 @@ def apply(style: dict, recipe: dict, music: dict | None = None, keep: tuple = ()
     d["max"] = max(float(d.get("max", dur)), dur)
     if recipe.get("frame"):
         style["frame"] = {**(style.get("frame") or {}), "aspect": recipe["frame"]}
+    if recipe.get("page") in ("print", "route"):   # the reference set its shots on pages (pages.py)
+        style["page"] = {**(style.get("page") or {}), "kind": recipe["page"]}
     if not recipe.get("panels"):
         # a style's split screens are an average over all its examples; one example's cut has none of its own
         style["panels"] = {**(style.get("panels") or {}), "use": 0.0}

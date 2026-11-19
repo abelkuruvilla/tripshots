@@ -224,6 +224,9 @@ fresh: on | off. on (default): a series from the same footage doesn't repeat its
   best shots again (e.g. another version of the same reel under a new name).
 light: golden | sunset | blue | day | night: only shots in that light (preferred, when too few are).
 stabilize: auto | on | off: take the shake out of handheld clips (auto: in calm or held shots).
+page: auto | print | route | off: every shot on a page. print = each shot a photographic print on paper (a word
+  above, where and when under it); route = each shot in a window over the trip's route map, a pin on where it
+  was filmed (shots in the order filmed). auto (default) lets the effects director offer them.
 upload_copy: also write a copy without the music (automatic for reel links), so the user can post it and add the
   same sound inside Instagram: do this when the music is a commercial song.
 Returns the plan path and the storyboard image to review (or a job id to poll).
@@ -255,6 +258,7 @@ Returns the plan path and the storyboard image to review (or a job id to poll).
 | `fresh` | string/null | null |
 | `light` | string/null | null |
 | `stabilize` | string/null | null |
+| `page` | string/null | null |
 
 ## reel_results
 
@@ -334,6 +338,8 @@ Timeline (times snap to frames; later text moves with the cut):
   {"op":"freeze","segment":3,"at":0.8,"dur":1.0}  (hold that frame, cut in there)  {"op":"reverse","segment":3,"on":true}
 Effects (list_effects): {"op":"effect","segment":3,"id":"glow","amount":0.5} (id null removes)
   {"op":"auto_effects"}  the effects director picks transitions, text motion/looks and shot effects again
+  {"op":"page","kind":"print"|"route"|"off","paper":"white"|"cream"|"black","theme":"light"|"dark"}  every shot on a page
+  {"op":"page","segment":3,"title":"The Coast","left":"Big Sur","right":"October 2026","label":"..."}  one page's words
   {"op":"log","segment":3|"all","profile":"apple_log"|"dlog"|"slog3"|"vlog"|"flog"|"flog2"|"clog3"|"auto"|null}  flat log footage made normal
 Overlay lane and keyframes: {"op":"pip_add","shot_id":"S040","start":3.0,"dur":2.0,"x":0.72,"y":0.28,"scale":0.4}
   {"op":"pip_edit","index":1,"x":0.3,"scale":0.5}  {"op":"pip_delete","index":1}

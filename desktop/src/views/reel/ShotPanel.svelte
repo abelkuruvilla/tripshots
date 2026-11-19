@@ -23,6 +23,24 @@
       choosing = false;
     }
   }
+  // page layouts (pages.py): the whole reel on pages, and one page's words
+  const pageKinds = [["off", "Full screen"], ["print", "Prints on paper"], ["route", "A clip per place, over the route map"]];
+  let pageBusy = $state(false);
+  async function setPage(kind, extra = {}) {
+    pageBusy = true;
+    try {
+      await edit({ op: "page", kind, ...extra }, true);
+    } finally {
+      pageBusy = false;
+    }
+  }
+  let pw = $state({ title: "", left: "", right: "", label: "" });
+  let pkey = "";
+  $effect(() => {
+    const k = s?.page ? `${s.slot}|${JSON.stringify(s.page)}` : "-";
+    if (k !== pkey) ((pkey = k), s?.page && (pw = { title: s.page.title || "", left: s.page.left || "", right: s.page.right || "", label: s.page.label || "" }));
+  });
+  const pageWords = (k) => (s.page[k] || "") !== pw[k] && op({ op: "page", [k]: pw[k] }, true);
   const ramps = [[null, "None"], ["velocity", "Velocity"], ["slam", "Slam"], ["bullet", "Bullet"], ["rush", "Rush"], ["impact", "Impact"], ["surge", "Surge"]];
   const layouts = [["crop", "Crop to the subject"], ["pan", "Pan across"], ["blur_fill", "Whole frame, blurred behind"], ["fill", "Fill (already upright)"]];
   const nice = (id) => id.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -92,6 +110,36 @@
     {/if}
     <p class="quiet small">Transitions and moves show in motion: <b>Preview</b> or render to see them. The still above shows colour, effects and framing.</p>
   </Section>
+  <Section id="shot-page" title="Page layout" summary={(pageKinds.find(([k]) => k === (reel?.page?.kind || "off")) || [, ""])[1]}>
+    <div class="field">
+      <label for="pg-kind">Every shot</label>
+      <select id="pg-kind" value={reel?.page?.kind || "off"} disabled={ed.busy || pageBusy}
+              onchange={(e) => setPage(e.currentTarget.value)}>
+        {#each pageKinds as [k, label]}<option value={k}>{label}</option>{/each}
+      </select>
+    </div>
+    {#if reel?.page?.kind === "print"}
+      <div class="field">
+        <label for="pg-paper">Paper</label>
+        <select id="pg-paper" value={reel.page.paper || "white"} disabled={ed.busy || pageBusy}
+                onchange={(e) => setPage("print", { paper: e.currentTarget.value })}>
+          {#each [["white", "White"], ["cream", "Cream"], ["black", "Black"]] as [k, label]}<option value={k}>{label}</option>{/each}
+        </select>
+      </div>
+      <p class="quiet small">Each shot a print on the page, a word above it, where and when under it. The opening shot stays full screen with its hook</p>
+    {:else if reel?.page?.kind === "route"}
+      <div class="field">
+        <label for="pg-theme">Map</label>
+        <select id="pg-theme" value={reel.page.theme || "light"} disabled={ed.busy || pageBusy}
+                onchange={(e) => setPage("route", { theme: e.currentTarget.value })}>
+          {#each [["light", "Light"], ["dark", "Dark"]] as [k, label]}<option value={k}>{label}</option>{/each}
+        </select>
+      </div>
+      <p class="quiet small">Shots in the order you filmed them, the place under each, a pin on the trip's route. Needs footage with GPS from three places or more</p>
+    {:else}
+      <p class="quiet small">Set every shot on a page: prints on paper, or a clip per place over the route map</p>
+    {/if}
+  </Section>
 {/snippet}
 
 {#if ed.sel?.kind === "pip"}
@@ -159,6 +207,24 @@
     </div>
   </Section>
 
+  {#if s.page}
+    <Section id="shot-pagewords" title="Page" open={true} summary={s.page.title || s.page.label || s.page.left || ""}>
+      {#if reel?.page?.kind === "print"}
+        <div class="field"><label for="pg-title">Above the print</label>
+          <input id="pg-title" type="text" bind:value={pw.title} maxlength="40" onchange={() => pageWords("title")} placeholder="None" /></div>
+        <div class="grid2">
+          <div class="field"><label for="pg-left">Under, left</label>
+            <input id="pg-left" type="text" bind:value={pw.left} maxlength="40" onchange={() => pageWords("left")} /></div>
+          <div class="field"><label for="pg-right">Under, right</label>
+            <input id="pg-right" type="text" bind:value={pw.right} maxlength="40" onchange={() => pageWords("right")} /></div>
+        </div>
+      {:else}
+        <div class="field"><label for="pg-label">Under the picture</label>
+          <input id="pg-label" type="text" bind:value={pw.label} maxlength="40" onchange={() => pageWords("label")} /></div>
+        <p class="quiet small">{s.page.stop >= 0 ? `Pin on stop ${s.page.stop + 1} of the route` : "Where this was filmed isn't known: no pin"}</p>
+      {/if}
+    </Section>
+  {/if}
   {#if s.slot < reel.segments.length}
     {#if s.moves?.length}
       <Section id="shot-moves" title="Signature move" open={true} summary={s.moves.map((m) => m.name).join(", ")}>

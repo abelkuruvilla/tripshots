@@ -16,6 +16,8 @@ ops:
                                                          for a custom curve; "ramp": null removes it
   {"op": "frame", "segment": 4, "subject_x": 0.3, "layout": "crop"}   reframe (0 = left, 1 = right)
   {"op": "frame", "segment": 4, "auto": true}                    framing back to automatic
+  {"op": "page", "kind": "print", "paper": "cream"}             every shot on a page (print | route | off)
+  {"op": "page", "segment": 3, "title": "The Coast", "left": "Big Sur", "right": "October 2026"}   a page's words
   {"op": "set", "path": "motion.beat_punch", "value": 0.04}          anything else, by dotted path
 
 On-screen text, by its number in plan["overlays"] (from 1; `texts` lists them):
@@ -812,6 +814,32 @@ def apply(plan_path: Path, edits: list[dict], undo: bool = True) -> dict:
             if not fxlib.remove_move(plan, i + 1, str(ed.get("id"))):
                 raise ReelError(f"shot {i + 1} has no {ed.get('id')}")
             done.append(f"shot {i + 1}: {fxlib.MOVE_NAMES.get(ed['id'], ed['id']).lower()} removed")
+        elif op == "page":   # page layouts (pages.py): the whole reel on pages, off, or one page's words
+            from . import pages
+            if ed.get("segment") is not None:
+                i = _slot(plan, ed["segment"])
+                if not segs[i].get("page"):
+                    raise ReelError(f"slot {i + 1} isn't on a page")
+                for k in ("title", "left", "right", "label"):
+                    if k in ed:
+                        segs[i]["page"][k] = str(ed[k] or "")[:40]
+                done.append(f"slot {i + 1}: page words")
+            else:
+                kind = str(ed.get("kind") or "off")
+                if kind == "off":
+                    if pages.clear(plan):
+                        plan["moves"] = [m for m in plan.get("moves") or []
+                                         if m.get("id") not in ("gallery_print", "route_split")]
+                    done.append("pages off")
+                elif kind in pages.KINDS:
+                    got = pages.apply(plan, shots, list(shots.values()), kind,
+                                      {k: ed[k] for k in ("paper", "theme") if k in ed})
+                    if not got:
+                        raise ReelError("route pages need footage from two places or more (GPS)" if kind == "route"
+                                        else "pages only work in an upright reel without letterbox bars")
+                    done += got
+                else:
+                    raise ReelError(f"unknown page kind {kind!r} (print, route or off)")
         elif op == "auto_effects":   # the effects director again (fxlib.direct): AI if there is one, else rules
             from . import fxlib
             from .ai import get_backend

@@ -12,6 +12,7 @@ shows each item drawn on your own shots.
 | Text looks | `typo.py` (`LOOKS`) | how the letters are drawn: neon, glow, outline (hollow), offset (a hard copy behind in the accent colour) |
 | Shot effects | `vfx.py` | an effect on one whole shot: glow, dream, light leak, old film (`dust`), VHS, black and white, duotone, chromatic edges, beat flicker, mirror, handheld drift, tilt-shift |
 | Signature moves | `fxlib.MOVES` | the big trend ideas, each first made as a style from reference reels: the photo wall (the grid cells round you fill with the trip's other places), grid lines, the backdrop swap (places or flat colours behind you, a new one on each beat), the silhouette flash, colour bloom (black and white into colour), the freeze-frame intro (the moment stops, you outlined in white like a sticker, the world grey), the clone trail (copies of you left where you stood on earlier beats), colour pop (you in colour, the rest black and white), spotlight (the lights go down round you), the camera roll opener (the phone's photo grid scrolls and one picture opens into the shot), the flash zoom (on the beats the picture snaps closer to the person's face in steps, a flash on each hit, following them as they move) |
+| Page layouts | `pages.py` | the whole reel set on pages: the gallery print (each shot a photographic print on paper, a word or two above it, where and when in small captions under it) and the route split (each shot in a wide window, the place's name under it, the trip's route on a map below with a pin jumping to where it was filmed) |
 
 ### Where the trend moves come from
 
@@ -25,6 +26,8 @@ pages they come from), done automatically:
 | Colour pop, spotlight | black-and-white (or darkened) layer with the person masked out | `isolate` {kind pop/spotlight, amount}: the person followed every other frame, eased in |
 | Camera roll | a screen recording of the camera roll, keyframed zoom into one photo that becomes the clip | `roll` {cells, target, dur}: a grid of the trip's photos scrolls and slows, then the cell opens to full screen, on the opening shot or the first shot of a new place |
 | Flash zoom | keyframe a scale up onto the face on each beat (or cut to tighter crops), add a white flash frame or a flash overlay on each hit, re-centre the crop by hand as the person moves | `zoompunch` {times, zooms, flash, focus}: the last 2-4 beats before the cut, the zoom growing in even steps (or snapping back out on the last hit); the person's head is found with the cut-out every other frame and followed smoothly, else the shot's subject; a hit in the sound on each punch |
+| Gallery print | photos placed on a white page in a mock-up template, a title above, captions in the corners, a page per beat | `pages.py` print: upright shots stand as 2:3 prints with the word across their top, wide ones lie as 3:2 prints with the word above; the word comes from the scene the AI saw (The Peaks, The Coast, From Above; none when unsure), captions are the landmark or state and the month; the hook's shot stays full screen |
+| Route split | the clip in the top half, a screenshot of the route map below, a pin moved by hand per place | `pages.py` route: the shots go in the order they were filmed (each slot keeps its length), a stop per place 25 km apart, the pin on the stop, a camera without GPS takes the place of the trip's photo taken nearest in time (within three hours), else no pin; the hook becomes the first page's caption |
 | Film strip, paper tear, cube, card, dots | overlay packs and 3D transforms in CapCut and After Effects | `motion.t_film`, `t_tear`, `t_cube`, `t_card`, `t_dots` |
 
 The cut-out moves need a person big enough to cut out: the AI's shot size must not be wide (or the subject box
@@ -51,7 +54,8 @@ two, and up to two signature moves, with a reason for each one. TripShots checks
   shot of a person mid-reel; the backdrop swap needs a clip of a person big in frame, held for at least three beats;
   the silhouette flash needs people; the freeze-frame intro, colour pop and spotlight need a person big in frame; the
   clone trail also needs a still camera; the camera roll opens the reel or a new place; the flash zoom needs two
-  beats clear of the transitions and a person or one clear subject. At most two kinds of move
+  beats clear of the transitions and a person or one clear subject. The page layouts take the whole reel: an upright
+  reel without letterbox bars and not made from a recipe, for the route footage from three places or more. At most two kinds of move
   are used (`effects.max_moves`). A move the style already does (the `grid-mosaic` style's wall, for example)
   isn't offered again.
 - the AI also sets each choice up for this reel, within limits: a transition's direction (push, whip, wipe, cube,
@@ -74,6 +78,9 @@ recipe, keep their transitions.
 - `--effects rules`: rules choose instead of the AI, by the music's energy and what the next shot shows (warm
   light into a sunset, water into water, punch on a drop).
 - `--effects off`: no director.
+- `make --page print|route|off` (or style key `page: {kind, paper, theme}`) puts every shot on a page without asking
+  the director; `off` keeps pages out. Plan edit `{"op": "page", "kind": "route"}` / `"off"`, and
+  `{"op": "page", "segment": 3, "title": "Big Sur", "left": "...", "right": "...", "label": "..."}` for one page's words.
 - Style key `effects`: `{use, transitions, text, shots, moves, max_shot_effects, max_moves}` (`moves: false`
   keeps a style free of them).
 

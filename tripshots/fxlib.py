@@ -147,6 +147,16 @@ MOVES = {
                    "each hit, following them as they move: a build or a drop, an entrance, a reaction (shots "
                    "listed under zoom; settings hits 2-4, zoom 1.25-1.8 = how close at the end, flash white|warm|"
                    "cool|none, focus face|person, out = the last hit snaps back to the whole frame)"),
+    "gallery_print": ("calm", "photographer, editorial, gallery wall",
+                      "the whole reel as prints on paper: each shot a photographic print on a white page, a word or "
+                      "two above it and where/when in small captions under it, a page per beat, no movement (a "
+                      "calm or photo-led reel; the hook shot stays full screen; whole reel; settings paper "
+                      "white|cream|black)"),
+    "route_split": ("medium", "road trip, journey, 'a clip per place'",
+                    "the whole reel as a journey: each shot in a wide window at the top, the place's name under it "
+                    "and the trip's whole route on a map below with a pin jumping to where the shot was filmed (a "
+                    "trip through several places, one shot per place reads best; whole reel; settings theme "
+                    "light|dark)"),
 }
 # what the director may set per move ("settings"): name -> (low, high) or choices; clipped into range
 MOVE_SETTINGS = {
@@ -159,6 +169,8 @@ MOVE_SETTINGS = {
     "camera_roll": {"seconds": (0.8, 1.6), "light": (True, False)},
     "flash_zoom": {"hits": (2, 4), "zoom": (1.25, 1.8), "flash": ("white", "warm", "cool", "none"),
                    "focus": ("face", "person"), "out": (True, False)},
+    "gallery_print": {"paper": ("white", "cream", "black")},
+    "route_split": {"theme": ("light", "dark")},
 }
 MAX_MOVES = 2   # kinds of move in one reel
 
@@ -234,7 +246,28 @@ def eligible(plan: dict, style: dict, by_id: dict | None = None) -> dict[str, li
     }
     if not (plan.get("grid") or motion.get("grid")):
         out["grid_lines"] = ["whole reel"]   # needs no particular shot
+    from .config import CANVAS
+    if not CANVAS.horizontal and not (plan.get("frame") or {}).get("band") and len(free) >= 4 \
+            and not plan.get("page") and not plan.get("recipe"):
+        # whole-reel page layouts (pages.py): prints on paper; the route under a clip per place (two places or more)
+        out["print"] = ["whole reel"] if sum(float(segs[i]["dur"]) for i in free) / len(free) >= 0.6 else []
+        out["route"] = ["whole reel"] if _places(plan, by_id) >= 3 else []
     return out
+
+
+def _places(plan: dict, by_id: dict | None) -> int:
+    """How many places (25 km apart) the reel's shots were filmed at, from their GPS."""
+    if not by_id:
+        return 0
+    from .diversity import positions
+    from .pages import _km
+    pos = positions(list(by_id.values()))
+    got: list = []
+    for sg in plan["segments"]:
+        g = pos.get(sg.get("shot_id"))
+        if g and not any(_km(g, h) <= 25 for h in got):
+            got.append(g)
+    return len(got)
 
 
 # ---------------------------------------------------------------- the director
@@ -420,7 +453,7 @@ def _check(raw: dict, plan: dict, cuts: list[dict], cfg: dict) -> dict:
 MOVE_SLOTS = {"photo_wall": "photo_wall", "backdrop_places": "backdrop", "backdrop_colour": "backdrop",
               "silhouette": "people", "colour_bloom": "colour_bloom", "grid_lines": None,
               "freeze_intro": "freeze", "clone_trail": "clone", "colour_pop": "isolate", "spotlight": "isolate",
-              "camera_roll": "opener", "flash_zoom": "zoom"}
+              "camera_roll": "opener", "flash_zoom": "zoom", "gallery_print": "print", "route_split": "route"}
 MOVE_MAX_SHOTS = {"photo_wall": 1, "backdrop_places": 1, "backdrop_colour": 1, "silhouette": 3, "colour_bloom": 2,
                   "freeze_intro": 2, "clone_trail": 1, "colour_pop": 2, "spotlight": 1, "camera_roll": 1, "flash_zoom": 2}
 
@@ -457,8 +490,10 @@ def check_moves(raw, cfg: dict) -> list[dict]:
         if any(o["id"] == mid for o in out) or (mid.startswith("backdrop") and any(o["id"].startswith("backdrop") for o in out)):
             continue
         slot = MOVE_SLOTS[mid]
-        if slot is None:
-            if not elig.get("grid_lines"):   # a reel that already has its grid
+        if slot in ("print", "route") and any(o["id"] in ("gallery_print", "route_split") for o in out):
+            continue   # one page layout per reel
+        if slot is None or elig.get(slot) == ["whole reel"] or slot in ("print", "route"):
+            if not elig.get(slot or "grid_lines"):   # a reel that already has its grid, or can't carry the pages
                 continue
             out.append({"id": mid, "shots": [], "settings": _settings(mid, m.get("settings")),
                         "why": str(m.get("why") or "")[:120]})
@@ -576,6 +611,15 @@ def apply_moves(plan: dict, moves: list[dict], shots: list[dict] | None) -> list
             if not got:
                 continue
             done.append("move: flash zoom on shot " + ", ".join(str(i + 1) for i in got))
+        elif mid in ("gallery_print", "route_split"):
+            from . import pages
+            got = pages.apply(plan, {s["id"]: s for s in shots or []}, shots,
+                              "print" if mid == "gallery_print" else "route", st)
+            if not got:
+                continue
+            done += got
+            plan.setdefault("moves", []).append({k: v for k, v in m.items() if k != "why"} | {"auto": True})
+            continue
         elif mid == "camera_roll" and shots and at:
             k = plan_roll(segs, shots, at[0], beat)
             if k is None:
@@ -673,7 +717,8 @@ MOVE_NAMES = {"photo_wall": "Photo wall", "backdrop_places": "Backdrop swap (pla
               "backdrop_colour": "Backdrop swap (colours)", "silhouette": "Silhouette flash",
               "colour_bloom": "Colour bloom", "freeze_intro": "Freeze-frame intro", "clone_trail": "Clone trail",
               "colour_pop": "Colour pop", "spotlight": "Spotlight", "camera_roll": "Camera roll",
-              "flash_zoom": "Flash zoom", "grid_lines": "Grid lines"}
+              "flash_zoom": "Flash zoom", "grid_lines": "Grid lines", "gallery_print": "Gallery print",
+              "route_split": "Route split"}
 
 
 def moves_on(seg: dict) -> list[str]:
@@ -716,6 +761,9 @@ def clear_moves(plan: dict) -> int:
     for m in plan.pop("moves", None) or []:
         if m.get("id") == "grid_lines":
             plan.pop("grid", None)
+        if m.get("id") in ("gallery_print", "route_split"):
+            from .pages import clear
+            clear(plan)
         for n in m.get("shots") or []:
             if 0 < n <= len(segs):
                 segs[n - 1].pop(keys.get(m.get("id"), ""), None)

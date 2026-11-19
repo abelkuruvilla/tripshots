@@ -84,6 +84,10 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
     if e.get("_band") and size == CANVAS.size:  # cinematic letterbox: the picture in a band, black bars
         size = (CANVAS.w, int(e["_band"]))
         pad = [f"pad={CANVAS.w}:{CANVAS.h}:0:{(CANVAS.h - size[1]) // 2}:black"]
+    if e.get("_box") and size == CANVAS.size:  # a page (pages.py): the shot in its window, on paper
+        bw, bh, bx, by, bg = e["_box"]
+        size = (int(bw), int(bh))
+        pad = [f"pad={CANVAS.w}:{CANVAS.h}:{int(bx)}:{int(by)}:{bg}"]
     from . import compose   # the window placed on the frames that actually play (people kept whole, looking room)
     e = compose.apply(e, length * speed, size)
     if e.get("track") and e.get("layout") == "crop" and not e.get("_framed"):
@@ -140,6 +144,10 @@ def render_photo_seg(e: dict, length: float, color: dict, zoom: float, out: Path
     if e.get("_band") and size == CANVAS.size:  # cinematic letterbox
         size = (CANVAS.w, int(e["_band"]))
         pad = [f"pad={CANVAS.w}:{CANVAS.h}:0:{(CANVAS.h - size[1]) // 2}:black"]
+    if e.get("_box") and size == CANVAS.size:  # a page (pages.py): the shot in its window, on paper
+        bw, bh, bx, by, bg = e["_box"]
+        size = (int(bw), int(bh))
+        pad = [f"pad={CANVAS.w}:{CANVAS.h}:{int(bx)}:{int(by)}:{bg}"]
     OW, OH = size
     im = Image.open(e["still"]).convert("RGB")
     W, H = im.size
@@ -872,6 +880,7 @@ class Pips:
 def segment_files(plan: dict, work: Path) -> list[tuple[dict, Path, int, int]]:
     """Per slot: (render fields, cached clip file, frames in it, frames of lead-in before the slot starts). The
     file is named by everything that changes its picture, so an unchanged shot is never rendered twice."""
+    from . import pages
     segs = plan["segments"]
     fps = OUT_FPS
     dur_f = [int(round(e["dur"] * fps)) for e in segs]
@@ -886,6 +895,8 @@ def segment_files(plan: dict, work: Path) -> list[tuple[dict, Path, int, int]]:
         e2 = dict(e)
         if band and band < CANVAS.h and not e.get("panel"):
             e2["_band"] = band
+        if e.get("page") and (pb := pages.box(plan, e)):   # a page layout: the shot in its window on the page
+            e2["_box"] = pb
         if e["kind"] == "video":
             lead_speed = retime.speed_at(retime.seg_keys(e), 0.0) if e.get("ramp") else e.get("speed", 1.0)
             e2["in"] = max(0.0, e["in"] - lead_f[i] / fps * lead_speed)
@@ -962,6 +973,10 @@ def still(plan: dict, t: float, out: Path, raw: bool = False, mask: str | None =
     frame = None
     band = int((plan.get("frame") or {}).get("band") or 0)
     size = (CANVAS.w, band) if 0 < band < CANVAS.h and not seg.get("panel") else CANVAS.size
+    from . import pages
+    pbox = pages.box(plan, seg) if seg.get("page") else None
+    if pbox:
+        size = (int(pbox[0]), int(pbox[1]))
     if raw:
         e = {k: v for k, v in seg.items() if k not in ("lut", "adjust")}
         frame = _source_frame({**e, "no_grade": True}, t - seg["out_start"], dict(plan.get("color") or {}), size)
@@ -983,24 +998,34 @@ def still(plan: dict, t: float, out: Path, raw: bool = False, mask: str | None =
         if seg.get("thumb") and Path(seg["thumb"]).exists():
             with Image.open(seg["thumb"]) as im:
                 im = im.convert("RGB")
-                k = max(CANVAS.w / im.width, CANVAS.h / im.height)
+                FW, FH = size if pbox else CANVAS.size
+                k = max(FW / im.width, FH / im.height)
                 im = im.resize((int(im.width * k) + 1, int(im.height * k) + 1))
-                cx = int(float(seg.get("subject_x", 0.5)) * im.width - CANVAS.w / 2)
-                cx = max(0, min(im.width - CANVAS.w, cx))
-                cy = (im.height - CANVAS.h) // 2
-                frame = np.asarray(im.crop((cx, cy, cx + CANVAS.w, cy + CANVAS.h)))
+                cx = int(float(seg.get("subject_x", 0.5)) * im.width - FW / 2)
+                cx = max(0, min(im.width - FW, cx))
+                cy = (im.height - FH) // 2
+                frame = np.asarray(im.crop((cx, cy, cx + FW, cy + FH)))
+    if pbox and frame.shape[:2] != (CANVAS.h, CANVAS.w):   # a page: the picture in its window on the paper
+        bg = tuple(int(pbox[4][k:k + 2], 16) for k in (1, 3, 5))
+        page = np.empty((CANVAS.h, CANVAS.w, 3), np.uint8)
+        page[:] = bg
+        pic = np.asarray(Image.fromarray(np.ascontiguousarray(frame)).resize((int(pbox[0]), int(pbox[1]))))
+        page[int(pbox[3]):int(pbox[3]) + pic.shape[0], int(pbox[2]):int(pbox[2]) + pic.shape[1]] = pic
+        frame = page
+    if pbox and not raw:
+        frame = pages.lay(np.ascontiguousarray(frame), pages.furniture(plan, seg))
     if frame.shape[0] != CANVAS.h:  # a letterboxed slot: the picture sits in its band
         pad = np.zeros((CANVAS.h, CANVAS.w, 3), np.uint8)
         y = (CANVAS.h - frame.shape[0]) // 2
         pad[y:y + frame.shape[0]] = frame
         frame = pad
-    if seg.get("layers") and not raw and not seg.get("panel"):   # the shot's colour layers, as the render has them
+    if seg.get("layers") and not raw and not seg.get("panel") and not pbox:   # the shot's colour layers, as rendered
         from . import nodes
         frame = nodes.apply(np.ascontiguousarray(frame), seg["layers"], nodes.Masks(seg, CANVAS.size), still=True)
-    if seg.get("keys") and not raw:   # zoom and position keyframes
+    if seg.get("keys") and not raw and not pbox:   # zoom and position keyframes
         from .motion import apply_keys
         frame = apply_keys(np.ascontiguousarray(frame), seg["keys"], t - seg["out_start"])
-    if seg.get("isolate") and not raw and not seg.get("panel"):   # colour pop / spotlight, as the render has it
+    if seg.get("isolate") and not raw and not seg.get("panel") and not pbox:   # colour pop / spotlight
         m = People().at(np.ascontiguousarray(frame))
         if m is not None:
             from .motion import isolate
@@ -1134,6 +1159,7 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         if info is not None:
             info["texts"] = texts
 
+        from . import pages
         from . import nodes
         masks = {i: nodes.Masks(e, CANVAS.size) for i, e in enumerate(segs) if e.get("layers") and not e.get("panel")}
         graded: dict[tuple[int, int], np.ndarray] = {}
@@ -1141,6 +1167,8 @@ def _render(plan: dict, out_path: Path, work: Path, workers: int = 2, native_tex
         def shot_frame(i: int, n: int) -> np.ndarray:
             local = n - (start_f[i] - lead_f[i])
             fr = readers[i].frame(local)
+            if segs[i].get("page") and plan.get("page"):  # a page stays still: its words (and map) lie over it
+                return pages.lay(fr, pages.furniture(plan, segs[i]))
             if i in masks:   # the shot's colour layers (secondary grading), once per source frame
                 key = (i, local)
                 if key not in graded:

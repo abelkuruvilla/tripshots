@@ -288,15 +288,19 @@ def apply(plan: dict, by_id: dict, shots: list[dict] | None, kind: str, settings
             if sg.get("panel"):
                 continue
             f = facts[i]
-            name = _first(f.get("landmark")) or _first(f.get("place")) or str(f.get("region") or "")
+            own = by_id.get(sg.get("shot_id"), {}).get("gps") and not f.get("near")
+            lm = _first(f.get("landmark"))
+            name = lm or _first(f.get("place")) or str(f.get("region") or "")
             reg = str(f.get("region") or "")
-            if not reg and gs[i]:   # the state it was filmed in, from the position borrowed above
+            if not reg and gs[i] and not lm:   # the state it was filmed in, from the position borrowed above
                 try:
                     from .geo import region
-                    reg = region(gs[i][0], gs[i][1], coarse=True) or ""
+                    reg = region(gs[i][0], gs[i][1]) or ""
                 except Exception:
                     reg = ""
                 name = name or reg
+            if lm and not own:
+                reg = ""   # a landmark the AI saw, with a borrowed position: its state could be across a border
             label = f"{name}, {reg}" if name and reg and reg not in name else name
             sg["page"] = {"stop": at[i], "label": _short(label, 42)}
         if hook and segs and segs[0].get("page"):   # the opening line becomes the first page's caption
@@ -308,6 +312,10 @@ def apply(plan: dict, by_id: dict, shots: list[dict] | None, kind: str, settings
         held = {k: segs[i].pop(k) for k in SET_ASIDE if k in segs[i]}
         if held:   # back when the pages come off
             segs[i]["page"]["held"] = held
+    from .fxlib import SEG_KEYS
+    gone = {k for i in paged for k in (segs[i]["page"].get("held") or {})}
+    if plan.get("moves"):   # the director's moves the pages set aside aren't in this reel any more
+        plan["moves"] = [m for m in plan["moves"] if SEG_KEYS.get(m.get("id")) not in gone and m.get("id") != "grid_lines"]
     plan_held = {k: plan.pop(k) for k in ("grid", "freeze") if k in plan}
     if plan_held:
         plan["page"]["held"] = plan_held
@@ -339,8 +347,8 @@ def _short(v, n: int) -> str:
 
 def _facts(plan: dict, by_id: dict, shots) -> list[dict]:
     try:
-        from .pipeline import _seg_facts
-        return _seg_facts(plan, by_id, list(by_id.values()) if shots is None else shots)
+        from .pipeline import _seg_facts   # (full: the exact state; a coarse one can be across the border)
+        return _seg_facts(plan, by_id, list(by_id.values()) if shots is None else shots, full=True)
     except Exception:
         return [{} for _ in plan.get("segments") or []]
 

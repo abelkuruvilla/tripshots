@@ -104,7 +104,7 @@ def reel_detail(plan: Path) -> dict:
                      "note": (sh.get("ai") or {}).get("note"), "transition": s.get("trans_out"),
                      "speed": s.get("speed"), "panel": s.get("panel"), "ramp": s.get("ramp"),
                      "in": s.get("in"), "clip": [0.0, file_length(shots, sh)] if sh.get("kind") == "video" else None,
-                     "layout": s.get("layout"), "subject_x": s.get("subject_x"), "kb": s.get("kb"),
+                     "layout": s.get("layout"), "subject_x": s.get("subject_x"), "frame_by": s.get("frame_by"), "kb": s.get("kb"),
                      "trans_dur": s.get("trans_dur"), "adjust": s.get("adjust") or {},
                      "graded": bool(s.get("lut")) and not s.get("no_grade"), "no_grade": bool(s.get("no_grade")),
                      "light": s.get("grade_note"), "layers": s.get("layers") or [],

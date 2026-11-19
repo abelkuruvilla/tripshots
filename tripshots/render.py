@@ -14,7 +14,7 @@ from .config import CANVAS, OUT_FPS
 from .fx import color_chain, hdr_chain, seg_color
 from .util import ReelError, ffmpeg_base, hwaccel_args, log, short_hash
 
-RENDER_VERSION = "r6"  # bump when shot rendering changes so cached shots are rebuilt
+RENDER_VERSION = "r7"  # bump when shot rendering changes so cached shots are rebuilt
 
 # intermediates: near-lossless and quick; the final pass does the real compression
 def _enc() -> list[str]:
@@ -84,7 +84,9 @@ def render_video_seg(e: dict, length: float, color: dict, out: Path,
     if e.get("_band") and size == CANVAS.size:  # cinematic letterbox: the picture in a band, black bars
         size = (CANVAS.w, int(e["_band"]))
         pad = [f"pad={CANVAS.w}:{CANVAS.h}:0:{(CANVAS.h - size[1]) // 2}:black"]
-    if e.get("track") and e.get("layout") == "crop":
+    from . import compose   # the window placed on the frames that actually play (people kept whole, looking room)
+    e = compose.apply(e, length * speed, size)
+    if e.get("track") and e.get("layout") == "crop" and not e.get("_framed"):
         from .framing import track_x
         try:
             e = {**e, "_track_pts": track_x(e["src"], e["in"], length * speed, {**e, "speed": speed},
@@ -910,6 +912,12 @@ def _source_frame(e: dict, local: float, color: dict, size: tuple[int, int]):
             local = max(0.0, float(e.get("dur", local)) - local)
         at = float(e.get("in", 0.0)) + local * float(e.get("speed", 1.0))
         from .camlog import chain as log_chain
+        from . import compose
+        win = float(e.get("dur", 1.0)) * float(e.get("speed", 1.0))
+        e = compose.apply(e, win, size)
+        if e.get("_track_pts"):   # the follow at this moment, as one still crop
+            pts = e["_track_pts"]
+            e = {**e, "subject_x": float(np.interp(local, [p[0] for p in pts], [p[1] for p in pts])), "_track_pts": None}
         vf = hdr_chain({"hdr": e.get("hdr"), "transfer": e.get("transfer")}) + log_chain(e) + _video_layout(e, 1.0, size)
         inp = ["-ss", f"{max(0.0, at):.3f}", "-i", str(e["src"])]
     elif e.get("still") or e.get("src"):

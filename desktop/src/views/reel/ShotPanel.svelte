@@ -232,6 +232,11 @@
         <label for="isx">Looks at <span class="hint">· {sx < 0.4 ? "left" : sx > 0.6 ? "right" : "middle"}</span></label>
         <input id="isx" type="range" min="0" max="1" step="0.01" bind:value={sx} onchange={() => op({ op: "frame", subject_x: +sx })} />
       </div>
+      {#if s.frame_by === "hand"}
+        <p class="quiet small">Placed by hand. <button class="link" onclick={() => op({ op: "frame", auto: true })}>Back to automatic</button></p>
+      {:else}
+        <p class="quiet small">Automatic: the picture is placed on the part that plays, keeping people whole with room in front of them</p>
+      {/if}
     </Section>
     <Section id="shot-steady" title="Steadiness" summary={s.stabilize ? "Stabilised" : "As filmed"}>
       <label class="check"><input type="checkbox" checked={s.stabilize} onchange={(e) => op({ op: "stabilize", on: e.currentTarget.checked })} />

@@ -1,6 +1,7 @@
 # tripshots.app
 
-The project's website: one static page, no build step, no framework, no trackers.
+The project's website: one static page, no build step, no framework. Visits are counted by a self-hosted Plausible (no cookies,
+nothing personal stored); the snippet is in `index.html`'s head.
 
 ```
 index.html      the page

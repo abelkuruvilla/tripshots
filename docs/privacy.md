@@ -88,6 +88,12 @@ you press Send yourself. If it can't be sent, you can open it as a public GitHub
 Events are deleted after 13 months. Crash groups and bug reports are kept until they're dealt with. Download numbers
 come from GitHub's own count of release downloads, and need nothing from you.
 
+## The website
+
+[tripshots.app](https://tripshots.app) counts visits with a self-hosted [Plausible](https://plausible.io/privacy-focused-web-analytics):
+the page, where the visitor came from, their country and the kind of browser and system. It sets no cookies and
+stores nothing that identifies a person. The app itself never sends anything to it.
+
 ## Faces
 
 Face recognition is local and opt-in: faces are only looked for when you add a person, search with `--people`, or run `people discover` / `people who`.

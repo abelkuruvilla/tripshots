@@ -3,10 +3,18 @@ name = "tripshots-telemetry"
 main = "src/index.js"
 compatibility_date = "2025-06-01"
 
+# its fixed address (the release builds have it built in, so don't change it once released)
+routes = [
+  { pattern = "telemetry.tripshots.app", custom_domain = true }
+]
+workers_dev = false     # no …workers.dev address
+preview_urls = false    # no preview addresses (they would go around Cloudflare Access)
+
+
 [[d1_databases]]
 binding = "DB"
 database_name = "tripshots"
-database_id = "REPLACE_WITH_YOUR_D1_ID"   # printed by: npx wrangler d1 create tripshots
+database_id = "db3da646-f359-4eff-a1a9-4bad7261498f"   # printed by: npx wrangler d1 create tripshots
 
 [vars]
 GITHUB_REPO = "abelkuruvilla/tripshots"   # whose release downloads the dashboard shows

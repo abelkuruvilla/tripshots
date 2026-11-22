@@ -520,6 +520,10 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         else:
             for c in pages.apply(plan, by_id, shots, page, style.get("page") or {}):
                 log(c)
+    from .story import open_on_words
+    said = open_on_words(plan, style.get("story") or {})
+    if said:
+        log(said)
     from . import grade as grade_mod
     grade_img = None
     try:

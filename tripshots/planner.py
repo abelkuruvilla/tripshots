@@ -315,9 +315,11 @@ def assign(chosen: list[dict], segs: list[dict], style: dict) -> list[dict]:
 
     variant = int(style["shots"].get("variant", 0) or 0)
 
+    from .story import first_frame_pull
+
     def hook_v(s):
         return (_quality(s) + (1.5 if s.get("ai", {}).get("role") == "hook" else 0)
-                + (0.5 if s.get("ai", {}).get("mood") == "dynamic" else 0) + opening_bonus(s))
+                + (0.5 if s.get("ai", {}).get("mood") == "dynamic" else 0) + opening_bonus(s) + first_frame_pull(s))
     # hook: strongest attention-grabber (variant k opens with the k-th best one)
     hooks = sorted(pool, key=hook_v, reverse=True)
     order[0] = hooks[min(variant, len(hooks) - 1)] if hooks else take(hook_v)

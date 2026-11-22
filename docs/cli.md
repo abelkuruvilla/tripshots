@@ -553,7 +553,7 @@ instagram login (most reels need it):
 ```text
 usage: tripshots results [-h] [--views VIEWS] [--reach REACH] [--avg-watch AVG_WATCH]
                          [--sends SENDS] [--saves SAVES] [--likes LIKES] [--comments COMMENTS]
-                         [--roots [ROOTS ...]]
+                         [--skip-rate SKIP_RATE] [--roots [ROOTS ...]]
                          [{show,add,sync}] [reel]
 
 positional arguments:
@@ -570,6 +570,8 @@ options:
   --saves SAVES         saves
   --likes LIKES         likes
   --comments COMMENTS   comments
+  --skip-rate SKIP_RATE
+                        share who skipped in the first 3 s (73.1 or 0.731)
   --roots [ROOTS ...]   sync: folders with your reels (default: the output folder)
 ```
 

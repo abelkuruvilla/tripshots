@@ -496,7 +496,8 @@ def cmd_results(a):
         if not a.reel:
             raise SystemExit("tripshots results add NAME.mp4 --views N --avg-watch S --sends N ...")
         row = R.add(a.reel, {"views": a.views, "reach": a.reach, "avg_watch": a.avg_watch, "sends": a.sends,
-                             "saves": a.saves, "likes": a.likes, "comments": a.comments})
+                             "saves": a.saves, "likes": a.likes, "comments": a.comments,
+                             "skip_rate": R.as_share(a.skip_rate)})
         print(json.dumps(row, indent=2))
         return
     if a.action == "sync":
@@ -887,7 +888,8 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("action", nargs="?", choices=["show", "add", "sync"], default="show")
     rs.add_argument("reel", nargs="?", help="add: the reel (.mp4 or .plan.json)")
     for k, h in (("views", "plays / views"), ("reach", "accounts reached"), ("avg-watch", "average watch time (s)"),
-                 ("sends", "shares / sends"), ("saves", "saves"), ("likes", "likes"), ("comments", "comments")):
+                 ("sends", "shares / sends"), ("saves", "saves"), ("likes", "likes"), ("comments", "comments"),
+                 ("skip-rate", "share who skipped in the first 3 s (73.1 or 0.731)")):
         rs.add_argument(f"--{k}", type=float, help=h)
     rs.add_argument("--roots", nargs="*", help="sync: folders with your reels (default: the output folder)")
     rs.set_defaults(fn=cmd_results)

@@ -131,6 +131,14 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
         # words shown as they are sung are heard as well as read: they keep the song's time
         short = [t for t in texts if not t.get("sung")
                  and t["duration"] < len(t["text"].split()) / WORDS_PER_S + 0.5]
+        # the promise is read before the thumb moves: a line on screen from the first frames, no entrance
+        opener = min(texts, key=lambda t: t["start"])
+        late = opener["start"] > OPEN_TEXT_BY or opener.get("anim") in ("fade", "typewriter", "rise", "slide",
+                                                                          "tracking") or opener.get("motion")
+        add("open_words", not late, f"{opener['kind']} at {opener['start']:.2f}s"
+            f"{' (' + str(opener.get('motion') or opener.get('anim')) + ')' if late else ''}: {opener['text'][:30]}",
+            f"a line fully on screen by {OPEN_TEXT_BY:g} s", "people decide in the first second; words that arrive "
+            "later, or fade in, are read by fewer of them")
         add("text_time", not short, [f"{t['kind']} {t['duration']:.1f}s: {t['text'][:30]}" for t in short][:6],
             f"{WORDS_PER_S:g} words a second + 0.5 s", "people need time to read a line before it goes")
     if segs:
@@ -151,6 +159,9 @@ def check(video: Path, plan: dict | None = None, texts: list[dict] | None = None
     return rep
 
 
+OPEN_MOTION = 2.5     # median frame-to-frame change in the first second (a photo's slow zoom is about 1)
+OPEN_LIGHT = 18.0     # % mean light in the first second
+OPEN_TEXT_BY = 0.1    # the opening line is on screen by this (s)
 FLASH = 0.3 * 255     # brighter than the second around it by this much: a flash
 CUT_JUMP = 0.36 * 255  # brightness change across a hard cut that jars
 INTENDED = ("flash", "leak", "glitch", "dip", "fade", "dissolve", "split", "vsplit", "iris", "slats", "stripes",
@@ -220,6 +231,14 @@ def picture_checks(video: Path, plan: dict) -> list[tuple]:
             hitch.append(f"shot {i + 1} ({rep} repeated frames)")
     out.append(("stutter", not hitch, hitch[:6], "no repeated frames in a moving shot",
                 "a moving shot that hitches looks broken"))
+    # the first second decides whether people stay: something moving, and light enough to see it
+    first = slice(1, min(n, int(fps) + 1))
+    motion, light = float(np.median(diff[first])), float(np.mean(mean[:int(fps)])) / 2.55
+    weak = ([f"little movement ({motion:.1f})"] if motion < OPEN_MOTION else []) + (
+        [f"dark ({light:.0f}% light)"] if light < OPEN_LIGHT else [])
+    out.append(("open_motion", not weak, weak or [f"movement {motion:.1f}, {light:.0f}% light"],
+                f"movement ≥ {OPEN_MOTION:g} and ≥ {OPEN_LIGHT:.0f}% light in the first second",
+                "most people swipe in the first 3 s; a still or dark opening is swiped past"))
     return out
 
 
@@ -260,6 +279,8 @@ def text_report(track) -> list[dict]:
                     "box": box, "size": size, "motion": getattr(track.fx.get(k), "motion", None)
                     if hasattr(track, "fx") else None, "behind": track.baked(k),
                     "bar": bool(getattr(track, "letterbox", False)),
+                    **({"anim": o["style"]["anim"]} if isinstance(o.get("style"), dict) and o["style"].get("anim")
+                       else {}),
                     **({"styled": True} if isinstance(o.get("style"), dict) else {}),
                     **({"sung": True} if o.get("recipe") == "lyric" else {})})
     return out

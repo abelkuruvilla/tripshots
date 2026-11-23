@@ -487,6 +487,24 @@ def _q(s):
     return _quality(s)
 
 
+ANIMAL_WORDS = {"wildlife", "animal", "moose", "elk", "bison", "bear", "deer", "bird", "eagle", "whale", "seal", "fox",
+                "wolf", "horse", "goat", "sheep", "cow", "dog", "cat", "pronghorn", "otter", "puffin"}
+
+
+def first_frame_pull(s: dict) -> float:
+    """What stops a thumb on the opening shot, beyond its quality: a clip over a still (a photo's slow zoom reads
+    as a still frame), an animal, and enough light (a dark first frame is swiped past)."""
+    a = _ai(s)
+    v = 0.0 if s.get("kind") == "video" else -0.8
+    words = {str(t).lower() for t in a.get("tags") or []} | {str(a.get("scene") or "").lower()}
+    if words & ANIMAL_WORDS:
+        v += 0.6
+    bright = (s.get("metrics") or {}).get("bright")
+    if bright is not None and float(bright) < 0.22:
+        v -= 0.6
+    return v
+
+
 def role_score(s: dict, role: str, ctx: dict) -> float:
     a = _ai(s)
     q = _q(s)
@@ -499,8 +517,9 @@ def role_score(s: dict, role: str, ctx: dict) -> float:
         v += 0.3 * float(a.get("aesthetic", q) or q) / 10
         from .planner import opening_bonus
         v += opening_bonus(s)
+        v += first_frame_pull(s)
         if ctx.get("tease"):  # reveal format: open on something intriguing, keep the best for the payoff
-            v = 5 + 1.0 * moving(s) + 0.5 * people - 0.3 * q
+            v = 5 + 1.0 * moving(s) + 0.5 * people - 0.3 * q + first_frame_pull(s)
     elif role == "peak":
         v += 0.8 * dyn + 0.8 * moving(s) + 0.8 * pw * people
         vib = a.get("vibes") or {}
@@ -1039,3 +1058,47 @@ def describe(segs: list[dict]) -> str:
             continue
         parts.append(f"{role} {ds[0]:.1f}s" if len(ds) == 1 else f"{role} {len(ds)} ({min(ds):.1f}-{max(ds):.1f}s)")
     return " · ".join(parts)
+
+
+# ---------------------------------------------------------------- the first frame
+# Most people decide in the first second (Instagram reports the share who skip in the first 3 s). The reels that
+# held best showed the promise in big words from the very first frame, over a moving shot with someone in it.
+OPEN_MIN_SIZE = 90      # the opening line, at 1080 wide
+OPEN_BY = 0.8           # a line starting before this is the opening line
+
+
+def open_on_words(plan: dict, cfg: dict | None = None) -> str | None:
+    """The reel's first line is fully on screen from frame one: it starts at 0, without an entrance (no fade,
+    rise or typewriter), at least OPEN_MIN_SIZE big. Sung words keep the song's time; a recipe's tease or title
+    keeps its lettering and only loses the entrance. Style `story.open_text: off` leaves the text as planned.
+    Returns what changed, or None."""
+    if str((cfg or {}).get("open_text", "auto")).lower() in ("off", "false", "0", "none"):
+        return None
+    ovs = plan.get("overlays") or []
+    sung = str((plan.get("recipe") or {}).get("text") or "") in ("lyrics", "subtitles")
+    first = None
+    for o in sorted(ovs, key=lambda x: float(x.get("start", 0))):
+        if float(o.get("start", 0)) >= OPEN_BY:
+            break
+        if o.get("type") in ("map",) or o.get("recipe") == "label":
+            continue
+        if o.get("recipe") == "lyric" and sung or o.get("type") == "caption" and not o.get("recipe"):
+            continue   # (words heard as well as read stay with the sound)
+        first = o
+        break
+    if first is None:
+        return None
+    was = float(first.get("start", 0))
+    first["start"] = 0.0
+    first["duration"] = round(float(first.get("duration", 2.5)) + was, 3)
+    st = first.get("style") if isinstance(first.get("style"), dict) else {}
+    st = {**st, "anim": "cut"}
+    if st.get("size") is not None and float(st["size"]) < OPEN_MIN_SIZE:
+        st["size"] = OPEN_MIN_SIZE
+    elif st.get("size") is None and first.get("type") != "hook":
+        st["size"] = OPEN_MIN_SIZE
+    if first.get("type") == "location":
+        first["type"] = "text"   # (a styled location is drawn as a line, like planedit does)
+    first["style"] = st
+    first.pop("motion", None)
+    return f"opening line on screen from the first frame: {str(first.get('text') or '')[:40]}"

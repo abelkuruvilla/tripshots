@@ -8,7 +8,11 @@ you appear early) from its plan, and `preferences()` turns them into a lean: whi
 held viewers and been sent the most. `make --format auto` and `--variants` use it once there is enough data.
 
 The score per reel: 60 % how much of it people watched (average watch time / length, capped at 1) and 40 %
-sends per view (scaled so 2 % is a full mark): the two things Instagram's own guidance points at. `multiples()`
+sends per view (scaled so 2 % is a full mark): the two things Instagram's own guidance points at. With the
+skip rate (the share who swiped away in the first 3 s, `--skip-rate`), the watched part is split: 35 % watch
+time, 25 % the share who stayed past 3 s. Each result also keeps how the reel opened (`open`: a clip or a photo,
+someone in it, words on screen from the first frame), and `preferences()` reports the skip rate per kind of
+opening (`skip_by_open`). `multiples()`
 adds how far each reel beat the account's usual (views over the median of the others), so a reel that did well
 because the account had grown isn't mistaken for one that found something.
 Stored in ~/.tripshots/results.json.
@@ -49,6 +53,27 @@ def _plan_for(path: Path) -> tuple[Path | None, dict]:
     return (plan_p, read_json(plan_p, {}) or {}) if plan_p.exists() else (None, {})
 
 
+def as_share(v) -> float | None:
+    """73.1 (a percentage, as Insights shows it) or 0.731 -> 0.731."""
+    if v is None:
+        return None
+    v = float(v)
+    return round(v / 100.0, 4) if v > 1 else v
+
+
+def opening(plan: dict) -> dict:
+    """How the reel opened: the first shot's kind, whether someone is in it, and whether words are on screen
+    from the first frame (by 0.1 s, without a fade in)."""
+    segs = plan.get("segments") or []
+    if not segs:
+        return {}
+    s = segs[0]
+    ovs = sorted(plan.get("overlays") or [], key=lambda o: float(o.get("start", 0)))
+    o = ovs[0] if ovs else None
+    words = bool(o) and float(o.get("start", 0)) <= 0.1 and ((o.get("style") or {}).get("anim") in (None, "cut", "pop"))
+    return {"kind": s.get("kind"), "people": bool(s.get("people")), "words_at_0": words}
+
+
 def features(plan: dict) -> dict:
     """The reel's ideas, as recorded in its plan."""
     segs = plan.get("segments") or []
@@ -58,7 +83,7 @@ def features(plan: dict) -> dict:
     return {"style": plan.get("style"), "format": st.get("format") or ("story" if st else "even"),
             "hook_type": st.get("hook_type"), "hook": hook, "duration": plan.get("duration"),
             "shots": len(segs), "arc": bool(st.get("arc")), "people_early": bool(early) or None,
-            "words": (plan.get("words") or {}).get("kind")} if plan else {}
+            "words": (plan.get("words") or {}).get("kind"), "open": opening(plan)} if plan else {}
 
 
 def reel_score(m: dict, duration: float | None) -> float | None:
@@ -68,6 +93,9 @@ def reel_score(m: dict, duration: float | None) -> float | None:
         return None
     w = min(1.0, float(watch) / float(duration))
     sends = float(m.get("sends") or 0) / views
+    skip = m.get("skip_rate")
+    if skip is not None:
+        return round(0.35 * w + 0.25 * (1.0 - float(skip)) + 0.4 * min(1.0, sends / 0.02), 3)
     return round(0.6 * w + 0.4 * min(1.0, sends / 0.02), 3)
 
 
@@ -116,6 +144,15 @@ def preferences(min_n: int = 2) -> dict:
     mult = multiples()
     hits = {"outliers": [Path(k).stem for k, v in sorted(mult.items(), key=lambda kv: -kv[1]) if v >= 3][:5]}
     hits = hits if hits["outliers"] else {}  # the reels that clearly beat a normal day: the ones to make more of
+    skips: dict = {}
+    for r in load():   # the skip rate per kind of opening: what the first second did, whatever else the reel did
+        sk, op = (r.get("metrics") or {}).get("skip_rate"), (r.get("features") or {}).get("open") or {}
+        if sk is not None and op:
+            k = f"{op.get('kind') or '?'}{', person' if op.get('people') else ''}{', words at 0' if op.get('words_at_0') else ''}"
+            skips.setdefault(k, []).append(float(sk))
+    if skips:
+        hits = {**hits, "skip_by_open": {k: round(sum(v) / len(v), 3) for k, v in sorted(skips.items())},
+                "skip_n": {k: len(v) for k, v in skips.items()}}
     rows = [r for r in load() if r.get("score") is not None]
     if not rows:
         return hits

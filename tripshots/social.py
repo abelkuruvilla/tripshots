@@ -56,12 +56,20 @@ def _facts(plan: dict) -> dict:
         subjects += a.get("tags") or []
         if a.get("note"):
             notes.append(a["note"])
+    stops = []   # the places named on screen, in the order they come: the reel's itinerary
+    for o in sorted(plan.get("overlays") or [], key=lambda x: float(x.get("start", 0))):
+        if o.get("type") in ("location", "label") or o.get("recipe") == "label" or o.get("type") == "text" \
+                and o.get("place"):
+            name = " ".join(x for x in (o.get("main"), o.get("sub")) if x) or o.get("text") or ""
+            if name.strip() and name.strip() not in stops:
+                stops.append(name.strip())
     words = [o.get("text") for o in plan.get("overlays") or []
              if o.get("type") in ("hook", "cta", "text") and o.get("text")]
     uniq = lambda xs: [x for x in dict.fromkeys(x.strip() for x in xs if x and x.strip())]
     return {"places": uniq(landmarks + places)[:8], "subjects": uniq(subjects)[:16], "notes": uniq(notes)[:8],
             "on_screen": uniq(words)[:6], "seconds": round(sum(float(s["dur"]) for s in plan["segments"]), 1),
-            "sound": (plan.get("music") or {}).get("label"), "format": (plan.get("story") or {}).get("format")}
+            "sound": (plan.get("music") or {}).get("label"), "format": (plan.get("story") or {}).get("format"),
+            "stops": stops[:8]}
 
 
 PROMPT = """You write the Instagram post for a travel Reel ({seconds}s, {fmt}). The goal is reach: people who
@@ -69,6 +77,7 @@ don't follow the account should find it, watch it to the end, and send it to som
 
 What the reel shows (use only these facts; never invent a place, a date, a number or an experience):
 - places: {places}
+- stops named on screen, in order: {stops}
 - subjects: {subjects}
 - shot notes: {notes}
 - words on screen: {on_screen}
@@ -86,13 +95,15 @@ Return ONLY JSON:
   POV, a specific promise); it names the main place when one is known. Then 1-3 lines that work in 2-3 search
   keywords naturally (place + what you do/see there + the kind of trip). Last line asks for ONE action that
   fits the reel: send it to the person you'd go with, or save it for a trip, or a question that is easy to
-  answer in the comments. No hashtags inside the caption, no clichés ("wanderlust", "vibes", "take me back"),
+  answer in the comments. When there are 2 or more stops, one line lists them in order joined by " → " (people
+  save a reel they can use as an itinerary). No hashtags inside the caption, no clichés ("wanderlust", "vibes", "take me back"),
   at most 2 emojis.
 - hashtags: 3 to 5, without #, most specific first: the place, the region or park, the niche (e.g.
   roadtripusa, droneshots), at most one broad tag. No #fyp/#explore/#viral, no banned or spammy tags.
 - keywords: 5-8 search phrases people actually type (e.g. "yellowstone itinerary", "big sur drive").
 - alt_text: one plain sentence describing what is seen, for screen readers (max 200 characters).
-- first_comment: optional extra line to pin as the first comment (a detail, a tip or a question), or "".
+- first_comment: a line to pin as the first comment: with 2 or more stops, the stops in order (" → ") and one
+  question; otherwise a detail or a question from the facts. Never a tip or a fact the facts don't give.
 - on_screen_keywords: a short line (max 6 words) with the main keyword, to show in the first second on screen.
 - alternatives: two other first lines with a different angle.
 - why: one sentence on the angle you chose."""
@@ -144,6 +155,8 @@ def _local(f: dict) -> dict:
     subj = ", ".join(f["subjects"][:3])
     first = (f"{place}, like you've never seen it" if place else "Save this for your next trip")[:FIRST_LINE]
     body = f"{place + ': ' if place else ''}{subj}." if subj else ""
+    if len(f.get("stops") or []) >= 2:
+        body = (body + "\n" if body else "") + " → ".join(f["stops"])
     tags = [_clean_tag(p.split(",")[0]).lower() for p in f["places"][:3]] + ["travelreels"]
     tags = [t for t in dict.fromkeys(tags) if t][:MAX_TAGS]
     kws = [p.split(",")[0].lower() for p in f["places"][:3]] + [f"{s} travel" for s in f["subjects"][:3]]
@@ -171,6 +184,7 @@ def generate(plan: dict, tone: str | None = None, extra: str | None = None, back
         extra = ((extra + "\n") if extra else "") + ("The creator's voice notes (follow them; never use a fact from "
                                                      "them unless this reel shows it):\n" + voice)
     prompt = PROMPT.format(seconds=f["seconds"], fmt=f["format"] or "montage", places=", ".join(f["places"]) or "unknown",
+                           stops=" → ".join(f["stops"]) or "-",
                            subjects=", ".join(f["subjects"]) or "landscapes", notes="; ".join(f["notes"]) or "-",
                            on_screen=" / ".join(f["on_screen"]) or "-", sound=f["sound"] or "-",
                            tone=tone or (style.get("caption") or {}).get("tone") or ("as in the voice notes" if voice

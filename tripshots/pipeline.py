@@ -408,9 +408,10 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         if rtext:
             log(f"text like the reference: {len(rtext)} overlay(s) ("
                 + ", ".join(sorted({str(o.get('recipe')) for o in rtext})) + ")")
-    if rtext:
-        pass
-    elif hook_text and hook_cfg.get("mode") != "off" or hook:
+    heard = str(((recipe or {}).get("text") or {}).get("kind") or "") in ("lyrics", "subtitles")
+    if rtext and not (hook and heard):
+        pass   # (a recipe's tease or title already carries the opening line)
+    elif hook_text and hook_cfg.get("mode") != "off" or hook:   # (a hook asked for stays over sung/spoken words)
         h_start, h_dur = float(hook_cfg.get("start", 0.2)), float(hook_cfg.get("duration", 2.6))
         if arc:  # on screen from the third frame, held while the opening plays
             first = plan["segments"][0]
@@ -520,6 +521,10 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         else:
             for c in pages.apply(plan, by_id, shots, page, style.get("page") or {}):
                 log(c)
+    from .story import open_on_words
+    said = open_on_words(plan, style.get("story") or {})
+    if said:
+        log(said)
     from . import grade as grade_mod
     grade_img = None
     try:

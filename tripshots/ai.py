@@ -924,11 +924,14 @@ Format: {fmt}. Places: {', '.join(places) or 'unknown'}.
 What the shots show, in story order: {'; '.join(notes[:10]) or ', '.join(dict.fromkeys(tags))}.{spots}{sound}{model}
 Tone: {style.get('caption', {}).get('tone')}.
 Return ONLY JSON: {{"hooks": [{{"text": "...", "type": "curiosity|pov|number|bold|feeling|tease",
-"clarity": 0-10, "curiosity": 0-10, "emotion": 0-10}}], "cta": "...", "caption": "...", "hashtags": ["..."]{more}}}
+"clarity": 0-10, "curiosity": 0-10, "emotion": 0-10, "promise": 0-10}}], "cta": "...", "caption": "...", "hashtags": ["..."]{more}}}
 {rule}
 - hooks: 3 different on-screen opening lines, max 7 words each, readable in one second, never invented facts.
-  This format's hook {fmt_rule}. Score each honestly: clarity (reads at a glance), curiosity (makes you stay to
-  see), emotion (makes you feel something). No clichés (wanderlust, vibes, paradise, breathtaking).
+  This format's hook {fmt_rule}. The lines that hold people past the first 3 seconds pair the surprise with what
+  they get if they stay: how much is coming or what the payoff is ("A moose walked through camp. Then 4 Teton
+  icons."), using only counts and places these shots show. Score each honestly: clarity (reads at a glance),
+  curiosity (makes you stay to see), emotion (makes you feel something), promise (says what staying gets you).
+  No clichés (wanderlust, vibes, paradise, breathtaking).
   {('Use a clearly different angle from: ' + '; '.join(chr(34) + h + chr(34) for h in av) + '.') if av else ''}
 - cta: closing line, max 6 words, worth sending to a friend (e.g. "Send this to your road trip person").
 - caption: 1-3 short natural lines that name the places in plain words (people search them) and end with ONE
@@ -944,7 +947,7 @@ Return ONLY JSON: {{"hooks": [{{"text": "...", "type": "curiosity|pov|number|bol
         if not isinstance(h, dict) or not str(h.get("text", "")).strip():
             continue
         t = clean_line(str(h["text"]).strip().strip('"'))
-        ai_score = sum(float(h.get(k, 5) or 5) for k in ("clarity", "curiosity", "emotion")) / 3
+        ai_score = sum(float(h.get(k, 5) or 5) for k in ("clarity", "curiosity", "emotion", "promise")) / 4
         hooks.append({"text": t, "type": str(h.get("type") or "curiosity"),
                       "score": round(0.65 * ai_score + 0.35 * _hook_rules(t, fmt), 2)})
     hooks = [h for h in hooks if h["text"] not in av] or hooks

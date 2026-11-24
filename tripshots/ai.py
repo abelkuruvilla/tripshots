@@ -853,6 +853,10 @@ def write_story_copy(backend: Backend, plan: dict, shots_by_id: dict, style: dic
             if bits else "not known"
     if not places and facts:  # no location titles asked for: the copy still names where the trip went
         places = [p for p in dict.fromkeys(f.get(k) for k in ("region", "landmark") for f in facts) if p][:12]
+    def day(i: int) -> str:  # the day it was filmed: the story's order is not the order things happened in
+        c = str(shots_by_id.get(segs[i].get("shot_id"), {}).get("created") or "") if i < len(segs) else ""
+        return f", filmed {c[:10]}" if len(c) >= 10 else ""
+
     def light(i: int) -> str:  # the dusk belongs to the shot it was filmed in, not to the best-known name
         a = shots_by_id.get(segs[i].get("shot_id"), {}).get("ai", {}) if i < len(segs) else {}
         tod = str(a.get("time_of_day") or "").lower().replace("_", " ")
@@ -862,7 +866,7 @@ def write_story_copy(backend: Backend, plan: dict, shots_by_id: dict, style: dic
     if facts and any(facts):
         spots = ("\nWhere each shot was filmed, in story order (the light is given where it isn't plain daylight; "
                  "a sunset, a night or a storm is only ever said of the place it is listed with):\n"
-                 + "\n".join(f"{i + 1}. {where(f)}{light(i)}" for i, f in enumerate(facts)))
+                 + "\n".join(f"{i + 1}. {where(f)}{light(i)}{day(i)}" for i, f in enumerate(facts)))
     if extra.get("when"):
         spots += f"\nFilmed: {extra['when']}."
     if kind in ("tease", "title", "labels") and ref:
@@ -929,7 +933,10 @@ Return ONLY JSON: {{"hooks": [{{"text": "...", "type": "curiosity|pov|number|bol
 - hooks: 3 different on-screen opening lines, max 7 words each, readable in one second, never invented facts.
   This format's hook {fmt_rule}. The lines that hold people past the first 3 seconds pair the surprise with what
   they get if they stay: how much is coming or what the payoff is ("A moose walked through camp. Then 4 Teton
-  icons."), using only counts and places these shots show. Score each honestly: clarity (reads at a glance),
+  icons."), using only counts and places these shots show. The shots are in story order, not the order they
+  happened: "then", "after", "first" or "finally" about two things only when their filmed days show that order
+  (one day earlier is never "then"). A count is of different things, never of shots: two clips of one geyser are
+  one eruption, three shots of one bison are one bison. Score each honestly: clarity (reads at a glance),
   curiosity (makes you stay to see), emotion (makes you feel something), promise (says what staying gets you).
   No clichés (wanderlust, vibes, paradise, breathtaking).
   {('Use a clearly different angle from: ' + '; '.join(chr(34) + h + chr(34) for h in av) + '.') if av else ''}

@@ -90,3 +90,17 @@ def test_a_reveal_reel_still_opens_on_a_clip_rather_than_a_photo():
     photo = {"id": "b", "kind": "photo", "ai": {"score": 7, "tags": ["arch"]}, "metrics": {"bright": 0.4}}
     ctx = {"tease": True}
     assert story.role_score(clip, "hook", ctx) > story.role_score(photo, "hook", ctx)
+
+
+def test_the_likeliest_openers_are_measured_and_a_still_start_counts_against_a_clip(monkeypatch):
+    import tripshots.insight as ins
+    moves = {"a": 0.6, "b": 0.01}
+    monkeypatch.setattr(ins, "open_motion", lambda s: moves[s["id"]])
+    pool = [{"id": k, "kind": "video", "src": f"/x/{k}.mp4", "ai": {"score": 7}, "metrics": {"bright": 0.4}}
+            for k in ("a", "b")] + [{"id": "p", "kind": "photo", "src": "/x/p.jpg", "ai": {"score": 7}}]
+    ctx = {"people_weight": 1.0}
+    assert story.measure_openers(pool, ctx) == 2
+    assert pool[0]["insight"]["open_motion"] == 0.6 and "insight" not in pool[2]
+    # a tripod shot that hardly moves at first opens like a photo; the moving one leads
+    assert story.role_score(pool[0], "hook", ctx) > story.role_score(pool[1], "hook", ctx)
+    assert story.first_frame_pull(pool[1]) == story.first_frame_pull(pool[0]) - 0.6

@@ -60,7 +60,7 @@ usage: tripshots make [-h] [-m MUSIC]
                       [--format {auto,montage,pov,list,series,reveal}] [--arc {on,off}]
                       [--captions auto|off|original|LANGUAGE] [--critic {auto,rules,off}]
                       [--parallax {auto,on,off}] [--recipe auto|off|N]
-                      [--orientation {auto,vertical,horizontal,4:3,4:5,1:1,sideways}]
+                      [--orientation {auto,vertical,9:16,horizontal,4:3,4:5,1:1,sideways}]
                       [--stabilize {auto,on,off}] [--light {golden,sunset,blue,day,night,any}]
                       [--effects {auto,ai,rules,off}] [--page {auto,print,route,off}]
                       [--fresh {on,off}] [--loop | --no-loop] [--min-score N] [--look LOOK]
@@ -121,11 +121,12 @@ options:
                         picture shape and text). auto (default): the recipe of the reel whose
                         sound you use, else the one that fits the song; N: the N-th reference's;
                         off: the style's average
-  --orientation {auto,vertical,horizontal,4:3,4:5,1:1,sideways}
+  --orientation {auto,vertical,9:16,horizontal,4:3,4:5,1:1,sideways}
                         shape of the file. auto (default): upright 1080x1920, or horizontal
                         1920x1080 when the style or recipe is widescreen or the footage only works
                         wide (no black bars); vertical: always upright (a wide picture sits in a
-                        band); horizontal: always 1920x1080; 4:3 (1440x1080), 4:5 (1080x1350), 1:1
+                        band); 9:16: upright and full screen, whatever the reference's shape;
+                        horizontal: always 1920x1080; 4:3 (1440x1080), 4:5 (1080x1350), 1:1
                         (1080x1080): the picture fills that shape; sideways: a widescreen edit
                         turned on its side in an upright file ("turn your phone")
   --stabilize {auto,on,off}

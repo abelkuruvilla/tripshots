@@ -235,7 +235,7 @@
           <div class="field">
             <label class="lbl" for="mk-shape">Shape</label>
             <select id="mk-shape" bind:value={orientation}>
-              {#each [["auto", "Automatic (the style decides)"], ["vertical", "Upright 9:16"], ["horizontal", "Wide 16:9"],
+              {#each [["auto", "Automatic (the style decides)"], ["9:16", "Upright 9:16, full screen"], ["vertical", "Upright, picture in a band"], ["horizontal", "Wide 16:9"],
                       ["4:3", "Classic 4:3"], ["4:5", "Portrait 4:5"], ["1:1", "Square 1:1"],
                       ["sideways", "Sideways (turn your phone)"]] as [id, label]}
                 <option value={id}>{label}</option>

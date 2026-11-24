@@ -502,7 +502,33 @@ def first_frame_pull(s: dict) -> float:
     bright = (s.get("metrics") or {}).get("bright")
     if bright is not None and float(bright) < 0.22:
         v -= 0.6
+    om = (s.get("insight") or {}).get("open_motion")
+    if s.get("kind") == "video" and om is not None and float(om) < 0.05:
+        v -= 0.6   # a clip that hardly moves at first (a tripod on a far view) opens like a photo
     return v
+
+
+OPEN_MEASURE = 8   # the clips most likely to open the reel get their first-second movement measured
+
+
+def measure_openers(pool: list[dict], ctx: dict, k: int = OPEN_MEASURE) -> int:
+    """Measure how much the likeliest opening clips move in their first quarter second (insight.open_motion),
+    for the ones the analysis didn't reach (it measures only the best shots of a large library). Returns how
+    many were measured."""
+    todo = [s for s in pool if s.get("kind") == "video" and s.get("src")
+            and (s.get("insight") or {}).get("open_motion") is None]
+    todo.sort(key=lambda s: -role_score(s, "hook", ctx))
+    n = 0
+    for s in todo[:k]:
+        try:
+            from .insight import open_motion
+            om = open_motion(s)
+        except Exception:
+            om = None
+        if om is not None:
+            s.setdefault("insight", {})["open_motion"] = om
+            n += 1
+    return n
 
 
 def role_score(s: dict, role: str, ctx: dict) -> float:
@@ -739,6 +765,7 @@ def cast(chosen: list[dict], segs: list[dict], style: dict, variant: int = 0, gr
         if len(other) >= len(segs) - 1:
             pool = other
     elif "hook" in roles:
+        measure_openers(pool, ctx)
         take(roles.index("hook"), "hook", open_bonus if open_kind else None)
     if "peak" in roles:
         take(roles.index("peak"), "peak")

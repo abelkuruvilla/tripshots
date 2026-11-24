@@ -110,7 +110,8 @@ def test_apply_sets_the_style_up_for_one_recipe():
     r = _hold_recipe()
     recipes.apply(st, r, {"tempo": 112.0})
     assert st["duration"]["target"] == r["duration"] and st["frame"]["aspect"] == "16:9"
-    assert st["text"]["hook"]["mode"] == "off" and st["story"]["hook_text"] == "off"      # lyrics: no invented hook
+    # lyrics: the reference has no hook line, ours goes on top of the sung words from frame one
+    assert st["text"]["hook"]["mode"] == "ai" and st["story"].get("hook_text", "on") != "off"
     assert st["text"]["location"]["mode"] == "off" and st["loop"] is False and st["_recipe"] is r
     assert st["attention"]["open"]["shot"] == "person"
     assert st["panels"]["use"] == 0.0  # the style's averaged split screens aren't in this one example's cut
@@ -125,7 +126,13 @@ def test_apply_sets_the_style_up_for_one_recipe():
     subs = recipes.build(_measure(EVEN), {"text": {"kind": "subtitles"}}, "s.mp4", 1)
     st = _style()
     recipes.apply(st, subs, None)
-    assert st["story"]["captions"] == "original" and st["text"]["hook"]["mode"] == "off"
+    assert st["story"]["captions"] == "original" and st["text"]["hook"]["mode"] == "ai"
+    st = _style()
+    recipes.apply(st, recipes.build(_measure(EVEN), {"text": {"kind": "labels"}}, "l.mp4", 1), None)
+    assert st["text"]["hook"]["mode"] == "off"      # a name on every shot: those are the reel's words
+    st = _style()
+    recipes.apply(st, r, {"tempo": 112.0}, keep=("frame",))
+    assert st.get("frame", {}).get("aspect") != "16:9"    # --orientation 9:16: the reference's shape isn't taken
 
 
 # ------------------------------------------------------------------------ rhythm

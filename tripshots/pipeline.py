@@ -223,9 +223,13 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
         stc["captions"] = caption_mode(stc["captions"])  # a bad language fails here, not after the analysis
     if ex.get("orientation"):
         o = str(ex["orientation"]).lower()
-        if o not in ("auto", "vertical", "horizontal", "4:3", "4:5", "1:1", "sideways"):
-            raise ReelError(f"--orientation {o}: use auto, vertical, horizontal, 4:3, 4:5, 1:1 or sideways")
-        style["frame"] = {**(style.get("frame") or {}), "output": o}
+        if o not in ("auto", "vertical", "9:16", "horizontal", "4:3", "4:5", "1:1", "sideways"):
+            raise ReelError(f"--orientation {o}: use auto, vertical, 9:16, horizontal, 4:3, 4:5, 1:1 or sideways")
+        if o == "9:16":   # upright and full screen, whatever shape the reference was
+            style["frame"] = {**(style.get("frame") or {}), "output": "vertical", "aspect": "9:16"}
+            asked += ("frame",)
+        else:
+            style["frame"] = {**(style.get("frame") or {}), "output": o}
     if ex.get("stabilize"):
         if str(ex["stabilize"]).lower() not in ("auto", "on", "off"):
             raise ReelError(f"--stabilize {ex['stabilize']}: use auto, on or off")
@@ -409,9 +413,9 @@ def make(inputs: list[Path], music: str | Path | None, style_name: str | None, o
             log(f"text like the reference: {len(rtext)} overlay(s) ("
                 + ", ".join(sorted({str(o.get('recipe')) for o in rtext})) + ")")
     heard = str(((recipe or {}).get("text") or {}).get("kind") or "") in ("lyrics", "subtitles")
-    if rtext and not (hook and heard):
+    if rtext and not (heard and (hook or hook_text and hook_cfg.get("mode") != "off")):
         pass   # (a recipe's tease or title already carries the opening line)
-    elif hook_text and hook_cfg.get("mode") != "off" or hook:   # (a hook asked for stays over sung/spoken words)
+    elif hook_text and hook_cfg.get("mode") != "off" or hook:   # (a hook stays over sung or spoken words: they sit low)
         h_start, h_dur = float(hook_cfg.get("start", 0.2)), float(hook_cfg.get("duration", 2.6))
         if arc:  # on screen from the third frame, held while the opening plays
             first = plan["segments"][0]

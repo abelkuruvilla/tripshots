@@ -257,7 +257,7 @@ def apply(style: dict, recipe: dict, music: dict | None = None, keep: tuple = ()
     d["target"] = round(dur, 2)
     d["min"] = min(float(d.get("min", dur)), dur)
     d["max"] = max(float(d.get("max", dur)), dur)
-    if recipe.get("frame"):
+    if recipe.get("frame") and "frame" not in keep:   # (--orientation 9:16 keeps the reel full screen)
         style["frame"] = {**(style.get("frame") or {}), "aspect": recipe["frame"]}
     if recipe.get("page") in ("print", "route"):   # the reference set its shots on pages (pages.py)
         style["page"] = {**(style.get("page") or {}), "kind": recipe["page"]}
@@ -271,9 +271,14 @@ def apply(style: dict, recipe: dict, music: dict | None = None, keep: tuple = ()
         style.setdefault("attention", {}).setdefault("open", {})["shot"] = recipe["open"]
     kind = (recipe.get("text") or {}).get("kind", "none")
     text = style.setdefault("text", {})
-    if kind in ("none", "lyrics", "subtitles", "labels"):
-        text.setdefault("hook", {})["mode"] = "off"   # the reference has no hook line: don't invent one
+    if kind == "labels":
+        text.setdefault("hook", {})["mode"] = "off"   # a name on every shot is the reel's words
         st["hook_text"] = "off"
+    elif kind in ("none", "lyrics", "subtitles"):
+        # the reference has no hook line, but its words sit low and are heard: ours goes on top from frame one
+        # (most people decide in the first second; reels that showed the promise at once kept more of them)
+        if str(text.setdefault("hook", {}).get("mode", "off")).lower() in ("off", "false"):
+            text["hook"]["mode"] = "ai"
     elif str(text.setdefault("hook", {}).get("mode", "off")).lower() in ("off", "false"):
         text["hook"]["mode"] = "ai"                   # a tease or a title: the copywriter writes ours
     if kind == "subtitles" and "captions" not in keep and str(st.get("captions", "auto")) == "auto":
